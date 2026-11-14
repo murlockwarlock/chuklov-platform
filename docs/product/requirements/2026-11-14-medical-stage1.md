@@ -150,13 +150,13 @@ Catalog REQs and catalog OQs are defined in the linked test-catalog file. The pa
 - Delivery package: `1A / 1B / 1C`
 - Status: `TO IMPLEMENT`
 
-### REQ-MED-1A-CORE-009 - Real-session completion is the Stage 1 outcome
+### REQ-MED-1A-CORE-009 - Real-session completion is the final Stage 1 outcome
 
 - Source: Stage 1 TZ; stages document
 - Source section: `Преамбула`, paragraph 6; Stage 1 closure table
 - Type: `ADD`
-- Requirement: Stage 1 is accepted only after Женя conducts 2-3 real sessions completely in the system without notes in a phone.
-- Acceptance: The final acceptance record names the real sessions and confirms end-to-end use of the new structures without a parallel phone-notes workflow.
+- Requirement: Final Stage 1 acceptance includes Женя conducting 2-3 real sessions completely in the system without notes in a phone.
+- Acceptance: After independent agent-led acceptance of 1A, 1B, and 1C on staging, the final acceptance record names the real sessions and confirms end-to-end use of the new structures without a parallel phone-notes workflow. This is a practical usability confirmation, not a substitute for package QA.
 - Dependencies: Stage 1A, 1B, and 1C package acceptance.
 - Delivery package: `1A / 1B / 1C`
 - Status: `TO IMPLEMENT`
@@ -941,7 +941,7 @@ Catalog REQs and catalog OQs are defined in the linked test-catalog file. The pa
 - Acceptance: The instruction is available to Женя; no analytics redesign is included in Stage 1; future analytics redesign waits for real session data.
 - Dependencies: Existing analytics console.
 - Delivery package: `1A`
-- Status: `EXISTING - NEEDS VERIFICATION`
+- Status: `TO IMPLEMENT`
 
 ### Compatibility and migration contract
 
@@ -1104,8 +1104,8 @@ Catalog REQs and catalog OQs are defined in the linked test-catalog file. The pa
 - Source: Repository authority; current task instruction
 - Source section: compatibility requirements; repository data rules
 - Type: `VERIFY-FIX`
-- Requirement: Eventual compatibility implementation is verified on PostgreSQL for constraints, native types, timestamps, indexes, upsert/idempotency, transactions, and related historical behavior.
-- Acceptance: A future package reports PostgreSQL evidence; local SQLite alone cannot close this requirement.
+- Requirement: Eventual compatibility implementation is verified on staging with PostgreSQL for constraints, native types, timestamps, indexes, upsert/idempotency, transactions, and related historical behavior.
+- Acceptance: A future package reports application and database evidence from staging with PostgreSQL; SQLite is not used for testing and CI does not replace staging acceptance.
 - Dependencies: `REQ-MED-COMPAT-011` through `REQ-MED-COMPAT-014`.
 - Delivery package: `1A`
 - Status: `TO IMPLEMENT`
@@ -1173,9 +1173,9 @@ Catalog REQs and catalog OQs are defined in the linked test-catalog file. The pa
 
 - Source: Stage 1 TZ
 - Source section: `Е.`, paragraphs 154 and 162-166
-- Type: `ADD / WORTHWHILE`
-- Requirement: The client card shows indicator history by session date with before and after values. A graph is desirable, not a blocker. `SpO2 89` is red. History remains readable after reload.
-- Acceptance: The table history is implemented and the examples produce the specified values/colors; graph status is reported separately as `WORTHWHILE`.
+- Type: `ADD`
+- Requirement: The client card shows mandatory indicator history by session date with before and after values. A graph is an optional `WORTHWHILE` improvement, not a required Stage 1 capability. `SpO2 89` is red. History remains readable after reload.
+- Acceptance: The mandatory table history is implemented and the examples produce the specified values/colors; graph delivery is reported separately as `WORTHWHILE` and does not block acceptance.
 - Dependencies: `REQ-MED-1C-VITALS-001` through `REQ-MED-1C-VITALS-005`.
 - Delivery package: `1C`
 - Status: `TO IMPLEMENT`
@@ -2249,6 +2249,8 @@ The following items must not be implemented as part of Stage 1. The correspondin
 
 The following are the official package boundaries. They are acceptance checklists, not evidence that any check has run. Package status in this documentation task is `NOT RUN`; later implementation tasks must attach named evidence to the relevant REQs.
 
+Each package is independently checked by the agent on staging with PostgreSQL and safe test data. Real clients and real medical data are not required for technical package acceptance. Personal or medical information from real clients must not appear in public reports or pull requests. The separate final Stage 1 usability confirmation below does not replace this agent-led QA.
+
 ### Stage 1A acceptance matrix
 
 | Acceptance proof | REQ coverage | Status |
@@ -2267,9 +2269,8 @@ The following are the official package boundaries. They are acceptance checklist
 | `Вернуть ИИ-помощника` sends the client system message | `REQ-MED-1A-CALL-007` | NOT RUN |
 | Analytics is not redesigned; one-page human instruction exists | `REQ-MED-1A-CALL-008` | NOT RUN |
 | Desktop/tablet/mobile where applicable and first-time usability | `REQ-MED-1A-CORE-007`, `REQ-MED-1A-CORE-008`, `REQ-MED-1A-CORE-010` | NOT RUN |
-| Compatibility behavior is proven on PostgreSQL, not only SQLite | `REQ-MED-COMPAT-001` through `REQ-MED-COMPAT-015` | NOT RUN |
-| Exact final candidate SHA is identified in staging evidence | Repository release gate; `REQ-MED-1A-CORE-009` | NOT RUN |
-| Женя completes 2-3 real sessions without phone notes | `REQ-MED-1A-CORE-009` | NOT RUN |
+| Compatibility behavior is proven on staging with PostgreSQL | `REQ-MED-COMPAT-001` through `REQ-MED-COMPAT-015` | NOT RUN |
+| Exact final candidate SHA is identified in staging evidence | Repository release gate; package evidence | NOT RUN |
 
 ### Stage 1B acceptance matrix
 
@@ -2311,6 +2312,12 @@ The following are the official package boundaries. They are acceptance checklist
 | Avatar default/fallback/upload/replace on all required surfaces | `REQ-MED-1C-AVATAR-001` | NOT RUN |
 | PDF exact include/exclude list | `REQ-MED-1C-PDF-001`, `REQ-MED-1C-PDF-002` | NOT RUN |
 | Final compatibility and PostgreSQL evidence | `REQ-MED-COMPAT-001` through `REQ-MED-COMPAT-015` | NOT RUN |
+
+### Final Stage 1 acceptance
+
+| Acceptance proof | REQ coverage | Status |
+|---|---|---|
+| After independent 1A, 1B, and 1C staging QA, Женя completes 2-3 real sessions without phone notes | `REQ-MED-1A-CORE-009` | NOT RUN |
 
 ## Source-to-REQ traceability pass
 

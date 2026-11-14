@@ -393,9 +393,9 @@ All Stage 1B REQs start as `TO IMPLEMENT` unless explicitly marked `EXISTING - N
 - Source: Test catalog
 - Source section: type table row T15.11
 - Type: `ADD`
-- Requirement: T10 supports front, side, and back projections with configured zones, deviation options, and index 0-3. Each zone with index 1-3 is a violation. A configured department index is not assumed without the catalog decision.
-- Acceptance: The three projections render their configured zones and deviations, and violation count follows the configured index rule.
-- Dependencies: `REQ-MED-CATALOG-OQ-010`; Test 2 configuration.
+- Requirement: T10 supports front, side, and back projections with configured zones, deviation options, and index 0-3. Each zone with index 1-3 is a violation.
+- Acceptance: The three projections render their configured zones and deviations, and each zone with index 1-3 is counted as a violation.
+- Dependencies: Test 2 configuration.
 - Delivery package: `1B`
 - Status: `TO IMPLEMENT`
 
