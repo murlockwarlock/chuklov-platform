@@ -15,6 +15,13 @@ final readonly class MedicalSessionTestData
         public bool $afterAbnormal,
         /** @var list<array{id:int,name:string}> */
         public array $causes = [],
+        /** @var array<string, mixed>|null */
+        public ?array $structuredPayload = null,
+        public int $beforeViolationCount = 0,
+        public int $afterViolationCount = 0,
+        public bool $reviewAgain = false,
+        /** @var list<string> */
+        public array $warnings = [],
     ) {}
 
     /** @return array<string, mixed> */
@@ -30,6 +37,11 @@ final readonly class MedicalSessionTestData
             'after_label' => $this->afterLabel,
             'after_abnormal' => $this->afterAbnormal,
             'causes' => $this->causes,
+            'structured' => $this->structuredPayload,
+            'before_violation_count' => $this->beforeViolationCount,
+            'after_violation_count' => $this->afterViolationCount,
+            'review_again' => $this->reviewAgain,
+            'warnings' => $this->warnings,
         ];
     }
 }

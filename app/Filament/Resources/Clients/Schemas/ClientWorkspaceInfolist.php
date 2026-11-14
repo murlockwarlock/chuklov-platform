@@ -26,6 +26,8 @@ use App\Modules\Identity\Domain\Models\ClientConsent;
 use App\Modules\MedicalProfiles\Application\DTOs\MedicalProfileData;
 use App\Modules\MedicalProfiles\Application\GetMedicalProfile;
 use App\Modules\Organizations\Application\OrganizationContext;
+use App\Modules\Sessions\Application\ListClientSessionRecommendations;
+use App\Modules\Sessions\Application\MedicalSafetyMarkerReader;
 use App\Modules\Referrals\Domain\Models\ReferralCampaignLink;
 use App\Modules\Tracker\Application\ResolveTrackerAccess;
 use App\Modules\Tracker\Domain\Models\TrackerCheckIn;
@@ -42,6 +44,69 @@ final class ClientWorkspaceInfolist
         return $schema
             ->extraAttributes(['class' => 'grid grid-cols-1 lg:grid-cols-2 gap-6 items-start'])
             ->components([
+                Section::make(__('Безопасность медицинских манипуляций'))
+                    ->schema([
+                        TextEntry::make('medical_test_18_safety')
+                            ->hiddenLabel()
+                            ->state(function (Client $record): string {
+                                $actor = auth()->user();
+                                if (! $actor instanceof User) {
+                                    return __('Требуется авторизация');
+                                }
+                                $marker = app(MedicalSafetyMarkerReader::class)->forClient($actor, $record)[0] ?? null;
+
+                                return is_array($marker) && is_string($marker['marker_text'] ?? null)
+                                    ? '⚠ '.$marker['marker_text']
+                                    : __('Нет активного маркера');
+                            })
+                            ->badge()
+                            ->color(fn (string $state): string => str_starts_with($state, '⚠') ? 'danger' : 'gray')
+                            ->wrap()
+                            ->columnSpanFull(),
+                    ])
+                    ->columnSpanFull(),
+                Section::make(__('Рекомендации из медицинских сеансов'))
+                    ->schema([
+                        RepeatableEntry::make('session_recommendations')
+                            ->hiddenLabel()
+                            ->schema([
+                                TextEntry::make('occurred_at')->label(__('Сеанс')),
+                                TextEntry::make('status')->label(__('Отправка')),
+                                TextEntry::make('draft')->label(__('Текст'))->wrap()->columnSpanFull(),
+                            ])
+                            ->columns(2)
+                            ->state(function (Client $record): array {
+                                $actor = auth()->user();
+                                if (! $actor instanceof User) {
+                                    return [];
+                                }
+
+                                return array_map(static function ($recommendation): array {
+                                    $delivery = collect($recommendation->deliveries)->last();
+                                    $status = match ($delivery?->status) {
+                                        'delivered' => __('Доставлено'),
+                                        'unknown' => __('Исход неизвестен'),
+                                        'unavailable' => __('Канал недоступен'),
+                                        'failed' => __('Ошибка доставки'),
+                                        'suppressed' => __('Отправка подавлена'),
+                                        default => __('Не отправлено'),
+                                    };
+
+                                    return [
+                                        'occurred_at' => $recommendation->occurredAt?->setTimezone(app(OrganizationContext::class)->defaultTimezone())->format('d.m.Y H:i') ?? __('Дата не указана'),
+                                        'status' => $status,
+                                        'draft' => $recommendation->draft,
+                                    ];
+                                }, app(ListClientSessionRecommendations::class)->handle($actor, $record));
+                            })
+                            ->columnSpanFull(),
+                    ])
+                    ->visible(function (Client $record): bool {
+                        $actor = auth()->user();
+
+                        return $actor instanceof User && app(ListClientSessionRecommendations::class)->handle($actor, $record) !== [];
+                    })
+                    ->columnSpanFull(),
                 Section::make(__('Клиент'))
                     ->schema([
                         TextEntry::make('last_name')->label(__('Фамилия'))->placeholder(__('Не указана'))->wrap(),

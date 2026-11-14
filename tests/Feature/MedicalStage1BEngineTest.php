@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Modules\Sessions\Application\MedicalStage1BCatalogPreset;
 use App\Modules\Sessions\Application\MedicalClinicalTypeEngine;
 use App\Modules\Sessions\Domain\Enums\MedicalTestType;
+use Illuminate\Validation\ValidationException;
 use PHPUnit\Framework\TestCase;
 
 final class MedicalStage1BEngineTest extends TestCase
@@ -81,6 +82,32 @@ final class MedicalStage1BEngineTest extends TestCase
         self::assertSame(['transition:1'], $evaluation->beforeViolationKeys);
     }
 
+    public function test_t4_fails_closed_without_a_configured_formula_rule(): void
+    {
+        $evaluation = (new MedicalClinicalTypeEngine)->evaluate(
+            MedicalTestType::T4,
+            ['rules' => []],
+            ['sequence' => ['L', 'L', 'R', 'L']],
+            null,
+        );
+
+        self::assertTrue($evaluation->failClosed);
+        self::assertSame(0, $evaluation->beforeCount);
+        self::assertNotEmpty($evaluation->warnings);
+    }
+
+    public function test_typed_validation_rejects_an_angle_outside_the_configured_range(): void
+    {
+        $this->expectException(ValidationException::class);
+
+        (new MedicalClinicalTypeEngine)->validate(
+            MedicalTestType::T9,
+            ['rows' => [['key' => 'hip', 'label' => 'Тазобедренный сустав', 'input_mode' => 'mobility', 'angle_enabled' => true]]],
+            ['rows' => [['key' => 'hip', 'angle' => 181, 'index' => 1]]],
+            null,
+        );
+    }
+
     public function test_t12_does_not_classify_without_a_configured_threshold_or_normal_direction(): void
     {
         $engine = new MedicalClinicalTypeEngine;
@@ -90,7 +117,6 @@ final class MedicalStage1BEngineTest extends TestCase
             ['rules' => ['energy_threshold' => null, 'normal_tor_direction' => null]],
             [
                 'energy' => 100,
-                'chakras' => [['key' => 'chakra_1', 'marked' => true]],
                 'tor_direction' => 'R',
             ],
             null,
@@ -99,5 +125,51 @@ final class MedicalStage1BEngineTest extends TestCase
         self::assertTrue($evaluation->failClosed);
         self::assertSame(0, $evaluation->beforeCount);
         self::assertNotEmpty($evaluation->warnings);
+    }
+
+    public function test_t1_standing_and_lying_share_one_violation_identity(): void
+    {
+        $engine = new MedicalClinicalTypeEngine;
+
+        $evaluation = $engine->evaluate(
+            MedicalTestType::T1,
+            [],
+            ['rows' => [
+                ['key' => 'standing_r', 'dedupe_key' => 'shoulder', 'side' => 'R', 'index' => 2],
+                ['key' => 'lying_r', 'dedupe_key' => 'shoulder', 'side' => 'R', 'index' => 1],
+            ]],
+            null,
+        );
+
+        self::assertSame(1, $evaluation->beforeCount);
+        self::assertSame(1, $evaluation->resolvedCount);
+    }
+
+    public function test_resolved_and_new_counts_use_violation_identity_sets(): void
+    {
+        $evaluation = new \App\Modules\Sessions\Application\DTOs\MedicalClinicalEvaluation(
+            beforeViolationKeys: ['a', 'b'],
+            afterViolationKeys: ['b', 'c'],
+            beforeCount: 2,
+            afterCount: 2,
+        );
+
+        self::assertSame(1, $evaluation->resolvedCount);
+        self::assertSame(1, $evaluation->newCount);
+    }
+
+    public function test_t8_reports_the_configured_hypotone_safety_warning(): void
+    {
+        $engine = new MedicalClinicalTypeEngine;
+
+        $evaluation = $engine->evaluate(
+            MedicalTestType::T8,
+            ['rules' => ['tone_violation' => ['hypotone']]],
+            ['rows' => [['key' => 'neck', 'tone' => 'hypotone', 'index' => 1]]],
+            null,
+        );
+
+        self::assertSame(['вытяжение в этом отделе не делать'], $evaluation->warnings);
+        self::assertSame(1, $evaluation->beforeCount);
     }
 }

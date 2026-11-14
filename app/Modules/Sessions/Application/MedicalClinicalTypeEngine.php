@@ -4,6 +4,7 @@ namespace App\Modules\Sessions\Application;
 
 use App\Modules\Sessions\Application\DTOs\MedicalClinicalEvaluation;
 use App\Modules\Sessions\Domain\Enums\MedicalTestType;
+use Illuminate\Validation\ValidationException;
 
 final class MedicalClinicalTypeEngine
 {
@@ -23,6 +24,31 @@ final class MedicalClinicalTypeEngine
             MedicalTestType::T11,
             MedicalTestType::T12 => true,
         };
+    }
+
+    /**
+     * @param array<string, mixed> $configuration
+     * @param array<string, mixed>|null $before
+     * @param array<string, mixed>|null $after
+     */
+    public function validate(
+        MedicalTestType $type,
+        array $configuration,
+        ?array $before,
+        ?array $after,
+        ?array $payload = null,
+    ): void {
+        $this->validatePhase($type, $configuration, $before, 'before');
+        $this->validatePhase($type, $configuration, $after, 'after');
+
+        if ($payload !== null) {
+            $this->validatePayloadMetadata($configuration, $payload);
+        }
+
+        if ($type === MedicalTestType::T4) {
+            $this->validateFormula($configuration, $before, 'before');
+            $this->validateFormula($configuration, $after, 'after');
+        }
     }
 
     /**
@@ -69,7 +95,14 @@ final class MedicalClinicalTypeEngine
      */
     private function methodComputer(array $configuration, ?array $before, ?array $after): MedicalClinicalEvaluation
     {
-        return $this->rowIndexEvaluation($configuration, $before, $after);
+        return $this->evaluationFromRows(
+            $this->methodRows($before),
+            $this->methodRows($after),
+            fn (array $row): bool => in_array((int) ($row['index'] ?? 0), [1, 2, 3], true)
+                || ($row['marked'] ?? false) === true
+                || in_array(strtolower(trim((string) ($row['answer'] ?? ''))), ['yes', 'да', 'true', '1'], true)
+                || $this->hasFinding($row),
+        );
     }
 
     /**
@@ -87,7 +120,7 @@ final class MedicalClinicalTypeEngine
 
             return ($finding !== '' && ! in_array($finding, ['normal', 'none', 'нет', 'норма'], true))
                 || ($row['marked'] ?? false) === true
-                || $row['index'] > 0;
+                || (int) ($row['index'] ?? 0) > 0;
         });
     }
 
@@ -100,7 +133,22 @@ final class MedicalClinicalTypeEngine
     {
         $rules = is_array($configuration['rules'] ?? null) ? $configuration['rules'] : [];
         $allowed = is_array($rules['allowed_sequences'] ?? null) ? $rules['allowed_sequences'] : [];
+        $allowed = array_map(
+            static fn (mixed $sequence): array => array_map(
+                static fn (mixed $value): string => strtoupper(trim((string) $value)),
+                is_array($sequence) ? $sequence : [],
+            ),
+            $allowed,
+        );
         $countTransitions = (bool) ($rules['broken_transition_count'] ?? false);
+        $hasSequence = $this->hasSequence($before) || $this->hasSequence($after);
+        if ($hasSequence && ($allowed === [] || ! array_key_exists('broken_transition_count', $rules))) {
+            return new MedicalClinicalEvaluation(
+                causeIds: array_values(array_unique([...$this->causeIds($before), ...$this->causeIds($after)])),
+                warnings: ['Для формулы не настроено обязательное правило подсчёта; подсчёт отключён.'],
+                failClosed: true,
+            );
+        }
         $beforeResult = $this->formulaPhase($before, $allowed, $countTransitions);
         $afterResult = $this->formulaPhase($after, $allowed, $countTransitions);
 
@@ -123,7 +171,7 @@ final class MedicalClinicalTypeEngine
         return $this->evaluationFromRows(
             $this->findingRows($before),
             $this->findingRows($after),
-            static fn (array $row): bool => ($row['marked'] ?? false) === true
+            fn (array $row): bool => ($row['marked'] ?? false) === true
                 || in_array(strtolower(trim((string) ($row['answer'] ?? ''))), ['yes', 'да', 'true', '1'], true),
         );
     }
@@ -164,6 +212,7 @@ final class MedicalClinicalTypeEngine
      */
     private function traction(array $configuration, ?array $before, ?array $after): MedicalClinicalEvaluation
     {
+        $rules = is_array($configuration['rules'] ?? null) ? $configuration['rules'] : [];
         $base = $this->rowIndexEvaluation($configuration, $before, $after, allowTone: true);
         $warning = false;
         foreach ([$before, $after] as $phase) {
@@ -181,7 +230,9 @@ final class MedicalClinicalTypeEngine
             beforeViolationKeys: $base->beforeViolationKeys,
             afterViolationKeys: $base->afterViolationKeys,
             causeIds: $base->causeIds,
-            warnings: $warning ? ['Вытяжение в этом отделе не делать.'] : [],
+            warnings: $warning && (bool) ($rules['warning_on_hypotone'] ?? true)
+                ? ['вытяжение в этом отделе не делать']
+                : [],
         );
     }
 
@@ -210,7 +261,7 @@ final class MedicalClinicalTypeEngine
             }
 
             return ($row['marked'] ?? false) === true
-                || in_array(strtolower(trim((string) ($row['deviation'] ?? ''))), ['yes', 'да', 'true', '1'], true);
+                || in_array(strtolower(trim((string) ($row['deviation'] ?? ''))), ['yes', 'да', 'true', '1', 'deviation', 'abnormal'], true);
         };
 
         return $this->evaluationFromRows($rowsBefore, $rowsAfter, $isViolation);
@@ -229,8 +280,9 @@ final class MedicalClinicalTypeEngine
         return $this->evaluationFromRows(
             $beforeRows,
             $afterRows,
-            static fn (array $row): bool => ($row['marked'] ?? false) === true
-                || in_array(strtolower(trim((string) ($row['answer'] ?? ''))), ['yes', 'да', 'true', '1'], true),
+            fn (array $row): bool => ($row['marked'] ?? false) === true
+                || in_array(strtolower(trim((string) ($row['answer'] ?? ''))), ['yes', 'да', 'true', '1'], true)
+                || $this->hasFinding($row),
         );
     }
 
@@ -245,8 +297,8 @@ final class MedicalClinicalTypeEngine
         $threshold = $rules['energy_threshold'] ?? null;
         $normalTor = $rules['normal_tor_direction'] ?? null;
         $chakraViolation = (bool) ($rules['chakra_violation'] ?? false);
-        $needsThreshold = ($before !== null && array_key_exists('energy', $before)) || ($after !== null && array_key_exists('energy', $after));
-        $needsTor = ($before !== null && array_key_exists('tor_direction', $before)) || ($after !== null && array_key_exists('tor_direction', $after));
+        $needsThreshold = $this->phaseContainsKey($before, 'energy') || $this->phaseContainsKey($after, 'energy');
+        $needsTor = $this->phaseContainsKey($before, 'tor_direction') || $this->phaseContainsKey($after, 'tor_direction');
         $failClosed = ($needsThreshold && ! is_numeric($threshold)) || ($needsTor && ! is_string($normalTor));
         $warnings = [];
         if ($failClosed) {
@@ -257,10 +309,10 @@ final class MedicalClinicalTypeEngine
         $afterResult = $this->energyPhase($after, $threshold, $normalTor, $chakraViolation);
 
         return new MedicalClinicalEvaluation(
-            beforeCount: $failClosed ? 0 : count($beforeResult),
-            afterCount: $failClosed ? 0 : count($afterResult),
-            beforeViolationKeys: $failClosed ? [] : $beforeResult,
-            afterViolationKeys: $failClosed ? [] : $afterResult,
+            beforeCount: count($beforeResult),
+            afterCount: count($afterResult),
+            beforeViolationKeys: $beforeResult,
+            afterViolationKeys: $afterResult,
             causeIds: array_values(array_unique([...$this->causeIds($before), ...$this->causeIds($after)])),
             warnings: $warnings,
             failClosed: $failClosed,
@@ -279,8 +331,8 @@ final class MedicalClinicalTypeEngine
         $toneValues = is_array($rules['tone_violation'] ?? null) ? $rules['tone_violation'] : ['hypotone', 'hypertone', 'гипотонус', 'гипертонус'];
         $isViolation = static function (array $row) use ($violationIndexes, $toneValues, $allowTone): bool {
             $index = $row['index'] ?? null;
-            if ($index !== null && in_array((int) $index, array_map('intval', $violationIndexes), true)) {
-                return true;
+            if ($index !== null) {
+                return in_array((int) $index, array_map('intval', $violationIndexes), true);
             }
             if ($allowTone && in_array(strtolower(trim((string) ($row['tone'] ?? ''))), $toneValues, true)) {
                 return true;
@@ -332,9 +384,64 @@ final class MedicalClinicalTypeEngine
         if ($phase === null) {
             return [];
         }
-        $rows = $phase['rows'] ?? [];
+        $rows = is_array($phase['rows'] ?? null) ? array_values(array_filter($phase['rows'], 'is_array')) : [];
+        foreach (is_array($phase['subtests'] ?? null) ? $phase['subtests'] : [] as $subtest) {
+            if (! is_array($subtest) || ($subtest['enabled'] ?? true) === false) {
+                continue;
+            }
+            if (is_array($subtest['rows'] ?? null)) {
+                $rows = [...$rows, ...array_values(array_filter($subtest['rows'], 'is_array'))];
+            }
+            if (is_array($subtest['provoking_points'] ?? null)) {
+                $rows = [...$rows, ...array_values(array_filter($subtest['provoking_points'], 'is_array'))];
+            }
+        }
 
-        return is_array($rows) ? array_values(array_filter($rows, 'is_array')) : [];
+        return $rows;
+    }
+
+    /** @param array<string, mixed>|null $phase
+     * @return list<array<string, mixed>>
+     */
+    private function methodRows(?array $phase): array
+    {
+        if ($phase === null) {
+            return [];
+        }
+
+        $rows = $this->findingRows($phase);
+        if (array_key_exists('index', $phase)) {
+            $rows[] = [
+                'key' => 'method',
+                'index' => $phase['index'],
+                'marked' => $phase['marked'] ?? false,
+                'cause_ids' => $phase['cause_ids'] ?? [],
+                'primary_cause_id' => $phase['primary_cause_id'] ?? null,
+            ];
+        }
+        foreach (is_array($phase['subtests'] ?? null) ? $phase['subtests'] : [] as $subtest) {
+            if (! is_array($subtest) || ($subtest['enabled'] ?? true) === false) {
+                continue;
+            }
+            if (($subtest['type'] ?? null) === MedicalTestType::T2->value && array_key_exists('index', $subtest)) {
+                $rows[] = [
+                    'key' => 'method:'.trim((string) ($subtest['key'] ?? count($rows))),
+                    'index' => $subtest['index'],
+                    'marked' => $subtest['marked'] ?? false,
+                    'cause_ids' => $subtest['cause_ids'] ?? [],
+                    'primary_cause_id' => $subtest['primary_cause_id'] ?? null,
+                ];
+            }
+            if (($subtest['type'] ?? null) === MedicalTestType::T5->value) {
+                foreach (is_array($subtest['rows'] ?? null) ? $subtest['rows'] : [] as $row) {
+                    if (is_array($row)) {
+                        $rows[] = $row;
+                    }
+                }
+            }
+        }
+
+        return $rows;
     }
 
     /** @param array<string, mixed>|null $phase
@@ -342,9 +449,17 @@ final class MedicalClinicalTypeEngine
      */
     private function nestedRows(?array $phase, string $key): array
     {
-        $rows = $phase[$key] ?? [];
+        $rows = is_array($phase[$key] ?? null) ? array_values(array_filter($phase[$key], 'is_array')) : [];
+        foreach (is_array($phase['subtests'] ?? null) ? $phase['subtests'] : [] as $subtest) {
+            if (! is_array($subtest) || ($subtest['enabled'] ?? true) === false) {
+                continue;
+            }
+            if (is_array($subtest[$key] ?? null)) {
+                $rows = [...$rows, ...array_values(array_filter($subtest[$key], 'is_array'))];
+            }
+        }
 
-        return is_array($rows) ? array_values(array_filter($rows, 'is_array')) : [];
+        return $rows;
     }
 
     /** @param array<string, mixed>|null $phase
@@ -394,10 +509,14 @@ final class MedicalClinicalTypeEngine
     private function formulaPhase(?array $phase, array $allowed, bool $countTransitions): array
     {
         $sequence = is_array($phase['sequence'] ?? null) ? array_values($phase['sequence']) : [];
+        $sequence = array_map(static fn (mixed $value): mixed => is_array($value) ? ($value['value'] ?? null) : $value, $sequence);
         if (count($sequence) < 2) {
             return ['keys' => []];
         }
         $normalized = array_map(static fn (mixed $value): string => strtoupper(trim((string) $value)), $sequence);
+        if (in_array('', $normalized, true)) {
+            return ['keys' => []];
+        }
         if (in_array($normalized, $allowed, true)) {
             return ['keys' => []];
         }
@@ -408,7 +527,7 @@ final class MedicalClinicalTypeEngine
         $keys = [];
         for ($index = 1; $index < count($normalized); $index++) {
             if ($normalized[$index] === $normalized[$index - 1]) {
-                $keys[] = 'transition:'.($index - 1);
+                $keys[] = 'transition:'.$index;
             }
         }
 
@@ -425,20 +544,329 @@ final class MedicalClinicalTypeEngine
             return [];
         }
         $keys = [];
-        if (is_numeric($threshold) && is_numeric($phase['energy'] ?? null) && (float) $phase['energy'] < (float) $threshold) {
-            $keys[] = 'energy';
-        }
-        if ($chakraViolation) {
-            foreach (is_array($phase['chakras'] ?? null) ? $phase['chakras'] : [] as $chakra) {
-                if (is_array($chakra) && ($chakra['marked'] ?? false) === true) {
-                    $keys[] = 'chakra:'.trim((string) ($chakra['key'] ?? count($keys)));
-                }
+        $sources = [$phase];
+        foreach (is_array($phase['subtests'] ?? null) ? $phase['subtests'] : [] as $subtest) {
+            if (is_array($subtest) && ($subtest['enabled'] ?? true) !== false) {
+                $sources[] = $subtest;
             }
         }
-        if (is_string($normalTor) && is_string($phase['tor_direction'] ?? null) && $phase['tor_direction'] !== $normalTor) {
-            $keys[] = 'tor_direction';
+        foreach ($sources as $sourceIndex => $source) {
+            $sourceKey = $sourceIndex === 0
+                ? ''
+                : trim((string) ($source['key'] ?? $sourceIndex));
+            if (is_numeric($threshold) && is_numeric($source['energy'] ?? null) && (float) $source['energy'] < (float) $threshold) {
+                $keys[] = $sourceKey === '' ? 'energy' : 'energy:'.$sourceKey;
+            }
+            if ($chakraViolation) {
+                $chakras = [
+                    ...(is_array($source['chakras'] ?? null) ? $source['chakras'] : []),
+                    ...(is_array($source['rows'] ?? null) ? $source['rows'] : []),
+                ];
+                foreach ($chakras as $chakra) {
+                    if (is_array($chakra) && ($chakra['marked'] ?? false) === true) {
+                        $keys[] = 'chakra:'.trim((string) ($chakra['key'] ?? count($keys)));
+                    }
+                }
+            }
+            if (is_string($normalTor) && is_string($source['tor_direction'] ?? null) && $source['tor_direction'] !== $normalTor) {
+                $keys[] = $sourceKey === '' ? 'tor_direction' : 'tor_direction:'.$sourceKey;
+            }
         }
 
         return array_values(array_unique($keys));
+    }
+
+    private function phaseContainsKey(?array $phase, string $key): bool
+    {
+        if ($phase === null) {
+            return false;
+        }
+        if (array_key_exists($key, $phase) && $phase[$key] !== null && $phase[$key] !== '') {
+            return true;
+        }
+
+        foreach (is_array($phase['subtests'] ?? null) ? $phase['subtests'] : [] as $subtest) {
+            if (is_array($subtest) && ($subtest['enabled'] ?? true) !== false && array_key_exists($key, $subtest) && $subtest[$key] !== null && $subtest[$key] !== '') {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /** @param array<string, mixed>|null $phase */
+    private function hasSequence(?array $phase): bool
+    {
+        return $phase !== null && is_array($phase['sequence'] ?? null) && $phase['sequence'] !== [];
+    }
+
+    /** @param array<string, mixed> $configuration
+     * @param array<string, mixed>|null $phase
+     */
+    private function validateFormula(array $configuration, ?array $phase, string $name): void
+    {
+        if ($phase === null || ! $this->hasSequence($phase)) {
+            return;
+        }
+        $sequence = array_values($phase['sequence']);
+        if (count($sequence) !== 4) {
+            $this->invalid($name.'.sequence', 'Формула должна содержать четыре зоны.');
+        }
+        $choices = [];
+        foreach (is_array($configuration['rows'] ?? null) ? $configuration['rows'] : [] as $row) {
+            if (is_array($row) && is_array($row['choices'] ?? null)) {
+                $choices = [...$choices, ...$this->optionValues($row['choices'])];
+            }
+        }
+        foreach ($sequence as $index => $item) {
+            $value = is_array($item) ? ($item['value'] ?? null) : $item;
+            if (! is_string($value) || trim($value) === '') {
+                $this->invalid($name.'.sequence.'.$index, 'Выберите сторону для каждой зоны формулы.');
+            }
+            if ($choices !== [] && ! in_array((string) $value, $choices, true)) {
+                $this->invalid($name.'.sequence.'.$index, 'Выбранный вариант формулы отсутствует в настройке каталога.');
+            }
+        }
+    }
+
+    /** @param array<string, mixed> $configuration
+     * @param array<string, mixed>|null $phase
+     */
+    private function validatePhase(MedicalTestType $type, array $configuration, ?array $phase, string $name): void
+    {
+        if ($phase === null) {
+            return;
+        }
+
+        $this->validatePhaseScalarFields($configuration, $phase, $name);
+        $this->validateIndex($phase['index'] ?? null, $configuration['index_enabled'] ?? true, $name.'.index');
+        $this->validateRows($type, $configuration, $phase['rows'] ?? [], $configuration['rows'] ?? [], $name.'.rows');
+        $this->validateRows($type, $configuration, $phase['feelings'] ?? [], $configuration['feelings'] ?? [], $name.'.feelings');
+
+        $configuredSubtests = [];
+        foreach (is_array($configuration['subtests'] ?? null) ? $configuration['subtests'] : [] as $subtest) {
+            if (is_array($subtest) && filled($subtest['key'] ?? null)) {
+                $configuredSubtests[(string) $subtest['key']] = $subtest;
+            }
+        }
+        foreach (is_array($phase['subtests'] ?? null) ? $phase['subtests'] : [] as $index => $subtest) {
+            if (! is_array($subtest)) {
+                $this->invalid($name.'.subtests.'.$index, 'Подтест заполнен неверно.');
+            }
+            $key = trim((string) ($subtest['key'] ?? ''));
+            $configured = $configuredSubtests[$key] ?? null;
+            if ($key === '' || ! is_array($configured)) {
+                $this->invalid($name.'.subtests.'.$index, 'Выбранный подтест отсутствует в каталоге.');
+            }
+            if (($subtest['enabled'] ?? true) === false) {
+                continue;
+            }
+            $subtestType = is_string($configured['type'] ?? null)
+                ? (MedicalTestType::tryFrom((string) $configured['type']) ?? $type)
+                : $type;
+            $subtestConfiguration = array_replace($configuration, $configured);
+            $this->validatePhaseScalarFields($subtestConfiguration, $subtest, $name.'.subtests.'.$key);
+            $this->validateIndex(
+                $subtest['index'] ?? null,
+                $subtestConfiguration['index_enabled'] ?? true,
+                $name.'.subtests.'.$key.'.index',
+            );
+            $this->validateRows($subtestType, $subtestConfiguration, $subtest['rows'] ?? [], $configured['rows'] ?? [], $name.'.subtests.'.$key.'.rows');
+            $this->validateRows($subtestType, $subtestConfiguration, $subtest['provoking_points'] ?? [], $configured['provoking_points'] ?? [], $name.'.subtests.'.$key.'.provoking_points');
+            $this->validateRows($subtestType, $subtestConfiguration, $subtest['feelings'] ?? [], $configured['feelings'] ?? [], $name.'.subtests.'.$key.'.feelings');
+        }
+    }
+
+    /** @param array<string, mixed> $configuration
+     * @param array<string, mixed> $phase
+     */
+    private function validatePhaseScalarFields(array $configuration, array $phase, string $name): void
+    {
+        $this->validateNumber($phase['pain_intensity'] ?? null, 0, 10, $name.'.pain_intensity');
+        $this->validateNumber($phase['tl_reduction_percent'] ?? null, -100, 100, $name.'.tl_reduction_percent');
+        $this->validateNumber($phase['energy'] ?? null, 0, 1000, $name.'.energy');
+        if (($phase['tor_direction'] ?? null) !== null && ($phase['tor_direction'] ?? '') !== '') {
+            if (! in_array((string) $phase['tor_direction'], ['R', 'L'], true)) {
+                $this->invalid($name.'.tor_direction', 'Направление тор-поля должно быть R или L.');
+            }
+        }
+        if (($phase['method'] ?? null) !== null && ($phase['method'] ?? '') !== '') {
+            $options = $this->optionValues($configuration['method_options'] ?? []);
+            if ($options !== [] && ! in_array((string) $phase['method'], $options, true)) {
+                $this->invalid($name.'.method', 'Выбранный метод отсутствует в настройке каталога.');
+            }
+        }
+        if (($phase['movement'] ?? null) !== null && ($phase['movement'] ?? '') !== '') {
+            $options = $this->optionValues($configuration['movement_options'] ?? []);
+            if ($options !== [] && ! in_array((string) $phase['movement'], $options, true)) {
+                $this->invalid($name.'.movement', 'Выбранное движение отсутствует в настройке каталога.');
+            }
+        }
+        if (($phase['priority_chain'] ?? null) !== null && ($phase['priority_chain'] ?? '') !== '') {
+            $options = $this->optionValues($configuration['priority_options'] ?? []);
+            if ($options !== [] && ! in_array((string) $phase['priority_chain'], $options, true)) {
+                $this->invalid($name.'.priority_chain', 'Выбранная цепь отсутствует в настройке каталога.');
+            }
+        }
+        if (($phase['violation_type'] ?? null) !== null && ($phase['violation_type'] ?? '') !== '') {
+            $options = $this->optionValues($configuration['violation_types'] ?? []);
+            if ($options !== [] && ! in_array((string) $phase['violation_type'], $options, true)) {
+                $this->invalid($name.'.violation_type', 'Выбранный тип нарушения отсутствует в настройке каталога.');
+            }
+        }
+    }
+
+    /** @param array<string, mixed> $configuration
+     * @param array<string, mixed> $payload
+     */
+    private function validatePayloadMetadata(array $configuration, array $payload): void
+    {
+        $value = $payload['violation_type'] ?? null;
+        if ($value === null || $value === '') {
+            return;
+        }
+
+        $options = $this->optionValues($configuration['violation_types'] ?? []);
+        if ($options !== [] && ! in_array((string) $value, $options, true)) {
+            $this->invalid('violation_type', 'Выбранный тип нарушения отсутствует в настройке каталога.');
+        }
+    }
+
+    /** @param array<string, mixed> $configuration
+     * @param mixed $rows
+     * @param mixed $configuredRows
+     */
+    private function validateRows(MedicalTestType $type, array $configuration, mixed $rows, mixed $configuredRows, string $name): void
+    {
+        if ($rows === null || $rows === []) {
+            return;
+        }
+        if (! is_array($rows) || ! is_array($configuredRows)) {
+            $this->invalid($name, 'Строки теста заполнены неверно.');
+        }
+        $definitions = [];
+        foreach ($configuredRows as $configuredRow) {
+            if (is_array($configuredRow) && filled($configuredRow['key'] ?? null)) {
+                $definitions[(string) $configuredRow['key']] = $configuredRow;
+            }
+        }
+        foreach ($rows as $index => $row) {
+            if (! is_array($row)) {
+                $this->invalid($name.'.'.$index, 'Строка теста заполнена неверно.');
+            }
+            $key = trim((string) ($row['key'] ?? ''));
+            if ($key === '' || ! isset($definitions[$key])) {
+                $this->invalid($name.'.'.$index, 'Строка отсутствует в настройке каталога.');
+            }
+            $rowConfiguration = array_replace($configuration, $definitions[$key]);
+            $this->validateRow($type, $rowConfiguration, $row, $name.'.'.$index);
+        }
+    }
+
+    /** @param array<string, mixed> $configuration
+     * @param array<string, mixed> $row
+     */
+    private function validateRow(MedicalTestType $type, array $configuration, array $row, string $name): void
+    {
+        if (array_key_exists('input_mode', $row) && $row['input_mode'] !== null && $row['input_mode'] !== ($configuration['input_mode'] ?? $row['input_mode'])) {
+            $this->invalid($name.'.input_mode', 'Способ ответа строки изменён вне настройки каталога.');
+        }
+        if (array_key_exists('side', $configuration) && ($row['side'] ?? null) !== ($configuration['side'] ?? null)) {
+            $this->invalid($name.'.side', 'Сторона строки изменена вне настройки каталога.');
+        }
+        $indexEnabled = array_key_exists('index_enabled', $configuration)
+            ? (bool) $configuration['index_enabled']
+            : ! in_array($type, [MedicalTestType::T5, MedicalTestType::T11, MedicalTestType::T12], true);
+        $this->validateIndex($row['index'] ?? null, $indexEnabled, $name.'.index');
+        $this->validateNumber($row['angle'] ?? null, 0, 180, $name.'.angle');
+        if (($row['angle'] ?? null) !== null && ($row['angle'] ?? '') !== '' && ! (bool) ($configuration['angle_enabled'] ?? true)) {
+            $this->invalid($name.'.angle', 'Угол отключён для этой строки в каталоге.');
+        }
+        $this->validateChoice($row['tone'] ?? null, $configuration['tone_options'] ?? ['normal', 'hypotone', 'hypertone', 'гипотонус', 'гипертонус'], $name.'.tone');
+        $this->validateChoice($row['finding'] ?? null, $configuration['finding_options'] ?? [], $name.'.finding');
+        $this->validateChoice($row['answer'] ?? null, $configuration['answer_options'] ?? ['no', 'yes', 'нет', 'да'], $name.'.answer');
+        $this->validateChoice($row['deviation'] ?? null, $configuration['deviation_options'] ?? [], $name.'.deviation');
+        if (array_key_exists('marked', $row) && $row['marked'] !== null && ! is_bool($row['marked']) && ! in_array($row['marked'], [0, 1, '0', '1'], true)) {
+            $this->invalid($name.'.marked', 'Отметка строки должна быть логическим значением.');
+        }
+        foreach (['cause_ids', 'allowed_cause_ids'] as $field) {
+            if (! array_key_exists($field, $row) || $row[$field] === null || $row[$field] === []) {
+                continue;
+            }
+            if (! is_array($row[$field]) || collect($row[$field])->contains(static fn (mixed $id): bool => ! is_numeric($id) || (int) $id < 1)) {
+                $this->invalid($name.'.'.$field, 'Причины строки должны быть выбраны из справочника.');
+            }
+        }
+    }
+
+    private function validateIndex(mixed $value, mixed $enabled, string $name): void
+    {
+        if ($value === null || $value === '') {
+            return;
+        }
+        if (! is_numeric($value) || (float) $value !== (float) (int) $value || (int) $value < 0 || (int) $value > 3) {
+            $this->invalid($name, 'Индекс должен быть от 0 до 3.');
+        }
+        if (! (bool) $enabled) {
+            $this->invalid($name, 'Индекс отключён для этой строки.');
+        }
+    }
+
+    private function validateNumber(mixed $value, float $min, float $max, string $name): void
+    {
+        if ($value === null || $value === '') {
+            return;
+        }
+        if (! is_numeric($value) || (float) $value < $min || (float) $value > $max) {
+            $this->invalid($name, 'Значение выходит за допустимый диапазон.');
+        }
+    }
+
+    /** @param mixed $options */
+    private function validateChoice(mixed $value, mixed $options, string $name): void
+    {
+        if ($value === null || $value === '') {
+            return;
+        }
+        $allowed = $this->optionValues($options);
+        if ($allowed !== [] && ! in_array((string) $value, $allowed, true)) {
+            $this->invalid($name, 'Выбранное значение отсутствует в настройке каталога.');
+        }
+    }
+
+    /** @return list<string> */
+    private function optionValues(mixed $options): array
+    {
+        if (! is_array($options)) {
+            return [];
+        }
+        $values = [];
+        foreach ($options as $key => $option) {
+            if (is_array($option)) {
+                $value = $option['value'] ?? $option['key'] ?? null;
+            } elseif (is_string($key) && ! is_int($key)) {
+                $value = $key;
+            } else {
+                $value = $option;
+            }
+            if (is_scalar($value) && trim((string) $value) !== '') {
+                $values[] = (string) $value;
+            }
+        }
+
+        return array_values(array_unique($values));
+    }
+
+    private function invalid(string $field, string $message): never
+    {
+        throw ValidationException::withMessages(['test_results' => $field.': '.$message]);
+    }
+
+    /** @param array<string, mixed> $row */
+    private function hasFinding(array $row): bool
+    {
+        $finding = strtolower(trim((string) ($row['finding'] ?? '')));
+
+        return $finding !== '' && ! in_array($finding, ['normal', 'none', 'нет', 'норма'], true);
     }
 }

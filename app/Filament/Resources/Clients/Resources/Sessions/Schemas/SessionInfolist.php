@@ -18,7 +18,9 @@ use App\Modules\Sessions\Application\DTOs\MedicalSessionData;
 use App\Modules\Sessions\Application\GetSession;
 use App\Modules\Sessions\Application\GetSessionDynamics;
 use App\Modules\Sessions\Application\ListSessionAttachments;
+use App\Modules\Sessions\Application\MedicalClinicalCatalog;
 use App\Modules\Sessions\Application\MedicalSessionAuthorization;
+use App\Modules\Sessions\Application\MedicalSafetyMarkerReader;
 use App\Modules\Sessions\Domain\Enums\MedicalSessionAttachmentGallery;
 use App\Modules\Sessions\Domain\Enums\MedicalSessionStatus;
 use App\Modules\Sessions\Domain\Models\MedicalSession;
@@ -70,6 +72,18 @@ final class SessionInfolist
                             ->badge()
                             ->state(fn (MedicalSession $record): string => self::sessionStatus($record)),
                     ])->columns(3),
+                Section::make(__('Маркер безопасности'))
+                    ->schema([
+                        TextEntry::make('safety_marker')
+                            ->hiddenLabel()
+                            ->state(fn (MedicalSession $record, TextEntry $entry): ?string => self::safetyMarker($record, $entry))
+                            ->badge()
+                            ->color('danger')
+                            ->wrap()
+                            ->columnSpanFull(),
+                    ])
+                    ->visible(fn (MedicalSession $record, Section $section): bool => self::safetyMarker($record, $section) !== null)
+                    ->columnSpanFull(),
                 Section::make(__('Карта здоровья клиента'))
                     ->description(__('Актуальные данные медицинского профиля'))
                     ->schema(ClinicalProfileInfolist::profile())->columns(2)
@@ -146,6 +160,8 @@ final class SessionInfolist
                             ->label(__('Первопричины'))
                             ->schema([
                                 TextEntry::make('cause')->label(__('Причина'))->placeholder(__('Свободное описание')),
+                                TextEntry::make('is_primary')->label(__('Роль'))->formatStateUsing(fn (bool $state): string => $state ? __('Главная') : __('Дополнительная')),
+                                TextEntry::make('influences')->label(__('На это влияет'))->placeholder(__('Не указано'))->columnSpanFull(),
                                 TextEntry::make('free_text')->label(__('Комментарий'))->placeholder(__('Нет комментария'))->columnSpanFull(),
                             ])
                             ->columns(2)
@@ -373,8 +389,14 @@ final class SessionInfolist
             return [];
         }
 
+        $causeOptions = app(MedicalClinicalCatalog::class)->causeOptions((int) $record->organization_id);
+
         return array_map(static fn ($cause): array => [
             'cause' => $cause->causeName,
+            'is_primary' => $cause->isPrimary,
+            'influences' => $cause->influences === []
+                ? null
+                : implode(', ', array_values(array_intersect_key($causeOptions, array_flip($cause->influences)))),
             'free_text' => $cause->freeText,
         ], $data->rootCauses);
     }
@@ -420,13 +442,51 @@ final class SessionInfolist
             return null;
         }
 
-        $before = count(array_filter($data->testResults, static fn ($test): bool => $test->beforeAbnormal));
-        $after = count(array_filter($data->testResults, static fn ($test): bool => $test->afterAbnormal));
+        $before = 0;
+        $after = 0;
+        $resolved = 0;
+        $new = 0;
+        $causeIds = [];
+        foreach ($data->testResults as $test) {
+            $beforeCount = max($test->beforeViolationCount, (int) $test->beforeAbnormal);
+            $afterCount = max($test->afterViolationCount, (int) $test->afterAbnormal);
+            $before += $beforeCount;
+            $after += $afterCount;
+            $evaluation = $test->structuredPayload['evaluation'] ?? null;
+            $beforeKeys = is_array($evaluation) && is_array($evaluation['before_keys'] ?? null)
+                ? array_fill_keys(array_filter($evaluation['before_keys'], 'is_string'), true)
+                : ($beforeCount > 0 ? ['legacy:'.$test->testId => true] : []);
+            $afterKeys = is_array($evaluation) && is_array($evaluation['after_keys'] ?? null)
+                ? array_fill_keys(array_filter($evaluation['after_keys'], 'is_string'), true)
+                : ($afterCount > 0 ? ['legacy:'.$test->testId => true] : []);
+            $resolved += count(array_diff_key($beforeKeys, $afterKeys));
+            $new += count(array_diff_key($afterKeys, $beforeKeys));
+            foreach ($test->causes as $cause) {
+                $causeIds[(int) ($cause['id'] ?? 0)] = true;
+            }
+        }
 
-        return __('До: :before · После: :after', [
+        return __('До: :before · После: :after · Устранено: :resolved · Новых: :new · Причин: :causes', [
             'before' => $before,
             'after' => $after,
+            'resolved' => $resolved,
+            'new' => $new,
+            'causes' => count(array_filter(array_keys($causeIds), static fn (int $id): bool => $id > 0)),
         ]);
+    }
+
+    private static function safetyMarker(MedicalSession $record, Component $component): ?string
+    {
+        $actor = auth()->user();
+        $client = self::parentClient($record, $component);
+        if (! $actor instanceof User || ! $client instanceof Client) {
+            return null;
+        }
+        $marker = app(MedicalSafetyMarkerReader::class)->forSession($actor, $record, $client)[0] ?? null;
+
+        return is_array($marker) && is_string($marker['marker_text'] ?? null)
+            ? '⚠ '.$marker['marker_text']
+            : null;
     }
 
     /** @return list<array<string, mixed>> */

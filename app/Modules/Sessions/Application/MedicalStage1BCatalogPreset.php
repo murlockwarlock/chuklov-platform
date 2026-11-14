@@ -17,8 +17,8 @@ final class MedicalStage1BCatalogPreset
             self::definition(2, 'Visual body and posture diagnosis', MedicalTestType::T10, 'main', [
                 'rows' => [
                     ...self::rows(['Голова', 'Плечи', 'Лопатки', 'Таз', 'Колени', 'Стопы', 'Ось тела'], 'front'),
-                    ...self::rows(['Общий гравитационный вектор', 'Голова и шея', 'Грудная клетка', 'Таз', 'Колени', 'Стопы'], 'side', ['index_enabled' => false]),
-                    ...self::rows(['Голова', 'Плечи', 'Лопатки', 'Позвоночник', 'Таз', 'Колени', 'Ахилловы сухожилия', 'Стопы'], 'back'),
+                    ...self::visualSideRows(),
+                    ...self::rows(['Голова', 'Плечи', 'Лопатки', 'Позвоночник', 'Таз', 'Колени', 'Ахилловы сухожилия', 'Голень и стопа'], 'back'),
                 ],
                 'source_cause_slots' => 0,
             ]),
@@ -103,9 +103,9 @@ final class MedicalStage1BCatalogPreset
             ]),
             self::definition(19, 'Dura-mater twisting', MedicalTestType::T2, 'specialized', [
                 'subtests' => [
-                    ['key' => '19.1', 'label' => 'Метод-компьютер', 'source_cause_slots' => 10],
-                    ['key' => '19.2', 'label' => 'Скручивание грудной клетки', 'rows' => self::rows(['Вправо', 'Влево'], 'twist')],
-                    ['key' => '19.3', 'label' => 'Неврологические тесты', 'rows' => self::rows(['Тест 1', 'Тест 2', 'Тест 3', 'Тест 4'], 'neurology')],
+                    ['key' => '19.1', 'label' => 'Метод-компьютер', 'type' => MedicalTestType::T2->value, 'source_cause_slots' => 10],
+                    ['key' => '19.2', 'label' => 'Скручивание грудной клетки', 'type' => MedicalTestType::T5->value, 'rows' => self::rows(['Вправо', 'Влево'], 'twist')],
+                    ['key' => '19.3', 'label' => 'Неврологические тесты', 'type' => MedicalTestType::T5->value, 'rows' => self::rows(['Тест 1', 'Тест 2', 'Тест 3', 'Тест 4'], 'neurology')],
                 ],
                 'violation_types' => ['механическое', 'информационное'],
                 'source_cause_slots' => 0,
@@ -117,7 +117,8 @@ final class MedicalStage1BCatalogPreset
             ]),
             self::definition(21, 'TMJ method computer', MedicalTestType::T2, 'specialized', ['source_cause_slots' => 12]),
             self::definition(22, 'Skull method computer', MedicalTestType::T2, 'specialized', [
-                'rows' => self::rows(['Лобная кость', 'Теменные кости', 'Височные кости', 'Затылочная кость', 'Клиновидная кость', 'Решётчатая кость', 'Носовые кости', 'Скуловые кости'], 'bone'),
+                'rows' => array_map(static fn (array $row): array => [...$row, 'input_mode' => 'finding_list', 'index_enabled' => false], self::rows(['Лобная кость', 'Теменные кости', 'Височные кости', 'Затылочная кость', 'Клиновидная кость', 'Решётчатая кость', 'Носовые кости', 'Скуловые кости'], 'bone')),
+                'index_enabled' => false,
                 'source_cause_slots' => 4,
             ]),
             self::definition(23, 'Abdominal muscles', MedicalTestType::T1, 'specialized', [
@@ -138,7 +139,15 @@ final class MedicalStage1BCatalogPreset
                 'source_cause_slots' => 0,
             ]),
             self::definition(25, 'Biomechanical mobility tests', MedicalTestType::T9, 'main', [
-                'rows' => self::rows(['Колени', 'Тазобедренные суставы', 'Плечи', 'Локти', 'Лопатки', 'Наклон поясницы', 'Голеностоп'], 'mobility'),
+                'subtests' => [
+                    ['key' => '25.1', 'label' => 'Колени', 'type' => MedicalTestType::T9->value, 'rows' => self::sideRows('Колени', 'knees')],
+                    ['key' => '25.2', 'label' => 'Тазобедренные суставы', 'type' => MedicalTestType::T9->value, 'rows' => self::sideRows('Тазобедренные суставы', 'hips')],
+                    ['key' => '25.3', 'label' => 'Плечи', 'type' => MedicalTestType::T9->value, 'rows' => self::sideRows('Плечи', 'shoulders')],
+                    ['key' => '25.4', 'label' => 'Локти', 'type' => MedicalTestType::T9->value, 'rows' => self::sideRows('Локти', 'elbows')],
+                    ['key' => '25.5', 'label' => 'Лопатки', 'type' => MedicalTestType::T9->value, 'rows' => self::sideRows('Лопатки', 'scapulae')],
+                    ['key' => '25.6', 'label' => 'Наклон поясницы', 'type' => MedicalTestType::T9->value, 'rows' => self::rows(['Наклон поясницы'], 'lumbar_bend', ['angle_enabled' => true])],
+                    ['key' => '25.7', 'label' => 'Голеностоп', 'type' => MedicalTestType::T9->value, 'rows' => array_map(static fn (array $row): array => [...$row, 'angle_enabled' => false], self::sideRows('Голеностоп', 'ankle'))],
+                ],
                 'rules' => ['angle_min' => 0, 'angle_max' => 180, 'ankle_sides' => true, 'forward_bend_without_side' => true],
                 'source_cause_slots' => 0,
             ]),
@@ -170,7 +179,7 @@ final class MedicalStage1BCatalogPreset
                     ['key' => '31.2', 'label' => 'Чакры', 'type' => MedicalTestType::T12->value, 'rows' => self::rows(array_map(static fn (int $n): string => 'Чакра '.$n, range(1, 7)), 'chakra')],
                     ['key' => '31.3', 'label' => 'Тор-поле', 'type' => MedicalTestType::T12->value, 'choices' => ['R', 'L']],
                 ],
-                'rules' => ['energy_threshold' => null, 'normal_tor_direction' => null, 'chakra_violation' => false],
+                'rules' => ['energy_threshold' => null, 'normal_tor_direction' => null, 'chakra_violation' => true],
                 'source_cause_slots' => 5,
             ]),
         ];
@@ -227,6 +236,15 @@ final class MedicalStage1BCatalogPreset
             ['key' => 'lying_r', 'label' => 'Лёжа, правая сторона', 'side' => 'R', 'dedupe_key' => 'shoulder:R'],
             ['key' => 'lying_l', 'label' => 'Лёжа, левая сторона', 'side' => 'L', 'dedupe_key' => 'shoulder:L'],
         ];
+    }
+
+    /** @return list<array<string, mixed>> */
+    private static function visualSideRows(): array
+    {
+        $rows = self::rows(['Общий гравитационный вектор', 'Голова и шея', 'Грудная клетка', 'Таз', 'Колени', 'Стопы'], 'side');
+        $rows[0]['index_enabled'] = false;
+
+        return $rows;
     }
 
     /** @return list<array<string, mixed>> */

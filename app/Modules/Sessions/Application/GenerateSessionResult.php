@@ -5,7 +5,13 @@ namespace App\Modules\Sessions\Application;
 use App\Models\User;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\MedicalProfiles\Application\MedicalPainInput;
+use App\Modules\MedicalProfiles\Domain\Contracts\MedicalEncryptorInterface;
+use App\Modules\Security\Application\RecordAuditEvent;
+use App\Modules\Sessions\Application\DTOs\MedicalSessionData;
+use App\Modules\Sessions\Application\DTOs\MedicalSessionEffectivenessData;
+use App\Modules\Sessions\Application\DTOs\MedicalSessionResultData;
 use App\Modules\Sessions\Domain\Models\MedicalSession;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 final readonly class GenerateSessionResult
@@ -14,6 +20,9 @@ final readonly class GenerateSessionResult
         private MedicalSessionAuthorization $authorization,
         private GetSession $getSession,
         private MedicalClinicalCatalog $clinicalCatalog,
+        private CalculateSessionEffectiveness $effectiveness,
+        private MedicalEncryptorInterface $encryptor,
+        private RecordAuditEvent $audit,
     ) {}
 
     public function handle(User $actor, MedicalSession $session, Client $client): string
@@ -24,19 +33,81 @@ final readonly class GenerateSessionResult
             throw ValidationException::withMessages(['session' => 'Медицинский сеанс не найден.']);
         }
 
-        return $this->summary(
-            pains: array_map(static fn ($pain): array => [
-                'name' => $pain->name,
-                'before_score' => $pain->beforeScore,
-                'after_score' => $pain->afterScore,
-            ], $data->pains),
-            subjectiveFeelings: $data->subjectiveFeelings,
-            posture: $data->visualPostureDiagnostics,
-            testCounts: [
-                'before' => count(array_filter($data->testResults, static fn ($test): bool => $test->beforeAbnormal)),
-                'after' => count(array_filter($data->testResults, static fn ($test): bool => $test->afterAbnormal)),
-            ],
-        );
+        return $this->assemble($data)->summary;
+    }
+
+    public function collect(
+        User $actor,
+        MedicalSession $session,
+        Client $client,
+        bool $confirmOverwrite = false,
+    ): MedicalSessionResultData {
+        $organization = $this->authorization->authorizeManageSession($actor, $session, $client);
+        $orgId = (int) $organization->getKey();
+        $sessionId = (int) $session->getKey();
+
+        $result = DB::transaction(function () use ($actor, $client, $organization, $confirmOverwrite, $orgId, $sessionId): MedicalSessionResultData {
+            /** @var MedicalSession|null $persisted */
+            $persisted = MedicalSession::query()
+                ->where('organization_id', $orgId)
+                ->where('client_id', $client->getKey())
+                ->whereKey($sessionId)
+                ->lockForUpdate()
+                ->first();
+
+            if ($persisted === null) {
+                throw ValidationException::withMessages(['session' => 'Медицинский сеанс не найден.']);
+            }
+
+            $this->getSession->invalidate($actor->getKey(), $orgId, $sessionId);
+            $data = $this->getSession->handle($actor, $persisted, $client);
+            if ($data === null) {
+                throw ValidationException::withMessages(['session' => 'Медицинский сеанс не найден.']);
+            }
+
+            $assembled = $this->assemble($data);
+            $keyVersion = max(1, (int) $persisted->getAttribute('encryption_key_version'));
+            $existingResult = $this->decryptString(
+                $orgId,
+                $persisted->getRawOriginal('result'),
+                $keyVersion,
+            );
+
+            if (filled($existingResult)
+                && trim((string) $existingResult) !== $assembled->summary
+                && ! $confirmOverwrite) {
+                throw ValidationException::withMessages([
+                    'result' => 'Результат изменён вручную. Подтвердите замену новым собранным результатом.',
+                ]);
+            }
+
+            $persisted->forceFill([
+                'result' => $this->encryptor->encryptField($orgId, $assembled->summary, $keyVersion),
+            ]);
+            if ($persisted->status?->value === 'completed') {
+                $persisted->forceFill(['edited_at' => now()]);
+            }
+            $persisted->save();
+
+            $this->audit->handle(
+                organization: $organization,
+                actor: $actor,
+                action: 'medical.session.updated',
+                targetType: MedicalSession::class,
+                targetId: (string) $persisted->getKey(),
+                metadata: [
+                    'source' => 'crm',
+                    'key_version' => $keyVersion,
+                    'updated_fields' => 'result',
+                ],
+            );
+
+            return $assembled;
+        });
+
+        $this->getSession->invalidate($actor->getKey(), $orgId, $sessionId);
+
+        return $result;
     }
 
     /** @param array<string, mixed> $draft */
@@ -53,6 +124,29 @@ final readonly class GenerateSessionResult
         $organization = $this->authorization->authorizeManage($actor, $client);
 
         return $this->summaryFromDraft($draft, (int) $organization->getKey());
+    }
+
+    private function assemble(MedicalSessionData $data): MedicalSessionResultData
+    {
+        $effectiveness = $this->effectiveness->handle($data);
+
+        return new MedicalSessionResultData(
+            summary: $this->summary(
+                pains: array_map(static fn ($pain): array => [
+                    'name' => $pain->name,
+                    'before_score' => $pain->beforeScore,
+                    'after_score' => $pain->afterScore,
+                ], $data->pains),
+                subjectiveFeelings: $data->subjectiveFeelings,
+                posture: $data->visualPostureDiagnostics,
+                testCounts: [
+                    'before' => $effectiveness->violationsBefore,
+                    'after' => $effectiveness->violationsAfter,
+                ],
+                effectiveness: $effectiveness,
+            ),
+            effectiveness: $effectiveness,
+        );
     }
 
     /** @param array<string, mixed> $draft */
@@ -78,13 +172,21 @@ final readonly class GenerateSessionResult
             subjectiveFeelings: self::optionalString($draft['subjective_feelings'] ?? null),
             posture: self::optionalString($draft['visual_posture_diagnostics'] ?? null),
             testCounts: $rawTests === [] ? null : $this->clinicalCatalog->abnormalCounts($organizationId, $rawTests),
+            afterVitals: self::optionalString($draft['after_vitals'] ?? $draft['after_vitals_text'] ?? null),
         );
     }
 
     /** @param list<array<string, mixed>> $pains
      * @param  array{before: int, after: int}|null  $testCounts
      */
-    private function summary(array $pains, ?string $subjectiveFeelings, ?string $posture, ?array $testCounts): string
+    private function summary(
+        array $pains,
+        ?string $subjectiveFeelings,
+        ?string $posture,
+        ?array $testCounts,
+        ?MedicalSessionEffectivenessData $effectiveness = null,
+        ?string $afterVitals = null,
+    ): string
     {
         $lines = [];
         foreach ($pains as $pain) {
@@ -102,9 +204,35 @@ final readonly class GenerateSessionResult
         }
         if ($testCounts !== null) {
             $summary[] = 'Нарушения по тестам: было '.$testCounts['before'].', стало '.$testCounts['after'].'.';
+            if ($effectiveness !== null) {
+                $summary[] = 'По тестам: устранено '.$effectiveness->resolvedTests
+                    .', тестов стало 0: '.$effectiveness->testsBecameZero
+                    .', новых нарушений: '.$effectiveness->newViolations.'.';
+            }
+        }
+        if (filled($afterVitals)) {
+            $summary[] = 'Витальные показатели после сеанса: '.$afterVitals;
+        }
+
+        $summary[] = 'Подсказки для описания результата:';
+        foreach (MedicalSessionResultData::SOURCE_HINTS as $hint) {
+            $summary[] = '- '.$hint;
         }
 
         return implode("\n", $summary);
+    }
+
+    private function decryptString(int $organizationId, mixed $ciphertext, int $keyVersion): ?string
+    {
+        if ($ciphertext === null) {
+            return null;
+        }
+
+        if (! is_string($ciphertext)) {
+            throw ValidationException::withMessages(['result' => 'Сохранённый результат имеет неверный формат.']);
+        }
+
+        return $this->encryptor->decryptField($organizationId, $ciphertext, $keyVersion);
     }
 
     private static function score(mixed $value): ?int

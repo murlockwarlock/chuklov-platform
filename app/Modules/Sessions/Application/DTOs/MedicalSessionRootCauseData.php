@@ -8,6 +8,9 @@ final readonly class MedicalSessionRootCauseData
         public ?int $causeId,
         public ?string $causeName,
         public ?string $freeText,
+        public bool $isPrimary = false,
+        /** @var list<int> */
+        public array $influences = [],
     ) {}
 
     /** @return array<string, mixed> */
@@ -17,6 +20,8 @@ final readonly class MedicalSessionRootCauseData
             'cause_id' => $this->causeId,
             'cause_name' => $this->causeName,
             'free_text' => $this->freeText,
+            'is_primary' => $this->isPrimary,
+            'influences' => $this->influences,
         ];
     }
 }

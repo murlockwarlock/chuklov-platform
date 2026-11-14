@@ -9,6 +9,7 @@ use App\Modules\MedicalProfiles\Application\MedicalFrequencyPeriodCatalog;
 use App\Modules\MedicalProfiles\Application\MedicalProblemTagCatalog;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Scheduling\Domain\Models\Booking;
+use App\Modules\Sessions\Application\AggregateMedicalSessionCauses;
 use App\Modules\Sessions\Application\MedicalClinicalCatalog;
 use App\Modules\Sessions\Application\MedicalSessionFieldLimits;
 use App\Modules\Specialists\Domain\Models\Specialist;
@@ -244,6 +245,7 @@ final class SessionForm
                                 ->visible(fn (): bool => app(MedicalClinicalCatalog::class)->testOptions(app(OrganizationContext::class)->id()) === [] && MedicalClinicalCatalogConfiguration::canAccess()),
                         ])->columnSpanFull(),
                         ClinicalTestProtocol::counters(),
+                        ClinicalTestProtocol::addTest(),
                         ClinicalTestProtocol::field(),
                         Hidden::make('causes_manual_override')->default(false)->dehydrated(),
                         Placeholder::make('derived_causes')
@@ -293,11 +295,22 @@ final class SessionForm
                                     ->searchable()
                                     ->nullable()
                                     ->live(),
+                                Toggle::make('is_primary')
+                                    ->label(__('Главная причина'))
+                                    ->default(false)
+                                    ->live(),
+                                Select::make('influences')
+                                    ->label(__('На это влияет'))
+                                    ->options(fn (Get $get): array => self::rootCauseOptions($get))
+                                    ->multiple()
+                                    ->searchable()
+                                    ->nullable()
+                                    ->live(),
                                 Textarea::make('free_text')->label(__('Дополнительное описание'))->rows(2)->maxLength(MedicalSessionFieldLimits::MaxTextLength)->live(onBlur: true),
                             ])
                             ->columns(2)
                             ->defaultItems(0)
-                            ->maxItems(2)
+                            ->maxItems(20)
                             ->reorderable()
                             ->addActionLabel(__('Добавить первопричину'))
                             ->columnSpanFull(),
@@ -367,14 +380,10 @@ final class SessionForm
                             ->rows(4)
                             ->placeholder(__('Итог, который специалист вводит вручную'))
                             ->live(onBlur: true)
-                            ->hintAction(Action::make('fillResult')
-                                ->label(__('Заполнить с ИИ'))
-                                ->icon('heroicon-o-sparkles')
-                                ->disabled()
-                                ->tooltip(__('ИИ подключается на этапе 2.'))),
+                            ->helperText(__('После автосохранения сеанса используйте кнопку «Собрать результат» на странице редактирования.')),
                         Placeholder::make('result_ai_version')
-                            ->label(__('Версия ИИ'))
-                            ->content(__('Не подключена. ИИ будет доступен на этапе 2.'))
+                            ->label(__('Сбор результата'))
+                            ->content(__('Результат формируется из сохранённых данных сеанса без ИИ.'))
                             ->columnSpanFull(),
                     ])->collapsible()->columnSpanFull(),
                 Section::make(__('8. Заметки терапевта'))
@@ -383,18 +392,11 @@ final class SessionForm
                     ])->collapsible()->columnSpanFull(),
                 Section::make(__('9. Эффективность проведённого сеанса'))
                     ->schema([
-                        Placeholder::make('effectiveness_stage1b')->hiddenLabel()->content(__('Расчёты эффективности подключаются в этапе 1B. Данные для них сохраняются в жалобах и результатах выше.')),
+                        Placeholder::make('effectiveness_stage1b')->hiddenLabel()->content(__('Показатели эффективности доступны после сохранения сеанса на странице редактирования.')),
                     ])->collapsible()->columnSpanFull(),
                 Section::make(__('10. Рекомендации эксперта'))
                     ->schema([
-                        Placeholder::make('recommendations_stage1b')->label(__('Версия ИИ'))->content(__('Рекомендации и отправка клиенту подключаются в этапе 1B; ИИ — на этапе 2.')),
-                        Actions::make([
-                            Action::make('fillRecommendations')
-                                ->label(__('Заполнить с ИИ'))
-                                ->icon('heroicon-o-sparkles')
-                                ->disabled()
-                                ->tooltip(__('ИИ подключается на этапе 2.')),
-                        ]),
+                        Placeholder::make('recommendations_stage1b')->hiddenLabel()->content(__('После сохранения сеанса специалист может подготовить рекомендацию и отдельно одобрить её отправку клиенту.')),
                     ])->collapsible()->columnSpanFull(),
                 Section::make(__('Фото до / после'))
                     ->schema([
@@ -531,20 +533,10 @@ final class SessionForm
     private static function derivedCauseIds(Get $get): array
     {
         $testResults = $get('test_results');
-        $ids = [];
-        foreach (is_array($testResults) ? $testResults : [] as $test) {
-            if (! is_array($test) || ! is_array($test['cause_ids'] ?? null)) {
-                continue;
-            }
-            foreach ($test['cause_ids'] as $id) {
-                $id = (int) $id;
-                if ($id > 0 && ! in_array($id, $ids, true)) {
-                    $ids[] = $id;
-                }
-            }
-        }
-
-        return $ids;
+        return array_column(
+            app(AggregateMedicalSessionCauses::class)->handle(is_array($testResults) ? $testResults : []),
+            'cause_id',
+        );
     }
 
     /** @param list<int> $causeIds */
@@ -589,15 +581,10 @@ final class SessionForm
     /** @return array<int, string> */
     private static function rootCauseOptions(Get $get): array
     {
-        $causeOptions = app(MedicalClinicalCatalog::class)->causeOptions(app(OrganizationContext::class)->id());
         $testResults = $get('../../test_results');
-        $causeIds = collect(is_array($testResults) ? $testResults : [])
-            ->flatMap(static fn (mixed $test): array => is_array($test) && is_array($test['cause_ids'] ?? null)
-                ? array_map(static fn (mixed $id): int => (int) $id, $test['cause_ids'])
-                : [])
-            ->filter(static fn (int $id): bool => $id > 0)
-            ->unique()
-            ->all();
+        $summary = app(AggregateMedicalSessionCauses::class)->handle(is_array($testResults) ? $testResults : []);
+        $causeIds = array_column($summary, 'cause_id');
+        $summaryByCause = collect($summary)->keyBy('cause_id');
         $selectedCauseIds = $get('../../cause_ids');
         if (is_array($selectedCauseIds)) {
             $causeIds = array_values(array_unique([...$causeIds, ...array_map(static fn (mixed $id): int => (int) $id, $selectedCauseIds)]));
@@ -607,7 +594,23 @@ final class SessionForm
             $causeIds[] = $currentCauseId;
         }
 
-        return array_intersect_key($causeOptions, array_flip($causeIds));
+        $causeOptions = app(MedicalClinicalCatalog::class)->causeOptionsForSelection(
+            app(OrganizationContext::class)->id(),
+            array_values(array_unique($causeIds)),
+        );
+        $options = array_intersect_key($causeOptions, array_flip(array_values(array_unique($causeIds))));
+        foreach ($options as $causeId => $label) {
+            $summaryItem = $summaryByCause->get((int) $causeId);
+            if (is_array($summaryItem)) {
+                $label .= __(' · в тестах: :count', ['count' => (int) ($summaryItem['test_count'] ?? 0)]);
+                if (($summaryItem['is_primary'] ?? false) === true) {
+                    $label .= __(' · главная в тесте');
+                }
+                $options[$causeId] = $label;
+            }
+        }
+
+        return $options;
     }
 
     private static function parentClient(Select $component): Client

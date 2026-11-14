@@ -23,7 +23,9 @@ final readonly class MedicalClinicalEvaluation
         public array $warnings = [],
         public bool $failClosed = false,
     ) {
-        $this->resolvedCount = max(0, $this->beforeCount - $this->afterCount);
-        $this->newCount = max(0, $this->afterCount - $this->beforeCount);
+        $before = array_fill_keys($this->beforeViolationKeys, true);
+        $after = array_fill_keys($this->afterViolationKeys, true);
+        $this->resolvedCount = count(array_diff_key($before, $after));
+        $this->newCount = count(array_diff_key($after, $before));
     }
 }

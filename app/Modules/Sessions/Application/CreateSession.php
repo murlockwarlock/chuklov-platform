@@ -15,6 +15,7 @@ use App\Modules\Sessions\Application\DTOs\MedicalSessionData;
 use App\Modules\Sessions\Application\DTOs\UpdateSessionCommand;
 use App\Modules\Sessions\Domain\Enums\MedicalSessionStatus;
 use App\Modules\Sessions\Domain\Models\MedicalSession;
+use App\Modules\Sessions\Domain\Models\MedicalTestDefinition;
 use App\Modules\Sessions\Domain\ValueObjects\EncryptedSessionPayload;
 use App\Modules\Specialists\Domain\Models\Specialist;
 use Illuminate\Database\QueryException;
@@ -34,6 +35,7 @@ final readonly class CreateSession
         private MedicalSessionTestWriter $testWriter,
         private MedicalSessionTestReader $testReader,
         private MedicalSessionCauseWriter $causeWriter,
+        private MedicalTest18SafetyMarker $test18SafetyMarker,
         private MedicalSessionProtocolStepWriter $protocolStepWriter,
         private MedicalSessionProtocolStepReader $protocolStepReader,
         private UpdateSession $updateSession,
@@ -150,6 +152,9 @@ final readonly class CreateSession
                     $keyVersion,
                     $command->causesManualOverride ? ($command->causeIds ?? []) : [],
                 );
+                if ($command->testResults !== null) {
+                    $this->syncTest18SafetyMarker($actor, $session, $command->testResults);
+                }
             }
             if ($command->causeIds !== null || $command->causesManualOverride) {
                 $this->causeWriter->replace($session, $command->causeIds ?? [], $command->causesManualOverride);
@@ -270,6 +275,30 @@ final readonly class CreateSession
         }
 
         return app(GetMedicalProfile::class)->handle($actor, $client)?->complaints;
+    }
+
+    /** @param array<int, mixed> $testResults */
+    private function syncTest18SafetyMarker(User $actor, MedicalSession $session, array $testResults): void
+    {
+        $definitionId = MedicalTestDefinition::query()
+            ->where('organization_id', $session->organization_id)
+            ->where('key', 'medical_test_018')
+            ->value('id');
+        if ($definitionId === null) {
+            return;
+        }
+
+        foreach ($testResults as $result) {
+            if (! is_array($result) || (int) ($result['test_id'] ?? 0) !== (int) $definitionId) {
+                continue;
+            }
+            $structured = $result['structured'] ?? $result['structured_payload'] ?? null;
+            if (is_array($structured)) {
+                $this->test18SafetyMarker->handleFromResult($actor, $session, $structured);
+            }
+
+            return;
+        }
     }
 
     private function resolveBooking(int $orgId, CreateSessionCommand $command, Client $client, Specialist $specialist): ?Booking

@@ -24,10 +24,14 @@ final readonly class MedicalSessionCauseWriter
             $causes = MedicalCauseDefinition::query()
                 ->where('organization_id', $organizationId)
                 ->whereIn('id', $normalizedIds)
-                ->get(['id', 'is_active']);
+                ->get(['id', 'is_active', 'moderation_status', 'merged_into_id']);
 
             if ($causes->count() !== count($normalizedIds) || $causes->contains(
-                static fn (MedicalCauseDefinition $cause): bool => ! $cause->is_active
+                static fn (MedicalCauseDefinition $cause): bool => (
+                    ! $cause->is_active
+                    || $cause->moderation_status !== MedicalCauseDefinition::MODERATION_ACTIVE
+                    || $cause->merged_into_id !== null
+                )
                     && ! in_array((int) $cause->getKey(), $existingCauseIds, true),
             )) {
                 throw ValidationException::withMessages(['cause_ids' => 'Одна из причин недоступна.']);

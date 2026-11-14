@@ -20,19 +20,24 @@ final readonly class MedicalSessionTestReader
         return array_values($session->testResults()
             ->with(['definition', 'beforeValue', 'afterValue', 'causes'])
             ->get()
-            ->map(static fn (MedicalSessionTestResult $result): MedicalSessionTestData => new MedicalSessionTestData(
+            ->map(fn (MedicalSessionTestResult $result): MedicalSessionTestData => new MedicalSessionTestData(
                 testId: (int) $result->medical_test_definition_id,
                 testName: self::testName($result),
                 beforeValueId: $result->before_value_id === null ? null : (int) $result->before_value_id,
                 beforeLabel: $result->beforeValue?->label,
-                beforeAbnormal: (bool) ($result->beforeValue && $result->beforeValue->is_abnormal),
+                beforeAbnormal: $this->beforeAbnormal($result),
                 afterValueId: $result->after_value_id === null ? null : (int) $result->after_value_id,
                 afterLabel: $result->afterValue?->label,
-                afterAbnormal: (bool) ($result->afterValue && $result->afterValue->is_abnormal),
+                afterAbnormal: $this->afterAbnormal($result),
                 causes: array_values($result->causes->map(static fn ($cause): array => [
                     'id' => (int) $cause->getKey(),
-                    'name' => (string) $cause->name,
+                    'name' => MedicalClinicalCatalog::causeDisplayName((string) $cause->name),
                 ])->values()->all()),
+                structuredPayload: $this->structuredPayload($session, $result),
+                beforeViolationCount: (int) ($result->before_violation_count ?? 0),
+                afterViolationCount: (int) ($result->after_violation_count ?? 0),
+                reviewAgain: (bool) ($result->review_again ?? false),
+                warnings: $this->structuredWarnings($session, $result),
             ))->all());
     }
 
@@ -44,10 +49,14 @@ final readonly class MedicalSessionTestReader
             ->get()
             ->map(fn (MedicalSessionRootCause $rootCause): MedicalSessionRootCauseData => new MedicalSessionRootCauseData(
                 causeId: $rootCause->medical_cause_definition_id === null ? null : (int) $rootCause->medical_cause_definition_id,
-                causeName: $rootCause->cause?->name,
+                causeName: $rootCause->cause === null
+                    ? null
+                    : MedicalClinicalCatalog::causeDisplayName((string) $rootCause->cause->name),
                 freeText: $rootCause->free_text === null
                     ? null
                     : $this->encryptor->decryptField((int) $session->organization_id, $rootCause->free_text, (int) $rootCause->encryption_key_version),
+                isPrimary: (bool) $rootCause->is_primary,
+                influences: $this->influences($session, $rootCause),
             ))->all());
     }
 
@@ -61,7 +70,7 @@ final readonly class MedicalSessionTestReader
                 ->get(['medical_cause_definitions.id', 'medical_cause_definitions.name'])
                 ->map(static fn ($cause): array => [
                     'id' => (int) $cause->getKey(),
-                    'name' => (string) $cause->name,
+                    'name' => MedicalClinicalCatalog::causeDisplayName((string) $cause->name),
                 ])
                 ->values()->all());
         }
@@ -78,5 +87,64 @@ final readonly class MedicalSessionTestReader
         $definition = $result->definition;
 
         return $definition instanceof MedicalTestDefinition ? (string) $definition->name : __('Удалённый тест');
+    }
+
+    private function beforeAbnormal(MedicalSessionTestResult $result): bool
+    {
+        return (int) ($result->before_violation_count ?? 0) > 0
+            || (bool) ($result->beforeValue && $result->beforeValue->is_abnormal);
+    }
+
+    private function afterAbnormal(MedicalSessionTestResult $result): bool
+    {
+        return (int) ($result->after_violation_count ?? 0) > 0
+            || (bool) ($result->afterValue && $result->afterValue->is_abnormal);
+    }
+
+    /** @return array<string, mixed>|null */
+    private function structuredPayload(MedicalSession $session, MedicalSessionTestResult $result): ?array
+    {
+        if ($result->structured_payload === null) {
+            return null;
+        }
+
+        $decoded = json_decode(
+            (string) $this->encryptor->decryptField(
+                (int) $session->organization_id,
+                $result->structured_payload,
+                (int) ($result->structured_payload_key_version ?? $session->encryption_key_version),
+            ),
+            true,
+            12,
+        );
+
+        return is_array($decoded) ? $decoded : null;
+    }
+
+    /** @return list<string> */
+    private function structuredWarnings(MedicalSession $session, MedicalSessionTestResult $result): array
+    {
+        $payload = $this->structuredPayload($session, $result);
+        $warnings = $payload['evaluation']['warnings'] ?? [];
+
+        return is_array($warnings) ? array_values(array_filter($warnings, 'is_string')) : [];
+    }
+
+    /** @return list<int> */
+    private function influences(MedicalSession $session, MedicalSessionRootCause $rootCause): array
+    {
+        if ($rootCause->influences === null) {
+            return [];
+        }
+        $decoded = json_decode((string) $this->encryptor->decryptField(
+            (int) $session->organization_id,
+            $rootCause->influences,
+            (int) $rootCause->encryption_key_version,
+        ), true);
+        if (! is_array($decoded) || ! is_array($decoded['cause_ids'] ?? null)) {
+            return [];
+        }
+
+        return array_values(array_unique(array_filter(array_map('intval', $decoded['cause_ids']), static fn (int $id): bool => $id > 0)));
     }
 }
