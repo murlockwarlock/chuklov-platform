@@ -219,6 +219,18 @@ const timezoneEditorOpen = ref(false);
 const bookingStep = ref<BookingStep>(initialSelectedStart !== null && requestedBookingSelection.step === 'confirmation'
     ? 'confirmation'
     : 'time');
+const familyBookingState = computed(() => ({
+    serviceId: props.query.serviceId,
+    specialistId: props.query.specialistId,
+    format: props.query.format,
+    dateFrom: props.query.dateFrom,
+    dateTo: props.query.dateTo,
+    displayTimezone: selectedClientTimezone.value,
+    workingLocationId: selectedWorkingLocationId.value,
+    locationArea: selectedLocationArea.value,
+    selectedStartAt: selectedStart.value,
+    bookingStep: bookingStep.value === 'confirmation' ? 'confirmation' as const : 'time' as const,
+}));
 const cityLookupLoading = ref(false);
 const confirmationForm = ref<HTMLFormElement | null>(null);
 const bookingForm = useForm<{
@@ -815,10 +827,7 @@ function submitBooking(): void {
           :patients="props.patients.items"
           :has-more="props.patients.hasMore"
           :create-url="props.urls.createPatient"
-          :family-url="props.urls.family"
-          :service-id="props.query.serviceId"
-          :specialist-id="props.query.specialistId"
-          :format="props.query.format"
+          :booking-state="familyBookingState"
         />
 
         <nav

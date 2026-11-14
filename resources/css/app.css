@@ -3683,6 +3683,9 @@ select.portal-input[aria-invalid='true'] {
     min-height: 2.75rem;
     border-radius: 0.75rem;
     padding: 0.65rem 1rem;
+    position: static;
+    z-index: auto;
+    margin-bottom: 0;
 }
 
 .portal-booking-patient-selector__actions {
@@ -3697,12 +3700,6 @@ select.portal-input[aria-invalid='true'] {
     align-self: flex-start;
     padding: 0.55rem 0.9rem;
     font-size: 0.84rem;
-}
-
-.portal-booking-flow__cta {
-    position: static;
-    z-index: auto;
-    margin-bottom: 0;
 }
 
 .portal-booking-session-selection {

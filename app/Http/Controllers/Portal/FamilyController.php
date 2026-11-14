@@ -48,10 +48,21 @@ final class FamilyController extends Controller
         $data = $request->validated();
         $patient = $create->handle($context->client(), $data, $data['creation_key']);
         if (($data['return_to'] ?? null) === 'booking') {
-            return to_route('portal.bookings.create', [
+            $bookingQuery = [
                 'patient_profile_id' => $patient->getKey(), 'service_id' => $data['service_id'] ?? null,
                 'specialist_id' => $data['specialist_id'] ?? null, 'format' => $data['format'] ?? 'office',
-            ])->with('success', $messages->message('family_created'));
+                'date_from' => $data['date_from'] ?? null, 'date_to' => $data['date_to'] ?? null,
+                'display_timezone' => $data['display_timezone'] ?? null,
+                'working_location_id' => $data['working_location_id'] ?? null,
+                'location_area' => $data['location_area'] ?? null,
+                'selected_start_at' => $data['selected_start_at'] ?? null,
+                'booking_step' => $data['booking_step'] ?? null,
+            ];
+
+            return to_route('portal.bookings.create', array_filter(
+                $bookingQuery,
+                static fn (mixed $value): bool => $value !== null && $value !== '',
+            ))->with('success', $messages->message('family_created'));
         }
 
         return to_route('portal.family')->with('success', $messages->message('family_created'));

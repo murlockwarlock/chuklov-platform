@@ -7,18 +7,41 @@ import PortalIcon from './PortalIcon.vue';
 import { usePortalLocale } from '../../composables/usePortalLocale';
 import { emptyPatientIdentity, type PatientSummary } from '../../types/patients';
 
-const props = defineProps<{ modelValue: number | null; patients: PatientSummary[]; hasMore: boolean; createUrl: string; familyUrl: string; serviceId: number | null; specialistId: number | null; format: string }>();
+type BookingState = {
+    serviceId: number | null;
+    specialistId: number | null;
+    format: string;
+    dateFrom: string;
+    dateTo: string;
+    displayTimezone: string;
+    workingLocationId: number | null;
+    locationArea: string | null;
+    selectedStartAt: string | null;
+    bookingStep: 'time' | 'confirmation';
+};
+
+const props = defineProps<{ modelValue: number | null; patients: PatientSummary[]; hasMore: boolean; createUrl: string; bookingState: BookingState }>();
 const emit = defineEmits<{ 'update:modelValue': [value: number | null] }>();
 const { t } = usePortalLocale();
 const dialog = ref<HTMLDialogElement | null>(null);
 const form = useForm({ ...emptyPatientIdentity(), creation_key: crypto.randomUUID(), return_to: 'booking',
-    service_id: props.serviceId, specialist_id: props.specialistId, format: props.format });
+    service_id: props.bookingState.serviceId, specialist_id: props.bookingState.specialistId, format: props.bookingState.format,
+    date_from: props.bookingState.dateFrom, date_to: props.bookingState.dateTo, display_timezone: props.bookingState.displayTimezone,
+    working_location_id: props.bookingState.workingLocationId, location_area: props.bookingState.locationArea,
+    selected_start_at: props.bookingState.selectedStartAt, booking_step: props.bookingState.bookingStep });
 
-watch(() => [props.serviceId, props.specialistId, props.format] as const, ([serviceId, specialistId, format]) => {
-    form.service_id = serviceId;
-    form.specialist_id = specialistId;
-    form.format = format;
-});
+watch(() => props.bookingState, (bookingState) => {
+    form.service_id = bookingState.serviceId;
+    form.specialist_id = bookingState.specialistId;
+    form.format = bookingState.format;
+    form.date_from = bookingState.dateFrom;
+    form.date_to = bookingState.dateTo;
+    form.display_timezone = bookingState.displayTimezone;
+    form.working_location_id = bookingState.workingLocationId;
+    form.location_area = bookingState.locationArea;
+    form.selected_start_at = bookingState.selectedStartAt;
+    form.booking_step = bookingState.bookingStep;
+}, { deep: true });
 </script>
 
 <template>
@@ -60,6 +83,7 @@ watch(() => [props.serviceId, props.specialistId, props.format] as const, ([serv
     >
       <form
         class="portal-stack"
+        novalidate
         @submit.prevent="form.post(props.createUrl)"
       >
         <h2 class="portal-heading portal-heading--section">
