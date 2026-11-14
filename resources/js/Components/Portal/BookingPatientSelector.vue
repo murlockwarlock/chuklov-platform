@@ -84,7 +84,7 @@ watch(() => props.bookingState, (bookingState) => {
       <form
         class="portal-stack"
         novalidate
-        @submit.prevent="form.post(props.createUrl)"
+        @submit.prevent="form.post(props.createUrl, { onSuccess: () => dialog?.close() })"
       >
         <h2 class="portal-heading portal-heading--section">
           {{ t('family.add') }}
