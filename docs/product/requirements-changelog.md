@@ -1,5 +1,12 @@
 # Requirements Changelog
 
+## 2026-11-14 — Medical Stage 1 canonical requirements
+
+- Added the canonical, source-traceable ledger in `docs/product/requirements/2026-11-14-medical-stage1.md` and `docs/product/requirements/2026-11-14-medical-test-catalog.md`.
+- `ТЗ для Ивана: этап 1 — диагностика, карта клиента и карта сеанса` dated 2026-11-14 replaces the medical TZ dated 2026-10-23. `Каталог тестов: как вносится результат` is the detailed authority for the 12 form types, 31 tests, and catalog questions; `Этапы реализации CRM Чуклова` defines the Stage 1–4 boundaries and later backlog.
+- Existing compliant implementation is to be reused after verification; old medical data is retained. No functionality is marked implemented by the presence of this documentation.
+- New medical requirements are tracked by stable REQ IDs. Stage 1 is split into delivery packages 1A, 1B, and 1C; Stage 2–4 requirements are preserved as backlog and are not current implementation scope.
+
 ## 2026-10-09 — Source-backed family/group visits
 
 - Added the source-backed group-visit behavior without introducing family accounts: one Booking carries `Количество человек` (1–20), staff may extend only that Booking's calendar occupancy through `blocking_ends_at`, existing availability/conflict rules remain authoritative, and the one existing Finance lifecycle is unchanged. Detailed family/dependent access, medical-profile sharing, guardianship, and invitations remain owner/legal decisions.

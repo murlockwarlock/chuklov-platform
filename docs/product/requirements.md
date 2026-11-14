@@ -4,6 +4,10 @@ Status values: `CANDIDATE` (implemented but pending required review and acceptan
 
 Private immutable evidence, when available locally, is under the ignored `source-requirements/` directory. Technical suggestions in client/history sources are non-binding unless normalized here as business behavior.
 
+## Current medical Stage 1 requirements
+
+The detailed canonical requirements for the 2026-11-14 medical scope are maintained under [`docs/product/requirements/2026-11-14-medical-stage1.md`](requirements/2026-11-14-medical-stage1.md), with the complete test-engine ledger in [`docs/product/requirements/2026-11-14-medical-test-catalog.md`](requirements/2026-11-14-medical-test-catalog.md). These files are the implementation entrypoint for the superseding medical TZ and catalog; they preserve the existing high-level `REQ-MEDICAL-001` boundary without treating documentation as implementation evidence.
+
 | ID | Status | Phase | Source | Description | Acceptance criteria | Modules |
 |---|---|---:|---|---|---|---|
 | REQ-FOUNDATION-001 | IMPLEMENTED | M0 | architecture | Use a modular monolith with Application/Domain/Infrastructure boundaries. | Entry points remain thin; business behavior is in Application/Domain; no microservice runtime. | All |
