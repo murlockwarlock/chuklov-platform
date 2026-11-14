@@ -2,11 +2,11 @@
 
 Use the existing staging acceptance path before proposing new infrastructure or
 asking the owner for credentials. The Mac is an 8 GB thin control plane for
-editing, Git, SSH, `git diff --check`, and lightweight syntax checks that do not
-run tests. Do not run application tests, Docker, PostgreSQL, Redis, full builds,
-heavy linters, browser suites, or a staging database copy on the Mac. Staging is
-the primary and, before production exists, the only product acceptance
-environment.
+editing, Git, SSH, `git diff --check`, lightweight syntax checks, and focused
+browser control against staging. Do not run application/server tests, Docker,
+PostgreSQL, Redis, full builds, heavy linters, heavy or parallel browser suites,
+or a staging database copy on the Mac. Staging is the primary and, before
+production exists, the only product acceptance environment.
 
 ## Connection and source identity
 
@@ -31,6 +31,19 @@ staging deployment flow only when a runtime update is needed and authorized.
 - Significant operations and errors must be diagnosable in staging logs by safe context: time, organization, action, result, correlation ID, queue/job, and external call. Never expose passwords, tokens, cookies, medical text/files, payment data, or other protected values in logs, screenshots, reports, or queue payloads.
 - Do not call providers directly as acceptance evidence. Keep provider references and error classifications safe and correlate them through the application runtime.
 - Do not call a capability `VERIFIED` without evidence from the exact deployed SHA under test.
+
+## Focused browser control from Mac
+
+For a bounded acceptance journey, reuse the existing Playwright scripts,
+Node environment, and Chromium/WebKit binaries from the local QA artifacts.
+Launch `chromium` or `webkit` sequentially against the real staging URL; do not
+start a local application, database, or mock server. Before the journey, verify
+the staging `current/REVISION` matches the SHA under test. Use one browser and
+one worker at a time, close pages/contexts/browsers after each journey, and
+keep screenshots and evidence outside the repository. Check actual user
+controls, rendered screenshots, responsive widths, and the resulting staging
+state. Move large matrices, parallel runs, and heavy browser suites to an
+approved remote runner.
 
 ## Existing identities and browser access
 
