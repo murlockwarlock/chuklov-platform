@@ -91,18 +91,30 @@ data-loss risk. Apply the matching domain skill and evidence gates.
 
 Missing business data, authored content, thresholds, mappings, formulas,
 medical doctrine, legal copy, and provider credentials do not block building
-the surrounding mechanism. Implement the complete safe mechanism, expose
-business values through normal authorized CRM controls, verify fields,
-validation, storage, and lifecycle with safe fictional data, and report the
-remaining value as required configuration/content. Never present fictional
-data as a real client's information or medical result. Never invent medical
-norms, diagnoses, scoring, formulas, recommendations, or other medical
-doctrine as a business rule.
+and verifying the complete mechanism. The agent owns the initial staging
+configuration: copy approved values from the current authoritative requirements
+into CRM without waiting for business data from Chuklov or Denis. If approved
+content is absent, use safe fictional demonstration values where the mechanism
+permits. All changeable business settings must be managed by authorized users
+through an understandable CRM interface without code, SQL, JSON, or deployment;
+Chuklov and Denis must be able to inspect the result and change, add, disable,
+or archive values themselves.
 
-Never invent medical doctrine, clinical recommendations, formulas, legal text,
-or authored content. Use disabled or fail-closed behavior when activation
-needs an absent value. If changing a business value requires a developer or a
-deployment, the configurable feature is not complete.
+Demonstration configuration must look like a professionally configured product:
+use normal Russian names, logical ordering, and complete fields. Never expose
+`QA`, `synthetic`, `fixture`, `test`, technical keys, or fictional data as a
+real client's information or medical result in the ordinary CRM interface.
+Mark missing approved content as `CONTENT REQUIRED`, not `BLOCKED`, when the
+mechanism can be implemented and verified independently. An empty catalog or
+settings form is not sufficient; configure safe data and verify the complete
+mechanism on staging.
+
+Never invent medical doctrine, norms, diagnoses, scoring, formulas,
+recommendations, legal text, or authored content. Use disabled or fail-closed
+behavior when activation needs an absent value.
+
+If changing a business value requires a developer, SQL, JSON, or a deployment,
+the configurable feature is not complete.
 
 ## Architecture and security invariants
 

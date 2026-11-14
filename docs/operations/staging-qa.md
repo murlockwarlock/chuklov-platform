@@ -2,10 +2,11 @@
 
 Use the existing staging acceptance path before proposing new infrastructure or
 asking the owner for credentials. The Mac is an 8 GB thin control plane for
-editing, Git, SSH, and remote browser control only. Do not run application
-tests, Docker, PostgreSQL, Redis, full builds, heavy linters, browser suites, or
-a staging database copy on the Mac. Staging is the primary and, before
-production exists, the only product acceptance environment.
+editing, Git, SSH, `git diff --check`, and lightweight syntax checks that do not
+run tests. Do not run application tests, Docker, PostgreSQL, Redis, full builds,
+heavy linters, browser suites, or a staging database copy on the Mac. Staging is
+the primary and, before production exists, the only product acceptance
+environment.
 
 ## Connection and source identity
 
@@ -25,6 +26,8 @@ staging deployment flow only when a runtime update is needed and authorized.
 
 - Use PostgreSQL for staging acceptance. Check migrations, constraints, transactions, concurrent behavior, locks, JSON, dates/time zones, and idempotency where the change touches them.
 - Exercise real CRM, Portal, and Mini App controls, including both sides of the flow: staff action -> client result -> client action -> staff result.
+- For every implemented mechanism, configure the available approved values or safe, human-readable demonstration values on staging through CRM. Verify `create -> change -> save -> reload -> reopen -> use` with PostgreSQL, then check errors, empty state, 0/1/many records, authorization, versions, and the supported lifecycle.
+- Do not treat an empty catalog or settings form as acceptance. Leave useful demonstration settings on staging when they clarify the product; safely clean up temporary test clients, sessions, results, and other verification records after the check while preserving required history and audit evidence.
 - Significant operations and errors must be diagnosable in staging logs by safe context: time, organization, action, result, correlation ID, queue/job, and external call. Never expose passwords, tokens, cookies, medical text/files, payment data, or other protected values in logs, screenshots, reports, or queue payloads.
 - Do not call providers directly as acceptance evidence. Keep provider references and error classifications safe and correlate them through the application runtime.
 - Do not call a capability `VERIFIED` without evidence from the exact deployed SHA under test.
