@@ -12,6 +12,7 @@ final class CompanionClientMessage
         public readonly string $unavailable,
         public readonly string $specialistNotified,
         public readonly string $humanTakeover,
+        public readonly string $aiResumed,
         public readonly string $urgentSafety,
         public readonly string $outOfScope,
     ) {}
@@ -27,6 +28,7 @@ final class CompanionClientMessage
                 unavailable: 'Помощник сейчас недоступен. Попробуйте позже.',
                 specialistNotified: 'Специалист уведомлён. Пока он не подключился, помощник продолжит отвечать.',
                 humanTakeover: 'К диалогу подключился специалист. AI-помощник временно не отвечает.',
+                aiResumed: 'Специалист вышел из диалога. Дальше вам будет отвечать помощник.',
                 urgentSafety: 'Это сообщение требует внимания специалиста. Если нужна срочная медицинская помощь, обратитесь в экстренную службу.',
                 outOfScope: 'Я не могу ответить на этот вопрос. Могу позвать специалиста.',
             )
@@ -36,6 +38,7 @@ final class CompanionClientMessage
                 unavailable: 'The assistant is temporarily unavailable. Please try again later.',
                 specialistNotified: 'A specialist has been notified. The assistant will keep responding until they join.',
                 humanTakeover: 'A specialist has joined the conversation. The AI assistant is temporarily paused.',
+                aiResumed: 'The specialist has left the conversation. The assistant will respond from now on.',
                 urgentSafety: 'This message needs a specialist’s attention. If you need urgent medical help, contact emergency services.',
                 outOfScope: 'I can’t answer this question. I can ask a specialist to help.',
             );

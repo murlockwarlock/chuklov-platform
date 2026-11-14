@@ -80,7 +80,8 @@ final class ClinicalTestProtocol
                     ->label(__('Причины нарушений'))
                     ->options(fn (Get $get): array => app(MedicalClinicalCatalog::class)->causeOptionsForSelection(app(OrganizationContext::class)->id(), (array) $get('cause_ids')))
                     ->multiple()
-                    ->searchable(),
+                    ->searchable()
+                    ->live(),
             ])
             ->default(self::defaultState())
             ->itemLabel(fn (array $state): string => (string) ($state['test_label'] ?? __('Тест')))

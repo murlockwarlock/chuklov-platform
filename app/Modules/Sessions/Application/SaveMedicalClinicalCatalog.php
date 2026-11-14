@@ -4,6 +4,7 @@ namespace App\Modules\Sessions\Application;
 
 use App\Models\User;
 use App\Modules\MedicalProfiles\Domain\Models\MedicalProblemTag;
+use App\Modules\MedicalProfiles\Domain\Models\MedicalComplaintDefinition;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
@@ -27,8 +28,9 @@ final readonly class SaveMedicalClinicalCatalog
      * @param  array<int, mixed>  $tests
      * @param  array<int, mixed>  $causes
      * @param  array<int, mixed>|null  $problemTags
+     * @param  array<int, mixed>|null  $complaints
      */
-    public function handle(User $actor, array $tests, array $causes, ?array $problemTags = null): void
+    public function handle(User $actor, array $tests, array $causes, ?array $problemTags = null, ?array $complaints = null): void
     {
         $organization = $this->context->organization();
         if (! $this->authorizer->allows($actor, $organization, OrganizationPermission::ManageSettings)) {
@@ -38,9 +40,10 @@ final readonly class SaveMedicalClinicalCatalog
         $normalizedTests = $this->normalizeTests($tests);
         $normalizedCauses = $this->normalizeCauses($causes);
         $normalizedProblemTags = $problemTags === null ? null : $this->normalizeProblemTags($problemTags);
+        $normalizedComplaints = $complaints === null ? null : $this->normalizeComplaints($complaints);
         $organizationId = (int) $organization->getKey();
 
-        DB::transaction(function () use ($organizationId, $normalizedTests, $normalizedCauses, $normalizedProblemTags, $organization, $actor): void {
+        DB::transaction(function () use ($organizationId, $normalizedTests, $normalizedCauses, $normalizedProblemTags, $normalizedComplaints, $organization, $actor): void {
             $testKeys = [];
             foreach ($normalizedTests as $test) {
                 $definition = MedicalTestDefinition::query()->where('organization_id', $organizationId)->where('key', $test['key'])->lockForUpdate()->first() ?? new MedicalTestDefinition;
@@ -125,6 +128,32 @@ final readonly class SaveMedicalClinicalCatalog
                 }
             }
 
+            if ($normalizedComplaints !== null) {
+                $complaintIds = [];
+                foreach ($normalizedComplaints as $complaint) {
+                    $query = MedicalComplaintDefinition::query()->where('organization_id', $organizationId);
+                    if ($complaint['id'] !== null) {
+                        $query->whereKey($complaint['id']);
+                    } else {
+                        $query->where('name', $complaint['name']);
+                    }
+                    $model = $query->lockForUpdate()->first() ?? new MedicalComplaintDefinition;
+                    $model->forceFill([
+                        'organization_id' => $organizationId,
+                        'name' => $complaint['name'],
+                        'group_name' => $complaint['group_name'],
+                        'synonyms' => $complaint['synonyms'],
+                        'is_active' => $complaint['is_active'],
+                        'sort_order' => $complaint['sort_order'],
+                    ])->save();
+                    $complaintIds[] = $model->getKey();
+                }
+                MedicalComplaintDefinition::query()
+                    ->where('organization_id', $organizationId)
+                    ->when($complaintIds !== [], fn ($query) => $query->whereNotIn('id', $complaintIds))
+                    ->update(['is_active' => false]);
+            }
+
             $this->audit->handle(
                 organization: $organization,
                 actor: $actor,
@@ -135,6 +164,7 @@ final readonly class SaveMedicalClinicalCatalog
                     'test_count' => count($normalizedTests),
                     'cause_count' => count($normalizedCauses),
                     'problem_tag_count' => $normalizedProblemTags === null ? null : count($normalizedProblemTags),
+                    'complaint_count' => $normalizedComplaints === null ? null : count($normalizedComplaints),
                 ],
             );
         });
@@ -236,6 +266,38 @@ final readonly class SaveMedicalClinicalCatalog
             $normalized[] = [
                 'name' => $name,
                 'group_name' => filled($raw['group_name'] ?? null) ? trim((string) $raw['group_name']) : null,
+                'is_active' => (bool) ($raw['is_active'] ?? true),
+                'sort_order' => (int) ($raw['sort_order'] ?? $index),
+            ];
+        }
+
+        return $normalized;
+    }
+
+    /**
+     * @param  array<int, mixed>  $complaints
+     * @return list<array{id:int|null,name:string,group_name:?string,synonyms:list<string>,is_active:bool,sort_order:int}>
+     */
+    private function normalizeComplaints(array $complaints): array
+    {
+        $normalized = [];
+        $names = [];
+        foreach (array_values($complaints) as $index => $raw) {
+            if (! is_array($raw)) {
+                throw ValidationException::withMessages(['complaints' => 'Проверьте справочник жалоб.']);
+            }
+            $name = trim((string) ($raw['name'] ?? ''));
+            if ($name === '' || mb_strlen($name) > 255 || isset($names[$name])) {
+                throw ValidationException::withMessages(['complaints' => 'Названия жалоб должны быть заполнены и уникальны.']);
+            }
+            $names[$name] = true;
+            $synonyms = preg_split('/\R/u', (string) ($raw['synonyms'] ?? '')) ?: [];
+            $synonyms = array_values(array_unique(array_filter(array_map(static fn (string $value): string => trim($value), $synonyms), static fn (string $value): bool => $value !== '')));
+            $normalized[] = [
+                'id' => isset($raw['id']) && is_numeric($raw['id']) ? (int) $raw['id'] : null,
+                'name' => $name,
+                'group_name' => filled($raw['group_name'] ?? null) ? trim((string) $raw['group_name']) : null,
+                'synonyms' => $synonyms,
                 'is_active' => (bool) ($raw['is_active'] ?? true),
                 'sort_order' => (int) ($raw['sort_order'] ?? $index),
             ];

@@ -16,7 +16,7 @@ use Illuminate\Support\Carbon;
  * @property int $medical_profile_id
  * @property string $lineage_key
  * @property string $entry_type
- * @property int $year
+ * @property int|null $year
  * @property string $description
  * @property int $encryption_key_version
  * @property int $sort_order

@@ -4,6 +4,7 @@ namespace App\Modules\Sessions\Domain\Models;
 
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\MedicalProfiles\Domain\Models\MedicalProblemTag;
+use App\Modules\MedicalProfiles\Domain\Models\MedicalComplaintDefinition;
 use App\Modules\Organizations\Domain\Models\Organization;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
@@ -15,6 +16,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
     'client_id',
     'medical_session_id',
     'patient_profile_id',
+    'medical_complaint_definition_id',
     'lineage_key',
     'name',
     'frequency_mode',
@@ -23,6 +25,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
     'time_of_day',
     'before_score',
     'after_score',
+    'needs_confirmation',
+    'state',
     'sort_order',
     'encryption_key_version',
 ])]
@@ -57,6 +61,12 @@ class MedicalSessionPain extends Model
         )->withPivot('organization_id');
     }
 
+    /** @return BelongsTo<MedicalComplaintDefinition, $this> */
+    public function complaintDefinition(): BelongsTo
+    {
+        return $this->belongsTo(MedicalComplaintDefinition::class, 'medical_complaint_definition_id');
+    }
+
     protected function casts(): array
     {
         return [
@@ -64,6 +74,7 @@ class MedicalSessionPain extends Model
             'frequency_count' => 'integer',
             'before_score' => 'integer',
             'after_score' => 'integer',
+            'needs_confirmation' => 'boolean',
             'sort_order' => 'integer',
             'encryption_key_version' => 'integer',
             'created_at' => 'datetime',

@@ -31,6 +31,7 @@ final readonly class MedicalProfilePainReader
                 frequencyPeriodUnit: $pain->frequency_period_unit !== null ? (string) $pain->frequency_period_unit : null,
                 timeOfDay: is_array($timeOfDay) && $timeOfDay !== [] ? array_values(array_map('strval', $timeOfDay)) : ['all'],
                 score: $pain->score !== null ? (int) $pain->score : null,
+                complaintDefinitionId: $pain->medical_complaint_definition_id !== null ? (int) $pain->medical_complaint_definition_id : null,
                 tagIds: array_values(array_map(static fn (int|string $id): int => (int) $id, $pain->problemTags->modelKeys())),
             );
         })->all());

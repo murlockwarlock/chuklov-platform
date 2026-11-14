@@ -18,6 +18,7 @@ final class GetSession
         private readonly MedicalEncryptorInterface $encryptor,
         private readonly MedicalSessionPainReader $painReader,
         private readonly MedicalSessionTestReader $testReader,
+        private readonly MedicalSessionProtocolStepReader $protocolStepReader,
     ) {}
 
     public function handle(User $actor, MedicalSession $session, ?Client $expectedClient = null): ?MedicalSessionData
@@ -52,6 +53,7 @@ final class GetSession
             painVas: $this->painVas($this->encryptor->decryptField($orgId, $persisted->pain_vas, $keyVersion)),
             tests: $this->encryptor->decryptField($orgId, $persisted->tests, $keyVersion),
             observations: $this->encryptor->decryptField($orgId, $persisted->observations, $keyVersion),
+            therapistNotes: $this->encryptor->decryptField($orgId, $persisted->therapist_notes, $keyVersion),
             subjectiveFeelings: $persisted->subjective_feelings === null ? null : $this->encryptor->decryptField($orgId, $persisted->subjective_feelings, $keyVersion),
             visualPostureDiagnostics: $persisted->visual_posture_diagnostics === null ? null : $this->encryptor->decryptField($orgId, $persisted->visual_posture_diagnostics, $keyVersion),
             rootCauseHypothesis: $this->encryptor->decryptField($orgId, $persisted->root_cause_hypothesis, $keyVersion),
@@ -66,6 +68,10 @@ final class GetSession
             rootCauses: $this->testReader->rootCauses($persisted),
             causes: $this->testReader->causes($persisted),
             causesManualOverride: (bool) $persisted->causes_manual_override,
+            protocolSteps: $this->protocolStepReader->forSession($persisted),
+            status: (string) $persisted->status->value,
+            completedAt: $persisted->completed_at,
+            editedAt: $persisted->edited_at,
         );
 
         return $this->resolved[$cacheKey] = $data;

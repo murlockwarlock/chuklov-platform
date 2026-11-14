@@ -25,13 +25,14 @@ final readonly class MedicalProfileHistoryWriter
                 throw ValidationException::withMessages(['history_entries' => 'Проверьте строки травм и операций.']);
             }
             $type = (string) ($raw['type'] ?? '');
-            $year = filter_var($raw['year'] ?? null, FILTER_VALIDATE_INT);
+            $rawYear = $raw['year'] ?? null;
+            $year = $rawYear === null || $rawYear === '' ? null : filter_var($rawYear, FILTER_VALIDATE_INT);
             $description = trim((string) ($raw['description'] ?? ''));
             if (! in_array($type, ['injury', 'operation'], true)) {
                 throw ValidationException::withMessages(['history_entries' => 'Укажите тип медицинской записи.']);
             }
-            if (! is_int($year) || $year < 1800 || $year > 2200 || $description === '' || mb_strlen($description) > 10000) {
-                throw ValidationException::withMessages(['history_entries' => 'Укажите корректный год и описание.']);
+            if (($year !== null && (! is_int($year) || $year < 1800 || $year > 2200)) || $description === '' || mb_strlen($description) > 10000) {
+                throw ValidationException::withMessages(['history_entries' => 'Укажите корректный год, если помните его, и описание.']);
             }
             $lineage = (string) ($raw['lineage_key'] ?? '');
             if (! Str::isUuid($lineage)) {

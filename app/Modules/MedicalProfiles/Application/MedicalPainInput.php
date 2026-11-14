@@ -18,6 +18,9 @@ final readonly class MedicalPainInput
         public ?int $beforeScore,
         public ?int $afterScore,
         public ?string $lineageKey,
+        public ?int $complaintDefinitionId = null,
+        public bool $needsConfirmation = false,
+        public string $state = 'active',
         /** @var list<int> */
         public array $tagIds = [],
     ) {}
@@ -69,6 +72,11 @@ final readonly class MedicalPainInput
             throw ValidationException::withMessages(['pains' => 'Не удалось определить боль для обновления.']);
         }
 
+        $state = is_string($data['state'] ?? null) ? trim((string) $data['state']) : 'active';
+        if (! in_array($state, ['active', 'resolved', 'returned'], true)) {
+            throw ValidationException::withMessages(['pains' => 'Выберите корректное состояние жалобы.']);
+        }
+
         return new self(
             name: $name,
             frequencyMode: $frequencyMode,
@@ -79,6 +87,9 @@ final readonly class MedicalPainInput
             beforeScore: self::nullableScore($data['before_score'] ?? null, 'before_score'),
             afterScore: self::nullableScore($data['after_score'] ?? null, 'after_score'),
             lineageKey: $lineageKey,
+            complaintDefinitionId: self::nullableId($data['complaint_definition_id'] ?? null),
+            needsConfirmation: filter_var($data['needs_confirmation'] ?? false, FILTER_VALIDATE_BOOLEAN),
+            state: $state,
             tagIds: self::tagIds($data['tag_ids'] ?? []),
         );
     }
@@ -103,7 +114,29 @@ final readonly class MedicalPainInput
             && ($data['score'] ?? null) === null
             && ($data['before_score'] ?? null) === null
             && ($data['after_score'] ?? null) === null
+            && ($data['complaint_definition_id'] ?? null) === null
+            && ! filter_var($data['needs_confirmation'] ?? false, FILTER_VALIDATE_BOOLEAN)
+            && (($data['state'] ?? 'active') === 'active')
             && ($tags === null || $tags === []);
+    }
+
+    public function withName(string $name): self
+    {
+        return new self(
+            name: trim($name),
+            frequencyMode: $this->frequencyMode,
+            frequencyCount: $this->frequencyCount,
+            frequencyPeriodUnit: $this->frequencyPeriodUnit,
+            timeOfDay: $this->timeOfDay,
+            score: $this->score,
+            beforeScore: $this->beforeScore,
+            afterScore: $this->afterScore,
+            lineageKey: $this->lineageKey,
+            complaintDefinitionId: $this->complaintDefinitionId,
+            needsConfirmation: $this->needsConfirmation,
+            state: $this->state,
+            tagIds: $this->tagIds,
+        );
     }
 
     private static function nullableInteger(mixed $value, string $field): ?int
@@ -142,6 +175,22 @@ final readonly class MedicalPainInput
         }
 
         return $score;
+    }
+
+    private static function nullableId(mixed $value): ?int
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        if (is_int($value) || (is_string($value) && ctype_digit($value))) {
+            $id = (int) $value;
+            if ($id > 0) {
+                return $id;
+            }
+        }
+
+        throw ValidationException::withMessages(['pains' => 'Выберите корректную жалобу.']);
     }
 
     /** @return list<int> */

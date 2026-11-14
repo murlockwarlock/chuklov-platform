@@ -31,6 +31,8 @@ final readonly class ListClientSessions
                 'specialist_id',
                 'booking_id',
                 'occurred_at',
+                'status',
+                'edited_at',
             ])
             ->with([
                 'specialist:id,organization_id,display_name',

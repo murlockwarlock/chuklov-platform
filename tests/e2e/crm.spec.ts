@@ -3641,20 +3641,7 @@ test('staff can fill the current create medical result in the CRM client flow', 
     const resultField = page.getByLabel('Результат после сеанса', { exact: true });
     await resultField.fill(manualResult);
     await resultField.blur();
-    const fillResultButton = page.getByRole('button', { name: 'Заполнить', exact: true }).last();
-    await fillResultButton.click();
-    const cancelDialog = page.locator('.fi-modal-window:visible').filter({ hasText: 'Заменить текст результата?' }).last();
-    await expect(cancelDialog).toBeVisible();
-    await cancelDialog.getByRole('button', { name: 'Отменить', exact: true }).click();
     await expect(resultField).toHaveValue(manualResult);
-    await fillResultButton.click();
-    const confirmDialog = page.locator('.fi-modal-window:visible').filter({ hasText: 'Заменить текст результата?' }).last();
-    await expect(confirmDialog).toBeVisible();
-    await confirmDialog.getByRole('button', { name: 'Подтвердить', exact: true }).click();
-    await expect(resultField).toHaveValue(new RegExp(`${painName}: было 6, стало 0 из 10`));
-    await expect(resultField).toHaveValue(new RegExp(`Субъективные ощущения: ${subjective}`));
-    await expect(resultField).toHaveValue(new RegExp(`Визуальная диагностика осанки: ${posture}`));
-    await expect(resultField).not.toHaveValue(manualResult);
     await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
 
     await expect(page).toHaveURL(new RegExp(`/admin/clients/${fixture.clientId}/sessions$`), { timeout: 15_000 });
@@ -3775,6 +3762,7 @@ test('staff can create, view, and edit a client session from the CRM client flow
     const oldPosture = `OLD POSTURE ${suffix}`;
     const draftPosture = `DRAFT POSTURE UNIQUE ${suffix}`;
     const oldManualResult = `OLD MANUAL RESULT ${suffix}`;
+    const draftManualResult = `DRAFT MANUAL RESULT ${suffix}`;
 
     await login(page, fixture);
 
@@ -3870,7 +3858,11 @@ test('staff can create, view, and edit a client session from the CRM client flow
     await expect(page.getByRole('combobox', { name: 'Причины сеанса', exact: true })).toBeVisible();
     await page.getByRole('button', { name: 'Вернуться к причинам из тестов', exact: true }).click();
     await expect(page.getByRole('combobox', { name: 'Причины сеанса', exact: true })).toBeHidden();
-    await expect(page.getByRole('button', { name: 'Заполнить', exact: true })).toHaveCount(2);
+    const createAiButtons = page.getByRole('button', { name: 'Заполнить с ИИ', exact: true });
+    await expect(createAiButtons).not.toHaveCount(0);
+    for (let index = 0; index < await createAiButtons.count(); index += 1) {
+        await expect(createAiButtons.nth(index)).toBeDisabled();
+    }
     await page.getByRole('button', { name: 'Добавить первопричину', exact: true }).click();
     const rootCauseSelect = page.getByRole('combobox', { name: 'Причина из сеанса', exact: true });
     await rootCauseSelect.click();
@@ -3884,20 +3876,7 @@ test('staff can create, view, and edit a client session from the CRM client flow
     await page.getByLabel('Визуальная диагностика осанки', { exact: true }).fill(oldPosture);
     await page.getByLabel('Результат после сеанса', { exact: true }).fill(oldManualResult);
     const createResultField = page.getByLabel('Результат после сеанса', { exact: true });
-    const createFillResultButton = page.getByRole('button', { name: 'Заполнить', exact: true }).last();
-    await createFillResultButton.click();
-    const createReplaceResultDialog = page.locator('.fi-modal-window:visible').filter({ hasText: 'Заменить текст результата?' }).last();
-    await expect(createReplaceResultDialog).toBeVisible();
-    await createReplaceResultDialog.getByRole('button', { name: 'Отменить', exact: true }).click();
-    await expect(createReplaceResultDialog).toBeHidden();
     await expect(createResultField).toHaveValue(oldManualResult);
-    await createFillResultButton.click();
-    const createConfirmResultDialog = page.locator('.fi-modal-window:visible').filter({ hasText: 'Заменить текст результата?' }).last();
-    await expect(createConfirmResultDialog).toBeVisible();
-    await createConfirmResultDialog.getByRole('button', { name: 'Подтвердить', exact: true }).click();
-    await expect(createResultField).toHaveValue(new RegExp(`${oldPainName}: было 7, стало 3 из 10`));
-    await expect(createResultField).toHaveValue(new RegExp(`Субъективные ощущения: ${oldSubjective}`));
-    await expect(createResultField).toHaveValue(new RegExp(`Визуальная диагностика осанки: ${oldPosture}`));
     await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
 
     await expect(page).toHaveURL(new RegExp(`/admin/clients/${fixture.clientId}/sessions$`));
@@ -3912,7 +3891,7 @@ test('staff can create, view, and edit a client session from the CRM client flow
     await expect(page.getByText(causeName, { exact: true }).first()).toBeVisible();
     await expect(page.getByText('E2E описание первопричины', { exact: true })).toBeVisible();
     await expect(page.getByLabel('Протокол и результат сеанса').getByText('E2E протокол', { exact: true })).toBeVisible();
-    await expect(page.getByText(new RegExp(`${oldPainName}: было 7, стало 3 из 10`), { exact: false }).first()).toBeVisible();
+    await expect(page.getByText(oldManualResult, { exact: true })).toBeVisible();
     const dynamics = page.getByLabel('Динамика подтверждённых фактов');
     await expect(dynamics.getByText('Предыдущая запись о боли', { exact: true })).toBeVisible();
     await expect(dynamics.getByText('Предыдущий подтверждённый результат', { exact: true })).toBeVisible();
@@ -3976,7 +3955,7 @@ test('staff can create, view, and edit a client session from the CRM client flow
     await assertSessionBlockOrder();
     await expect(page.getByLabel('Субъективные ощущения клиента после сеанса', { exact: true })).toHaveValue(oldSubjective);
     await expect(page.getByLabel('Визуальная диагностика осанки', { exact: true })).toHaveValue(oldPosture);
-    await expect(page.getByLabel('Результат после сеанса', { exact: true })).toHaveValue(new RegExp(`${oldPainName}: было 7, стало 3 из 10`));
+    await expect(page.getByLabel('Результат после сеанса', { exact: true })).toHaveValue(oldManualResult);
     await page.getByLabel('Название или описание боли', { exact: true }).fill(draftPainName);
     const draftBeforePainScore = page.getByRole('slider', { name: 'До сеанса', exact: true });
     const draftAfterPainScore = page.getByRole('slider', { name: 'После сеанса', exact: true });
@@ -3992,28 +3971,14 @@ test('staff can create, view, and edit a client session from the CRM client flow
     await page.getByLabel('Субъективные ощущения клиента после сеанса', { exact: true }).fill(draftSubjective);
     await page.getByLabel('Визуальная диагностика осанки', { exact: true }).fill(draftPosture);
     const resultField = page.getByLabel('Результат после сеанса', { exact: true });
-    await resultField.fill(oldManualResult);
+    await resultField.fill(draftManualResult);
     await resultField.blur();
-    await page.getByRole('button', { name: 'Заполнить результат', exact: true }).click();
-    const replaceResultDialog = page.locator('.fi-modal-window:visible').filter({ hasText: 'Заменить текст результата?' }).last();
-    await expect(replaceResultDialog).toBeVisible();
-    await expect(replaceResultDialog).toContainText('Текущий текст будет заменён сводкой по данным сеанса.');
-    await replaceResultDialog.getByRole('button', { name: 'Отменить', exact: true }).click();
-    await expect(replaceResultDialog).toBeHidden();
-    await expect(resultField).toHaveValue(oldManualResult);
-    await page.getByRole('button', { name: 'Заполнить результат', exact: true }).click();
-    const confirmedReplaceResultDialog = page.locator('.fi-modal-window:visible').filter({ hasText: 'Заменить текст результата?' }).last();
-    await expect(confirmedReplaceResultDialog).toBeVisible();
-    const replaceResultResponse = page.waitForResponse((response) => response.request().method() === 'POST' && /\/livewire[^/]*\/update$/.test(new URL(response.url()).pathname) && response.ok());
-    await confirmedReplaceResultDialog.getByRole('button', { name: 'Подтвердить', exact: true }).click();
-    await replaceResultResponse;
-    await expect(resultField).toHaveValue(new RegExp(`${draftPainName}: было 2, стало 8 из 10`));
-    await expect(resultField).toHaveValue(new RegExp(`Субъективные ощущения: ${draftSubjective}`));
-    await expect(resultField).toHaveValue(new RegExp(`Визуальная диагностика осанки: ${draftPosture}`));
-    await expect(resultField).toHaveValue(/Нарушения по тестам: было 1, стало 0\./);
-    await expect(resultField).not.toHaveValue(new RegExp(oldPainName));
-    await expect(resultField).not.toHaveValue(new RegExp(oldSubjective));
-    await expect(resultField).not.toHaveValue(new RegExp(oldPosture));
+    const editAiButtons = page.getByRole('button', { name: 'Заполнить с ИИ', exact: true });
+    await expect(editAiButtons).not.toHaveCount(0);
+    for (let index = 0; index < await editAiButtons.count(); index += 1) {
+        await expect(editAiButtons.nth(index)).toBeDisabled();
+    }
+    await expect(resultField).toHaveValue(draftManualResult);
     const saveSessionButton = page.getByRole('button', { name: 'Сохранить', exact: true });
     await expect(saveSessionButton).toBeEnabled({ timeout: 30_000 });
     await saveSessionButton.click();
@@ -4025,7 +3990,7 @@ test('staff can create, view, and edit a client session from the CRM client flow
     await updatedSessionLink.click({ force: true });
     await expect(page).toHaveURL(new RegExp(`/admin/clients/${fixture.clientId}/sessions/medical-sessions/\\d+$`), { timeout: 30_000 });
     await expect(page.getByText(draftPainName, { exact: true })).toBeVisible({ timeout: 15_000 });
-    await expect(page.getByText(new RegExp(`${draftPainName}: было 2, стало 8 из 10`), { exact: false }).first()).toBeVisible();
+    await expect(page.getByText(draftManualResult, { exact: true })).toBeVisible();
     await expect(page.getByLabel('Особые жалобы').getByText(oldSubjective, { exact: true })).toBeVisible();
     await expect(page.getByText(draftSubjective, { exact: true })).toBeVisible();
     await expect(page.getByText(draftPosture, { exact: true })).toBeVisible();

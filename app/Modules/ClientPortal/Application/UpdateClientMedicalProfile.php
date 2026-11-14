@@ -39,7 +39,9 @@ final readonly class UpdateClientMedicalProfile
             'operations' => __('Операции'), 'injuries' => __('Травмы'), 'medicines' => __('Лекарственные препараты'), 'supplements' => __('Нутрицевтики и БАДы'),
         ])->validate();
         $answers = $this->questionnaire->validate($fields['answers'], false);
-        if (trim((string) ($fields['complaints'] ?? '')) === '' && $answers['symptoms'] === []) {
+        $hasStructuredComplaint = collect(is_array($fields['pains'] ?? null) ? $fields['pains'] : [])
+            ->contains(static fn (mixed $pain): bool => is_array($pain) && (filled($pain['complaint_definition_id'] ?? null) || filled($pain['name'] ?? null)));
+        if (trim((string) ($fields['complaints'] ?? '')) === '' && $answers['symptoms'] === [] && ! $hasStructuredComplaint) {
             throw ValidationException::withMessages(['complaints' => 'Выберите симптомы или опишите жалобы.']);
         }
         if (! $answers['had_operations']) {

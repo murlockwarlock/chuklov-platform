@@ -34,6 +34,11 @@ final readonly class UpdateSessionCommand
         public bool $causesProvided = false,
         public bool $causesManualOverride = false,
         public bool $causesManualOverrideProvided = false,
+        public ?string $therapistNotes = null,
+        public bool $therapistNotesProvided = false,
+        /** @var array<int, mixed>|null */
+        public ?array $protocolSteps = null,
+        public bool $protocolStepsProvided = false,
     ) {}
 
     /**
@@ -87,6 +92,10 @@ final readonly class UpdateSessionCommand
             causesProvided: array_key_exists('cause_ids', $data),
             causesManualOverride: filter_var($data['causes_manual_override'] ?? false, FILTER_VALIDATE_BOOLEAN),
             causesManualOverrideProvided: array_key_exists('causes_manual_override', $data),
+            therapistNotes: self::normalizeOptionalValue($data['therapist_notes'] ?? null, 'therapist_notes'),
+            therapistNotesProvided: array_key_exists('therapist_notes', $data),
+            protocolSteps: array_key_exists('protocol_steps', $data) && is_array($data['protocol_steps']) ? array_values($data['protocol_steps']) : null,
+            protocolStepsProvided: array_key_exists('protocol_steps', $data),
         );
     }
 

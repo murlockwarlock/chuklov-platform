@@ -4,6 +4,7 @@ namespace App\Modules\ClientPortal\Application;
 
 use App\Modules\Identity\Application\ResolvePatientClinicalClient;
 use App\Modules\MedicalProfiles\Application\MedicalProfileHistoryReader;
+use App\Modules\MedicalProfiles\Application\MedicalComplaintCatalog;
 use App\Modules\MedicalProfiles\Application\MedicalProfilePainReader;
 use App\Modules\MedicalProfiles\Application\MedicalProfileSnapshotHasher;
 use App\Modules\MedicalProfiles\Domain\Contracts\MedicalEncryptorInterface;
@@ -18,6 +19,7 @@ final readonly class GetClientMedicalProfile
         private MedicalProfileSnapshotHasher $snapshots,
         private MedicalProfilePainReader $painReader,
         private MedicalProfileHistoryReader $historyReader,
+        private MedicalComplaintCatalog $complaints,
         private ResolvePatientClinicalClient $patients,
     ) {}
 
@@ -29,6 +31,7 @@ final readonly class GetClientMedicalProfile
             ->where('organization_id', $client->organization_id)
             ->where('client_id', $client->getKey())
             ->first();
+        $complaintOptions = $this->complaints->items((int) $client->organization_id);
 
         if ($profile === null) {
             return [
@@ -46,6 +49,7 @@ final readonly class GetClientMedicalProfile
                 'legacyFields' => [],
                 'pains' => [],
                 'historyEntries' => [],
+                'complaintOptions' => $complaintOptions,
             ];
         }
 
@@ -88,6 +92,7 @@ final readonly class GetClientMedicalProfile
                 'legacyFields' => [],
                 'pains' => [],
                 'historyEntries' => [],
+                'complaintOptions' => $complaintOptions,
             ];
         }
 
@@ -117,6 +122,7 @@ final readonly class GetClientMedicalProfile
             ], fn (?string $value): bool => filled($value)),
             'pains' => array_map(static fn ($pain): array => $pain->toArray(), $this->painReader->forProfile($profile)),
             'historyEntries' => array_map(static fn ($entry): array => $entry->toArray(), $this->historyReader->forProfile($profile)),
+            'complaintOptions' => $complaintOptions,
         ];
     }
 }

@@ -35,6 +35,12 @@ final readonly class MedicalSessionData
         /** @var list<array{id:int,name:string}> */
         public array $causes = [],
         public bool $causesManualOverride = false,
+        public ?string $therapistNotes = null,
+        /** @var list<array{id:int,lineage_key:string,step_order:int,text:string}> */
+        public array $protocolSteps = [],
+        public string $status = 'draft',
+        public ?DateTimeInterface $completedAt = null,
+        public ?DateTimeInterface $editedAt = null,
     ) {}
 
     public function occurredAtAtom(): ?string
@@ -60,6 +66,11 @@ final readonly class MedicalSessionData
             'root_causes' => array_map(static fn (MedicalSessionRootCauseData $cause): array => $cause->toArray(), $this->rootCauses),
             'causes' => $this->causes,
             'causes_manual_override' => $this->causesManualOverride,
+            'therapist_notes' => $this->therapistNotes,
+            'protocol_steps' => $this->protocolSteps,
+            'status' => $this->status,
+            'completed_at' => $this->completedAt?->format(DateTimeInterface::ATOM),
+            'edited_at' => $this->editedAt?->format(DateTimeInterface::ATOM),
             'tests' => $this->tests,
             'observations' => $this->observations,
             'root_cause_hypothesis' => $this->rootCauseHypothesis,

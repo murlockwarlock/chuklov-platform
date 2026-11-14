@@ -5,6 +5,7 @@ namespace App\Filament\Pages;
 use App\Filament\Support\LocalizedPage;
 use App\Models\User;
 use App\Modules\MedicalProfiles\Domain\Models\MedicalProblemTag;
+use App\Modules\MedicalProfiles\Domain\Models\MedicalComplaintDefinition;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
@@ -20,6 +21,7 @@ use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
+use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\Toggle;
 use Filament\Notifications\Notification;
 use Filament\Schemas\Components\Actions;
@@ -117,7 +119,20 @@ final class MedicalClinicalCatalogConfiguration extends LocalizedPage
                 'is_active' => $tag->is_active,
                 'sort_order' => $tag->sort_order,
             ])->all();
-        $this->form->fill(['tests' => $tests, 'causes' => $causes, 'problem_tags' => $problemTags]);
+        $complaints = MedicalComplaintDefinition::query()
+            ->where('organization_id', $organizationId)
+            ->orderBy('sort_order')
+            ->orderBy('id')
+            ->get()
+            ->map(static fn (MedicalComplaintDefinition $complaint): array => [
+                'id' => $complaint->getKey(),
+                'name' => $complaint->name,
+                'group_name' => $complaint->group_name,
+                'synonyms' => is_array($complaint->synonyms) ? implode("\n", $complaint->synonyms) : null,
+                'is_active' => $complaint->is_active,
+                'sort_order' => $complaint->sort_order,
+            ])->all();
+        $this->form->fill(['tests' => $tests, 'causes' => $causes, 'problem_tags' => $problemTags, 'complaints' => $complaints]);
     }
 
     public function form(Schema $schema): Schema
@@ -188,6 +203,26 @@ final class MedicalClinicalCatalogConfiguration extends LocalizedPage
                                 Toggle::make('is_active')->label(__('Активна'))->helperText(__('Отключённая категория не выбирается в новых карточках, но остаётся видимой в старых данных.'))->default(true),
                                 Hidden::make('sort_order')->dehydrated(true),
                             ])->columns(2)->defaultItems(0)->reorderable()->reorderableWithButtons()->collapsible()->collapsed()->itemLabel(fn (array $state): ?string => self::catalogItemLabel($state['name'] ?? null, $state['is_active'] ?? true))->addActionLabel(__('Добавить категорию'))->columnSpanFull(),
+                    ])->columnSpanFull(),
+                Section::make(__('Жалобы'))
+                    ->description(__('Это единый справочник для клиентской анкеты и карточки сеанса. Отключённые жалобы остаются в истории и не предлагаются для новых записей.'))
+                    ->schema([
+                        Placeholder::make('complaints_empty')
+                            ->label(__('Справочник пока пуст'))
+                            ->content(__('Добавьте первую жалобу кнопкой «Добавить жалобу».'))
+                            ->visible(fn (Get $get): bool => ! is_array($get('complaints')) || $get('complaints') === [])
+                            ->columnSpanFull(),
+                        Repeater::make('complaints')
+                            ->label(__('Жалобы'))
+                            ->helperText(__('Группа помогает специалисту быстрее найти жалобу. Синонимы указывайте по одному в строке.'))
+                            ->schema([
+                                Hidden::make('id')->dehydrated()->nullable(),
+                                TextInput::make('name')->label(__('Название жалобы'))->live(onBlur: true)->required()->maxLength(255),
+                                TextInput::make('group_name')->label(__('Группа'))->placeholder(__('Боль, дискомфорт или состояние'))->maxLength(120),
+                                Textarea::make('synonyms')->label(__('Синонимы'))->rows(2)->placeholder(__('По одному синониму в строке'))->maxLength(2000),
+                                Toggle::make('is_active')->label(__('Активна'))->helperText(__('Отключённая жалоба сохраняется в истории.'))->default(true),
+                                Hidden::make('sort_order')->dehydrated(true),
+                            ])->columns(2)->defaultItems(0)->reorderable()->reorderableWithButtons()->collapsible()->collapsed()->itemLabel(fn (array $state): ?string => self::catalogItemLabel($state['name'] ?? null, $state['is_active'] ?? true))->addActionLabel(__('Добавить жалобу'))->columnSpanFull(),
                     ])->columnSpanFull(),
             ])
             ->statePath('data');
@@ -266,6 +301,7 @@ final class MedicalClinicalCatalogConfiguration extends LocalizedPage
             self::withTestOrder(is_array($state['tests'] ?? null) ? $state['tests'] : []),
             self::withOrder(is_array($state['causes'] ?? null) ? $state['causes'] : []),
             self::withOrder(is_array($state['problem_tags'] ?? null) ? $state['problem_tags'] : []),
+            self::withOrder(is_array($state['complaints'] ?? null) ? $state['complaints'] : []),
         );
         Notification::make()->success()->title(__('Каталог сохранён'))->send();
     }

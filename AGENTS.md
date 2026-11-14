@@ -161,16 +161,21 @@ asking for owner acceptance.
 
 ## Data and environments
 
-- The Mac is an 8 GB workstation and thin control plane only. Use it only for
-  editing, Git, SSH, `git diff --check`, and lightweight syntax checks that do
-  not run tests.
-- Do not run application, database, integration, or browser tests, Docker,
-  PostgreSQL, Redis, full builds, heavy linters, or browser test suites on the
-  Mac. If staging is unavailable, report the capability blocker instead of
-  replacing staging with local testing.
-- All application, database, integration, and browser testing is performed on
-  staging. PostgreSQL is the only database used for testing. Do not use SQLite,
-  including for local preliminary checks.
+- The Mac is an 8 GB workstation and thin control plane. Use it for editing,
+  Git, SSH, `git diff --check`, lightweight syntax checks, and focused runs of
+  the existing Playwright scripts with Chromium or WebKit when they target
+  staging. Run one browser at a time, with one worker and short sequential
+  journeys; close pages, contexts, and browsers after each run.
+- Do not run application, database, integration, or server tests, Docker,
+  PostgreSQL, Redis, full builds, heavy linters, or heavy/mass browser suites
+  on the Mac. Move large browser matrices and parallel runs to an approved
+  remote runner. If staging is unavailable, report the capability blocker
+  instead of replacing staging with local application testing.
+- All application, database, integration, and browser acceptance must target
+  staging. A local Playwright process is only the browser control plane: it
+  must open the real staging URL at the exact deployed SHA, never a local
+  server, mock, or copied database. PostgreSQL is the only database used for
+  testing. Do not use SQLite, including for local preliminary checks.
 - Hosted CI is not a substitute for staging acceptance and is used only when a
   separate repository gate explicitly requires it.
 - Staging is the primary and, before production exists, the only product
@@ -178,7 +183,8 @@ asking for owner acceptance.
   integrations, and real user paths.
 - Do not start local PostgreSQL, Redis, workers, scheduler, full Compose, or
   heavy browser/integration infrastructure on the Mac. Use staging for product
-  evidence; on the Mac, only the lightweight checks listed above are allowed.
+  evidence; focused existing Playwright control is the only permitted browser
+  execution on the Mac, and its procedure is in `docs/operations/staging-qa.md`.
 - Destructive tests run only against isolated PostgreSQL databases or isolated
   data inside staging. Before a risky operation, determine its impact and
   create a recoverable backup.

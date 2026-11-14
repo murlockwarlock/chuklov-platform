@@ -941,7 +941,7 @@ Catalog REQs and catalog OQs are defined in the linked test-catalog file. The pa
 - Acceptance: The instruction is available to Женя; no analytics redesign is included in Stage 1; future analytics redesign waits for real session data.
 - Dependencies: Existing analytics console.
 - Delivery package: `1A`
-- Status: `TO IMPLEMENT`
+- Status: `EXISTING - NEEDS VERIFICATION`
 
 ### Compatibility and migration contract
 

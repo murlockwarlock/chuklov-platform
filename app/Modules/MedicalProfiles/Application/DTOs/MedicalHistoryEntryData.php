@@ -8,7 +8,7 @@ final readonly class MedicalHistoryEntryData
         public int $id,
         public string $lineageKey,
         public string $type,
-        public int $year,
+        public ?int $year,
         public string $description,
     ) {}
 

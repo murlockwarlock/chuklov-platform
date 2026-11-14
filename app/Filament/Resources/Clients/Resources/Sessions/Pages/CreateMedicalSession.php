@@ -5,6 +5,7 @@ namespace App\Filament\Resources\Clients\Resources\Sessions\Pages;
 use App\Filament\Resources\Clients\ClientResource;
 use App\Filament\Resources\Clients\Resources\Sessions\MedicalSessionResource;
 use App\Filament\Resources\Clients\Resources\Sessions\Schemas\ClinicalTestProtocol;
+use App\Filament\Resources\Clients\Resources\Sessions\Schemas\SessionForm;
 use App\Filament\Support\InteractsWithFormValidationFeedback;
 use App\Filament\Support\LocalizedCreateRecord;
 use App\Models\User;
@@ -13,11 +14,13 @@ use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Sessions\Application\CreateSession;
 use App\Modules\Sessions\Application\DTOs\CreateSessionCommand;
-use App\Modules\Sessions\Application\GenerateSessionResult;
 use App\Modules\Sessions\Application\MedicalSessionPainInitializer;
 use App\Modules\Sessions\Domain\Models\MedicalSession;
+use Filament\Notifications\Notification;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
+use Livewire\Attributes\Locked;
 use Throwable;
 
 class CreateMedicalSession extends LocalizedCreateRecord
@@ -29,6 +32,19 @@ class CreateMedicalSession extends LocalizedCreateRecord
     protected static ?string $title = 'Новый сеанс';
 
     protected static ?string $breadcrumb = 'Новый сеанс';
+
+    #[Locked]
+    public bool $autosaveReady = false;
+
+    #[Locked]
+    public string $creationToken = '';
+
+    public function mount(): void
+    {
+        $this->creationToken = (string) Str::uuid();
+
+        parent::mount();
+    }
 
     protected function fillForm(): void
     {
@@ -66,11 +82,59 @@ class CreateMedicalSession extends LocalizedCreateRecord
         $this->callHook('afterFill');
     }
 
+    protected function afterFill(): void
+    {
+        $this->autosaveReady = true;
+    }
+
+    public function updatedData(mixed $value, string $key): void
+    {
+        if (! $this->autosaveReady || $this->record !== null || $this->isCreating) {
+            return;
+        }
+
+        if (! in_array($key, ['occurred_at', 'specialist_id'], true)
+            && (! filled($this->data['occurred_at'] ?? null) || ! filled($this->data['specialist_id'] ?? null))) {
+            return;
+        }
+        if (! filled($this->data['occurred_at'] ?? null) || ! filled($this->data['specialist_id'] ?? null)) {
+            return;
+        }
+
+        $this->data = SessionForm::withStableLineageKeys($this->data);
+        $this->isCreating = true;
+        try {
+            $data = $this->form->getState();
+            $this->record = $this->handleRecordCreation($data);
+            $this->form->model($this->record);
+            Notification::make()->success()->title(__('Черновик сеанса сохранён'))->send();
+            $this->redirect(MedicalSessionResource::getUrl('edit', [
+                'client' => $this->parentClient(),
+                'record' => $this->record,
+            ]), navigate: true);
+        } catch (ValidationException $exception) {
+            Notification::make()->danger()->title(__('Не удалось сохранить черновик'))->body((string) collect($exception->errors())->flatten()->first())->send();
+        } catch (Throwable $exception) {
+            $mapped = $this->unexpectedAutosaveFailure($exception, $this->data, [
+                'organization_id' => app(OrganizationContext::class)->id(),
+                'actor_user_id' => $this->actor()->getKey(),
+                'entity_id' => null,
+            ]);
+            Notification::make()->danger()->title(__('Не удалось сохранить черновик'))->body((string) collect($mapped->errors())->flatten()->first())->send();
+        } finally {
+            $this->isCreating = false;
+        }
+    }
+
     protected function handleRecordCreation(array $data): Model
     {
         $actor = $this->actor();
         $parent = $this->parentClient();
         $formState = $data;
+
+        $data = SessionForm::withStableLineageKeys($data);
+        $data['creation_token'] = $this->creationToken;
+        $this->data = $data;
 
         unset($data['pain_not_measured'], $data['pain_vas']);
 
@@ -90,6 +154,14 @@ class CreateMedicalSession extends LocalizedCreateRecord
         } catch (ValidationException $exception) {
             throw $this->formValidationFailure($exception, $formState);
         } catch (Throwable $exception) {
+            if ($this->isCreating) {
+                throw $this->unexpectedAutosaveFailure($exception, $formState, [
+                    'organization_id' => app(OrganizationContext::class)->id(),
+                    'actor_user_id' => $actor->getKey(),
+                    'entity_id' => null,
+                ]);
+            }
+
             throw $this->unexpectedFormFailure($exception, $formState);
         }
     }
@@ -104,19 +176,6 @@ class CreateMedicalSession extends LocalizedCreateRecord
     protected function getCreatedNotificationTitle(): ?string
     {
         return __('Сеанс создан');
-    }
-
-    public function fillDraftResult(): string
-    {
-        $actor = $this->actor();
-        $client = $this->parentClient();
-        $draft = $this->form->getRawState();
-
-        return app(GenerateSessionResult::class)->handleCreateDraft(
-            $actor,
-            $client,
-            is_array($draft) ? $draft : $draft->toArray(),
-        );
     }
 
     private function actor(): User

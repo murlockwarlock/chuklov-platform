@@ -14,6 +14,7 @@ final readonly class MedicalProfilePainWriter
     public function __construct(
         private MedicalEncryptorInterface $encryptor,
         private MedicalProblemTagCatalog $tags,
+        private MedicalComplaintCatalog $complaints,
     ) {}
 
     /**
@@ -42,6 +43,12 @@ final readonly class MedicalProfilePainWriter
                 $profilePain['after_score'],
             );
             $input = MedicalPainInput::fromArray($profilePain);
+            if ($input->name === '' && $input->complaintDefinitionId !== null) {
+                $input = $input->withName($this->complaints->name((int) $profile->organization_id, $input->complaintDefinitionId) ?? '');
+            }
+            if ($input->name === '') {
+                throw ValidationException::withMessages(['pains' => 'Укажите жалобу или выберите её из справочника.']);
+            }
             $lineage = $input->lineageKey ?? Str::uuid()->toString();
             if (isset($lineages[$lineage])) {
                 throw ValidationException::withMessages(['pains' => 'Каждая боль должна быть указана только один раз.']);
@@ -49,7 +56,19 @@ final readonly class MedicalProfilePainWriter
             $lineages[$lineage] = true;
             $existingPain = $existing->get($lineage);
             $preservedTagIds = $existingPain instanceof MedicalProfilePain ? $existingPain->problemTags->modelKeys() : [];
-            $inputs[] = [$input, $lineage, $this->tags->assertKnown((int) $profile->organization_id, $input->tagIds, $preservedTagIds)];
+            $preservedComplaintIds = $existingPain instanceof MedicalProfilePain && $existingPain->medical_complaint_definition_id !== null
+                ? [(int) $existingPain->medical_complaint_definition_id]
+                : [];
+            $inputs[] = [
+                $input,
+                $lineage,
+                $this->tags->assertKnown((int) $profile->organization_id, $input->tagIds, $preservedTagIds),
+                $this->complaints->assertKnown(
+                    (int) $profile->organization_id,
+                    $input->complaintDefinitionId === null ? [] : [$input->complaintDefinitionId],
+                    $preservedComplaintIds,
+                ),
+            ];
         }
 
         foreach ($existing as $lineage => $pain) {
@@ -59,7 +78,7 @@ final readonly class MedicalProfilePainWriter
         }
 
         $result = [];
-        foreach ($inputs as $sortOrder => [$input, $lineage, $tagIds]) {
+        foreach ($inputs as $sortOrder => [$input, $lineage, $tagIds, $complaintIds]) {
             /** @var MedicalProfilePain|null $pain */
             $pain = $existing->get($lineage);
             $pain ??= new MedicalProfilePain;
@@ -69,6 +88,7 @@ final readonly class MedicalProfilePainWriter
                 'client_id' => $profile->client_id,
                 'medical_profile_id' => $profile->getKey(),
                 'patient_profile_id' => $profile->patient_profile_id,
+                'medical_complaint_definition_id' => $complaintIds[0] ?? null,
                 'lineage_key' => $lineage,
                 'name' => $encryptedName,
                 'frequency_mode' => $input->frequencyMode,
@@ -94,6 +114,7 @@ final readonly class MedicalProfilePainWriter
                 frequencyPeriodUnit: $input->frequencyPeriodUnit,
                 timeOfDay: $input->timeOfDay,
                 score: $input->score,
+                complaintDefinitionId: $complaintIds[0] ?? null,
                 tagIds: $tagIds,
             );
         }

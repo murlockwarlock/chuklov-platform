@@ -11,6 +11,7 @@ use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Application\OrganizationFeatureGate;
 use App\Modules\Organizations\Domain\Enums\OrganizationFeature;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
+use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Security\Application\RecordAuditEvent;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\DB;
@@ -28,18 +29,7 @@ final class ResetStagingClientAccount
 
     public function handle(User $actor, Client $client): void
     {
-        if (! app()->environment(['local', 'staging', 'testing'])) {
-            throw new AuthorizationException('The staging account reset is unavailable in this environment.');
-        }
-
-        $organization = $this->context->organization();
-
-        if ((int) $client->organization_id !== (int) $organization->getKey()) {
-            throw new AuthorizationException('The client is outside the current organization.');
-        }
-
-        $this->features->authorize($organization, OrganizationFeature::ClientRecords);
-        $this->authorizer->authorize($actor, $organization, OrganizationPermission::ManageClients);
+        $organization = $this->authorizeReset($actor, $client);
 
         $purge = DB::transaction(function () use ($actor, $client, $organization): array {
             $lockedClient = Client::query()
@@ -89,5 +79,39 @@ final class ResetStagingClientAccount
         });
 
         $this->purger->deleteStorage($purge);
+    }
+
+    public function isAvailable(User $actor, Client $client): bool
+    {
+        try {
+            $this->authorizeReset($actor, $client);
+
+            return true;
+        } catch (AuthorizationException) {
+            return false;
+        }
+    }
+
+    private function authorizeReset(User $actor, Client $client): Organization
+    {
+        if (! app()->environment(['local', 'staging', 'testing'])) {
+            throw new AuthorizationException('The staging account reset is unavailable in this environment.');
+        }
+
+        $organization = $this->context->organization();
+
+        if ((int) $client->organization_id !== (int) $organization->getKey()) {
+            throw new AuthorizationException('The client is outside the current organization.');
+        }
+
+        $this->features->authorize($organization, OrganizationFeature::ClientRecords);
+        $this->authorizer->authorize($actor, $organization, OrganizationPermission::ManageClients);
+
+        $allowedClientIds = array_map('intval', (array) config('staging.reset_client_ids', []));
+        if (! in_array((int) $client->getKey(), $allowedClientIds, true)) {
+            throw new AuthorizationException('The staging account reset is unavailable for this client.');
+        }
+
+        return $organization;
     }
 }
