@@ -28,7 +28,7 @@ final class MedicalTest18SafetyMarkerTest extends TestCase
     public function test_yes_creates_encrypted_client_and_session_markers_and_marker_persists_for_later_sessions(): void
     {
         [$organization, $admin, $client] = $this->organizationClientAndAdmin();
-        $session = $this->session($organization, $client);
+        $session = $this->medicalSession($organization, $client);
 
         $marker = app(MedicalTest18SafetyMarker::class)->handleFromResult($admin, $session, [
             'before' => ['rows' => [['answer' => 'Да']]],
@@ -102,7 +102,7 @@ final class MedicalTest18SafetyMarkerTest extends TestCase
         return [$organization, $admin, $client];
     }
 
-    private function session(Organization $organization, Client $client): MedicalSession
+    private function medicalSession(Organization $organization, Client $client): MedicalSession
     {
         $specialist = Specialist::factory()->forOrganization($organization)->create();
         $session = new MedicalSession;
