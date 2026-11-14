@@ -56,6 +56,9 @@ final readonly class MedicalSessionPainReader
                 beforeScore: $pain->before_score !== null ? (int) $pain->before_score : null,
                 afterScore: $pain->after_score !== null ? (int) $pain->after_score : null,
                 previousAfterScore: array_key_exists((string) $pain->lineage_key, $previousAfter) ? $previousAfter[(string) $pain->lineage_key] : null,
+                complaintDefinitionId: $pain->medical_complaint_definition_id !== null ? (int) $pain->medical_complaint_definition_id : null,
+                needsConfirmation: (bool) $pain->needs_confirmation,
+                state: (string) $pain->state,
                 tagIds: array_values(array_map(static fn (int|string $id): int => (int) $id, $pain->problemTags->modelKeys())),
             );
         })->all());

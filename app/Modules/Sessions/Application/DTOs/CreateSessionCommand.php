@@ -32,6 +32,9 @@ final readonly class CreateSessionCommand
         /** @var array<int, mixed>|null */
         public ?array $causeIds = null,
         public bool $causesManualOverride = false,
+        public ?string $therapistNotes = null,
+        /** @var array<int, mixed>|null */
+        public ?array $protocolSteps = null,
     ) {}
 
     /**
@@ -66,6 +69,8 @@ final readonly class CreateSessionCommand
             rootCauses: array_key_exists('root_causes', $data) && is_array($data['root_causes']) ? array_values($data['root_causes']) : null,
             causeIds: array_key_exists('cause_ids', $data) && is_array($data['cause_ids']) ? array_values($data['cause_ids']) : null,
             causesManualOverride: filter_var($data['causes_manual_override'] ?? false, FILTER_VALIDATE_BOOLEAN),
+            therapistNotes: self::optionalTrimmedString($data, 'therapist_notes'),
+            protocolSteps: array_key_exists('protocol_steps', $data) && is_array($data['protocol_steps']) ? array_values($data['protocol_steps']) : null,
         );
     }
 

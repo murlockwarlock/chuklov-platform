@@ -5,6 +5,7 @@ namespace App\Modules\Sessions\Domain\Models;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Scheduling\Domain\Models\Booking;
+use App\Modules\Sessions\Domain\Enums\MedicalSessionStatus;
 use App\Modules\Specialists\Domain\Models\Specialist;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Collection;
@@ -25,12 +26,16 @@ use Illuminate\Support\Carbon;
  * @property string|null $pain_vas
  * @property string|null $tests
  * @property string|null $observations
+ * @property string|null $therapist_notes
  * @property string|null $subjective_feelings
  * @property string|null $visual_posture_diagnostics
  * @property string|null $root_cause_hypothesis
  * @property string|null $protocol
  * @property string|null $result
  * @property bool $causes_manual_override
+ * @property MedicalSessionStatus $status
+ * @property Carbon|null $completed_at
+ * @property Carbon|null $edited_at
  * @property int $encryption_key_version
  * @property Carbon $occurred_at
  * @property Carbon $created_at
@@ -44,7 +49,7 @@ use Illuminate\Support\Carbon;
  * @property-read Collection<int, MedicalSessionRootCause> $rootCauses
  * @property-read Collection<int, MedicalCauseDefinition> $causes
  */
-#[Fillable(['pain', 'pain_vas', 'tests', 'observations', 'subjective_feelings', 'visual_posture_diagnostics', 'root_cause_hypothesis', 'protocol', 'result', 'causes_manual_override', 'encryption_key_version'])]
+#[Fillable(['pain', 'pain_vas', 'tests', 'observations', 'therapist_notes', 'subjective_feelings', 'visual_posture_diagnostics', 'root_cause_hypothesis', 'protocol', 'result', 'causes_manual_override', 'encryption_key_version', 'status', 'completed_at', 'edited_at'])]
 class MedicalSession extends Model
 {
     /** @return BelongsTo<Organization, $this> */
@@ -85,6 +90,14 @@ class MedicalSession extends Model
             ->orderBy('id');
     }
 
+    /** @return HasMany<MedicalSessionProtocolStep, $this> */
+    public function protocolSteps(): HasMany
+    {
+        return $this->hasMany(MedicalSessionProtocolStep::class, 'medical_session_id')
+            ->orderBy('step_order')
+            ->orderBy('id');
+    }
+
     /** @return HasMany<MedicalSessionTestResult, $this> */
     public function testResults(): HasMany
     {
@@ -112,6 +125,9 @@ class MedicalSession extends Model
         return [
             'encryption_key_version' => 'integer',
             'causes_manual_override' => 'boolean',
+            'status' => MedicalSessionStatus::class,
+            'completed_at' => 'immutable_datetime',
+            'edited_at' => 'immutable_datetime',
             'occurred_at' => 'datetime',
             'created_at' => 'datetime',
             'updated_at' => 'datetime',

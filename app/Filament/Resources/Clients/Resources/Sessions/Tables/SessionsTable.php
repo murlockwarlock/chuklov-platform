@@ -8,6 +8,7 @@ use App\Filament\Support\CrmEntityLinks;
 use App\Filament\Support\CrmLabel;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Scheduling\Domain\Enums\BookingStatus;
+use App\Modules\Sessions\Domain\Enums\MedicalSessionStatus;
 use App\Modules\Sessions\Domain\Models\MedicalSession;
 use Filament\Actions\Action;
 use Filament\Tables\Columns\TextColumn;
@@ -30,6 +31,10 @@ class SessionsTable
                     ->label(__('Дата сеанса'))
                     ->dateTime('d.m.Y H:i')
                     ->timezone(fn (): string => app(OrganizationContext::class)->defaultTimezone()),
+                TextColumn::make('session_status')
+                    ->label(__('Состояние сеанса'))
+                    ->badge()
+                    ->state(fn (MedicalSession $record): string => self::sessionStatus($record)),
                 TextColumn::make('specialist.display_name')
                     ->label(__('Специалист'))
                     ->placeholder('—')
@@ -73,5 +78,19 @@ class SessionsTable
     private static function statusLabel(BookingStatus $status): string
     {
         return CrmLabel::enum($status) ?? __('Без статуса');
+    }
+
+    private static function sessionStatus(MedicalSession $record): string
+    {
+        $status = $record->status === MedicalSessionStatus::Completed ? __('Завершён') : __('Черновик');
+
+        return $record->edited_at === null
+            ? $status
+            : __(':status · изменено :date', [
+                'status' => $status,
+                'date' => $record->edited_at->copy()
+                    ->setTimezone(app(OrganizationContext::class)->defaultTimezone())
+                    ->format('d.m.Y H:i'),
+            ]);
     }
 }

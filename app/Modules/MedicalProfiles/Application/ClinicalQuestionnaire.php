@@ -26,7 +26,7 @@ final class ClinicalQuestionnaire
         if (trim((string) $profile->goals) === '') {
             throw ValidationException::withMessages(['goals' => 'Укажите задачи по здоровью.']);
         }
-        if (trim((string) $profile->complaints) === '' && $answers['symptoms'] === []) {
+        if (trim((string) $profile->complaints) === '' && $answers['symptoms'] === [] && $profile->pains === []) {
             throw ValidationException::withMessages(['complaints' => 'Выберите симптомы или опишите жалобы.']);
         }
         foreach (['operations' => 'operation', 'injuries' => 'injury'] as $field => $type) {

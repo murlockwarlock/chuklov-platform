@@ -17,6 +17,9 @@ final readonly class MedicalPainData
         public ?int $beforeScore = null,
         public ?int $afterScore = null,
         public ?int $previousAfterScore = null,
+        public ?int $complaintDefinitionId = null,
+        public bool $needsConfirmation = false,
+        public string $state = 'active',
         /** @var list<int> */
         public array $tagIds = [],
     ) {}
@@ -36,6 +39,9 @@ final readonly class MedicalPainData
             'before_score' => $this->beforeScore,
             'after_score' => $this->afterScore,
             'previous_after_score' => $this->previousAfterScore,
+            'complaint_definition_id' => $this->complaintDefinitionId,
+            'needs_confirmation' => $this->needsConfirmation,
+            'state' => $this->state,
             'tag_ids' => $this->tagIds,
         ];
     }

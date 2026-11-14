@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\Clients\Schemas;
 
 use App\Filament\Pages\MedicalClinicalCatalogConfiguration;
+use App\Filament\Resources\Clients\Resources\Sessions\Schemas\MedicalComplaintSelect;
 use App\Modules\MedicalProfiles\Application\ClinicalQuestionnaire;
 use App\Modules\MedicalProfiles\Application\DTOs\MedicalProfileData;
 use App\Modules\MedicalProfiles\Application\DTOs\UpdateMedicalProfileCommand;
@@ -58,6 +59,7 @@ final class MedicalProfileForm
             'pains' => array_map(static fn ($pain): array => [
                 'lineage_key' => $pain->lineageKey,
                 'name' => $pain->name,
+                'complaint_definition_id' => $pain->complaintDefinitionId,
                 'score' => $pain->score,
                 'tag_ids' => $pain->tagIds,
             ], $pains),
@@ -135,6 +137,7 @@ final class MedicalProfileForm
                 ->label(__('Боли и оценка клиента'))
                 ->schema([
                     Hidden::make('lineage_key')->dehydrated()->nullable(),
+                    MedicalComplaintSelect::make(),
                     TextInput::make('name')->label(__('Название или описание боли'))->maxLength(1000),
                     Slider::make('score')
                         ->label(__('Оценка боли'))
@@ -200,7 +203,11 @@ final class MedicalProfileForm
                 ->columnSpanFull(),
             Textarea::make('medicines')->label(__('Лекарственные препараты'))->rows(3)->maxLength(10000),
             Textarea::make('supplements')->label(__('Нутрицевтики и БАДы'))->rows(3)->maxLength(10000),
-            Textarea::make('anamnesis')->label(__('Анамнез'))->rows(3)->maxLength(10000),
+            Textarea::make('anamnesis')
+                ->label(__('Анамнез'))
+                ->placeholder(__('когда началось, что предшествовало, что пробовали, связь с травмами и операциями'))
+                ->rows(3)
+                ->maxLength(10000),
         ];
     }
 
@@ -213,7 +220,7 @@ final class MedicalProfileForm
             ->helperText(__('Добавляйте отдельную строку для каждой записи.'))
             ->schema([
                 Hidden::make('lineage_key')->dehydrated()->nullable(),
-                TextInput::make('year')->label(__('Год'))->integer()->minValue(1800)->maxValue(2200)->required()->live(),
+                TextInput::make('year')->label(__('Год'))->helperText(__('Если помните, можно примерно.'))->integer()->minValue(1800)->maxValue(2200)->nullable()->live(),
                 Textarea::make('description')->label(__('Описание'))->rows(2)->maxLength(10000)->required()->live(),
             ])
             ->columns(2)

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Link, useForm } from '@inertiajs/vue3';
-import { ref } from 'vue';
+import { computed, ref } from 'vue';
 import AppShell from '../../Components/Portal/AppShell.vue';
 import MedicalAttachmentsUploader from '../../Components/Portal/MedicalAttachmentsUploader.vue';
 import PortalPageHeader from '../../Components/Portal/PortalPageHeader.vue';
@@ -20,7 +20,7 @@ type HistoryEntry = {
     id?: number;
     lineage_key?: string;
     type: 'operation' | 'injury';
-    year: number;
+    year: number | null;
     description: string;
 };
 type EditableHistoryEntry = Omit<HistoryEntry, 'year'> & { year: number | null };
@@ -29,10 +29,12 @@ type Pain = {
     lineage_key?: string;
     name: string;
     score: number | null;
+    complaint_definition_id?: number | null;
 };
+type ComplaintOption = { id: number; name: string; group_name: string | null };
 const props = defineProps<{
     portal: PortalShell;
-    profile: { available: boolean; readFailed: boolean; expectedSnapshot: string; fields: Record<string, string | null>; answers: Partial<Answers>; legacyFields: Record<string, string>; pains: Pain[]; historyEntries: HistoryEntry[] };
+    profile: { available: boolean; readFailed: boolean; expectedSnapshot: string; fields: Record<string, string | null>; answers: Partial<Answers>; legacyFields: Record<string, string>; pains: Pain[]; historyEntries: HistoryEntry[]; complaintOptions: ComplaintOption[] };
     urls: { update: string; upload: string };
     materials: { id: number; filename: string; downloadUrl: string }[];
     saved: boolean;
@@ -51,6 +53,14 @@ const historyEntries = ref<EditableHistoryEntry[]>(props.profile.historyEntries.
 const medicalForm = ref<HTMLFormElement | null>(null);
 const fields = ['complaints', 'goals', 'chronic_conditions', 'operations', 'injuries', 'medicines', 'supplements'] as const;
 const symptoms = ['headache', 'neck', 'back', 'joints', 'swelling', 'digestion', 'weakness', 'insomnia', 'stress'];
+const complaintGroups = computed(() => {
+    const groups = new Map<string, ComplaintOption[]>();
+    for (const option of props.profile.complaintOptions || []) {
+        const group = option.group_name || t('medical.otherComplaints');
+        groups.set(group, [...(groups.get(group) || []), option]);
+    }
+    return Array.from(groups.entries()).map(([name, options]) => ({ name, options }));
+});
 
 function displayField(field: typeof fields[number]): string {
     if (field === 'chronic_conditions' && props.profile.answers.no_chronic_conditions) {
@@ -80,6 +90,21 @@ const form = useForm({
 function addPain(): void {
     pains.value.push({ name: '', score: null });
     syncPains();
+}
+
+function complaintSelected(id: number): boolean {
+    return pains.value.some((pain) => pain.complaint_definition_id === id);
+}
+
+function toggleComplaint(option: ComplaintOption): void {
+    const index = pains.value.findIndex((pain) => pain.complaint_definition_id === option.id);
+    if (index >= 0) {
+        pains.value.splice(index, 1);
+    } else {
+        pains.value.push({ name: option.name, complaint_definition_id: option.id, score: null });
+    }
+    syncPains();
+    clearClientError('complaints');
 }
 
 function removePain(index: number): void {
@@ -134,7 +159,8 @@ function validate(): string | null {
     if (!form.goals.trim()) {
         clientErrors.value.goals = t('medical.goalRequired');
     }
-    if (answers.symptoms.length === 0 && !form.complaints.trim()) {
+    const hasStructuredComplaint = pains.value.some((pain) => Boolean(pain.complaint_definition_id) || pain.name.trim() !== '');
+    if (answers.symptoms.length === 0 && !form.complaints.trim() && !hasStructuredComplaint) {
         clientErrors.value.complaints = t('medical.complaintsRequired');
     }
 
@@ -155,9 +181,7 @@ function validate(): string | null {
             clientErrors.value[field] = t('medical.detailsRequired');
         }
         for (const row of rows) {
-            if (row.year === null) {
-                clientErrors.value[field] = t('medical.yearRequired');
-            } else if (!Number.isInteger(row.year) || row.year < 1900 || row.year > currentYear) {
+            if (row.year !== null && (!Number.isInteger(row.year) || row.year < 1800 || row.year > currentYear)) {
                 clientErrors.value[field] = t('medical.yearInvalid', { year: currentYear });
             }
             if (!row.description.trim()) {
@@ -293,6 +317,42 @@ function save(): void {
                 <span class="medical-profile__required">({{ t('medical.requiredField') }})</span>
               </legend>
               <div class="medical-profile__choice-grid medical-profile__choice-grid--symptoms">
+                <details
+                  v-for="group in complaintGroups"
+                  :key="group.name"
+                  open
+                  class="portal-panel portal-panel--compact portal-stack"
+                >
+                  <summary class="portal-label cursor-pointer">{{ group.name }}</summary>
+                  <div class="medical-profile__choice-grid">
+                    <label
+                      v-for="option in group.options"
+                      :key="option.id"
+                      class="medical-profile__choice"
+                      :class="{ 'medical-profile__choice--selected': complaintSelected(option.id) }"
+                    >
+                      <input
+                        type="checkbox"
+                        :checked="complaintSelected(option.id)"
+                        class="medical-profile__choice-control"
+                        @change="toggleComplaint(option)"
+                      >
+                      <span class="min-w-0">{{ option.name }}</span>
+                    </label>
+                  </div>
+                </details>
+                <p
+                  v-if="!complaintGroups.length"
+                  class="portal-copy"
+                >
+                  {{ t('medical.complaintCatalogEmpty') }}
+                </p>
+                <p
+                  v-if="complaintGroups.length"
+                  class="portal-label"
+                >
+                  {{ t('medical.legacySymptoms') }}
+                </p>
                 <label
                   v-for="symptom in symptoms"
                   :key="symptom"
@@ -458,6 +518,7 @@ function save(): void {
                     >
                       {{ t('medical.year') }}
                     </label>
+                    <p class="portal-copy">{{ t('medical.yearOptional') }}</p>
                     <input
                       :id="`medical-${field}-year-${index}`"
                       v-model.number="entry.year"

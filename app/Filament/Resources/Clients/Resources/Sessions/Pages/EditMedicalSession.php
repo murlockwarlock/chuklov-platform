@@ -6,6 +6,8 @@ use App\Filament\Pages\MedicalClinicalCatalogConfiguration;
 use App\Filament\Resources\Clients\ClientResource;
 use App\Filament\Resources\Clients\Resources\Sessions\MedicalSessionResource;
 use App\Filament\Resources\Clients\Resources\Sessions\Schemas\ClinicalTestProtocol;
+use App\Filament\Resources\Clients\Resources\Sessions\Schemas\MedicalComplaintSelect;
+use App\Filament\Resources\Clients\Resources\Sessions\Schemas\SessionForm;
 use App\Filament\Support\FormValidationFeedback;
 use App\Filament\Support\InteractsWithFormValidationFeedback;
 use App\Filament\Support\LocalizedEditRecord;
@@ -23,7 +25,7 @@ use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Sessions\Application\DTOs\MedicalSessionData;
 use App\Modules\Sessions\Application\DTOs\UpdateSessionCommand;
-use App\Modules\Sessions\Application\GenerateSessionResult;
+use App\Modules\Sessions\Application\CompleteSession;
 use App\Modules\Sessions\Application\GetSession;
 use App\Modules\Sessions\Application\LinkMedicalSessionBooking;
 use App\Modules\Sessions\Application\MedicalClinicalCatalog;
@@ -68,6 +70,10 @@ class EditMedicalSession extends LocalizedEditRecord
     protected static ?string $breadcrumb = 'Редактирование';
 
     public int $resultFormVersion = 0;
+
+    protected bool $autosaveReady = false;
+
+    protected bool $autosaveInProgress = false;
 
     protected function getHeaderActions(): array
     {
@@ -140,29 +146,25 @@ class EditMedicalSession extends LocalizedEditRecord
                 })
                 ->visible(fn (): bool => MedicalSessionResource::canEdit($this->getRecord()) && $this->session()->booking_id !== null),
             Action::make('fillResult')
-                ->label(__('Заполнить результат'))
+                ->label(__('Заполнить с ИИ'))
                 ->icon('heroicon-o-sparkles')
-                ->requiresConfirmation(fn (): bool => filled($this->data['result'] ?? null))
-                ->modalHeading(fn (): ?string => filled($this->data['result'] ?? null) ? (string) __('Заменить текст результата?') : null)
-                ->modalDescription(fn (): ?string => filled($this->data['result'] ?? null) ? (string) __('Текущий текст будет заменён сводкой по данным сеанса.') : null)
+                ->disabled()
+                ->tooltip(__('ИИ подключается на этапе 2.')),
+            Action::make('completeSession')
+                ->label(__('Завершить сеанс'))
+                ->icon('heroicon-o-check-circle')
+                ->color('success')
+                ->requiresConfirmation()
+                ->visible(fn (): bool => MedicalSessionResource::canEdit($this->getRecord()) && $this->session()->status->value !== 'completed')
                 ->action(function (Action $action): void {
                     try {
-                        $actor = $this->actor();
-                        $record = $this->getRecord();
-                        abort_unless($record instanceof MedicalSession, 404);
-                        $result = app(GenerateSessionResult::class)->handleDraft(
-                            $actor,
-                            $record,
-                            $this->parentClient(),
-                            $this->draftForResult(),
-                        );
-                        $this->data['result'] = $result;
-                        $this->resultFormVersion++;
-                        $this->form->fillPartially(['result' => $result], ['result']);
-                        Notification::make()->title(__('Результат заполнен'))->success()->send();
+                        $this->record = app(CompleteSession::class)->handle($this->actor(), $this->session(), $this->parentClient());
+                        $this->form->model($this->record);
+                        $this->fillForm();
+                        Notification::make()->success()->title(__('Сеанс завершён'))->send();
                     } catch (ValidationException $exception) {
                         $mapped = FormValidationFeedback::forAction($exception, $action);
-                        FormValidationFeedback::notifyValidation($mapped, __('Не удалось выполнить действие. Попробуйте ещё раз.'));
+                        FormValidationFeedback::notifyValidation($mapped);
                         throw $mapped;
                     } catch (Throwable $exception) {
                         $mapped = FormValidationFeedback::unexpectedForAction($exception, $action);
@@ -183,29 +185,62 @@ class EditMedicalSession extends LocalizedEditRecord
             ->operation('edit')
             ->components([
                 Hidden::make('expected_snapshot')->dehydrated()->nullable()->string(),
-                Section::make(__('Клинические заметки'))
+                Placeholder::make('autosave_saving')
+                    ->hiddenLabel()
+                    ->content(__('Сохраняем изменения…'))
+                    ->extraAttributes(['wire:loading' => ''])
+                    ->columnSpanFull(),
+                Section::make(__('0. Показатели до сеанса'))
+                    ->schema([
+                        Placeholder::make('vitals_stage1c')->hiddenLabel()->content(__('Измерения до и после сеанса подключаются в этапе 1C. Пока заполните доступные данные в следующих блоках.')),
+                    ])->collapsible()->columnSpanFull(),
+                Placeholder::make('session_lifecycle')
+                    ->hiddenLabel()
+                    ->content(fn (): string => $this->lifecycleSummary())
+                    ->columnSpanFull(),
+                Section::make(__('1. Жалобы (боли)'))
                     ->schema([
                         Repeater::make('pains')
                             ->label(__('Боли'))
                             ->schema([
                                 Hidden::make('lineage_key')->dehydrated()->nullable(),
-                                Textarea::make('name')->label(__('Название или описание боли'))->rows(2)->maxLength(1000),
+                                MedicalComplaintSelect::make(),
+                                Textarea::make('name')->label(__('Название или описание боли'))->rows(2)->maxLength(1000)->live(onBlur: true),
                                 Select::make('frequency_mode')->label(__('Частота'))->options([
                                     'unspecified' => __('Не указана'),
                                     'permanent' => __('Постоянно'),
                                     'count' => __('Количество раз за период'),
                                 ])->default('unspecified')->live(),
-                                TextInput::make('frequency_count')->label(__('Количество'))->integer()->minValue(1)->visible(fn (Get $get): bool => $get('frequency_mode') === 'count')->required(fn (Get $get): bool => $get('frequency_mode') === 'count'),
-                                Select::make('frequency_period_unit')->label(__('Период'))->options(fn (Get $get): array => app(MedicalFrequencyPeriodCatalog::class)->optionsForSelection(app(OrganizationContext::class)->id(), $get('frequency_period_unit')))->visible(fn (Get $get): bool => $get('frequency_mode') === 'count')->required(fn (Get $get): bool => $get('frequency_mode') === 'count')->searchable(),
+                                TextInput::make('frequency_count')->label(__('Количество'))->integer()->minValue(1)->live(onBlur: true)->visible(fn (Get $get): bool => $get('frequency_mode') === 'count')->required(fn (Get $get): bool => $get('frequency_mode') === 'count'),
+                                Select::make('frequency_period_unit')->label(__('Период'))->options(fn (Get $get): array => app(MedicalFrequencyPeriodCatalog::class)->optionsForSelection(app(OrganizationContext::class)->id(), $get('frequency_period_unit')))->visible(fn (Get $get): bool => $get('frequency_mode') === 'count')->required(fn (Get $get): bool => $get('frequency_mode') === 'count')->searchable()->live(),
                                 CheckboxList::make('time_of_day')->label(__('Время суток'))->options([
                                     'all' => __('Весь день'),
                                     'morning' => __('Утро'),
                                     'day' => __('День'),
                                     'evening' => __('Вечер'),
                                     'night' => __('Ночь'),
-                                ])->columns(2)->default(['all']),
+                                ])->columns(2)->default(['all'])->live(),
                                 Hidden::make('before_score')->dehydrated()->nullable(),
                                 Hidden::make('after_score')->dehydrated()->nullable(),
+                                Hidden::make('state')->dehydrated()->default('active'),
+                                Placeholder::make('complaint_state')
+                                    ->hiddenLabel()
+                                    ->content(fn (Get $get): string => match ((string) $get('state')) {
+                                        'resolved' => __('Жалоба снята. При необходимости нажмите «Вернулась».', []),
+                                        'returned' => __('Жалоба вернулась.', []),
+                                        default => $get('needs_confirmation') ? __('Из анкеты, уточнить.', []) : '',
+                                    })
+                                    ->extraAttributes(fn (Get $get): array => [
+                                        'class' => in_array($get('state'), ['resolved', 'returned'], true)
+                                            ? 'text-gray-500 opacity-70'
+                                            : 'text-amber-700',
+                                    ])
+                                    ->visible(fn (Get $get): bool => $get('state') === 'resolved' || $get('state') === 'returned' || (bool) $get('needs_confirmation')),
+                                \Filament\Forms\Components\Toggle::make('needs_confirmation')
+                                    ->label(__('Из анкеты, уточнить'))
+                                    ->helperText(__('Снимите отметку после подтверждения или исправления жалобы.'))
+                                    ->default(false)
+                                    ->live(),
                                 Slider::make('before_score_ui')
                                     ->label(__('До сеанса'))
                                     ->range(minValue: 0, maxValue: 10)
@@ -278,13 +313,25 @@ class EditMedicalSession extends LocalizedEditRecord
                                 ])->columnSpanFull(),
                                 Placeholder::make('previous_after_score')
                                     ->label(__('После предыдущего сеанса'))
-                                    ->content(fn (Get $get): string => self::scoreDisplay(self::previousAfterScore($get))),
+                                    ->content(fn (Get $get): string => self::scoreDisplay(self::previousAfterScore($get)))
+                                    ->extraAttributes(['class' => 'text-gray-500']),
+                                Actions::make([
+                                    Action::make('returnComplaint')
+                                        ->label(__('Вернулась'))
+                                        ->icon('heroicon-o-arrow-path')
+                                        ->color('warning')
+                                        ->action(static function (Set $set): void {
+                                            $set('state', 'returned');
+                                        })
+                                        ->visible(fn (Get $get): bool => $get('state') === 'resolved'),
+                                ])->columnSpanFull(),
                                 Select::make('tag_ids')
                                     ->label(__('Категория проблемы'))
                                     ->options(fn (Get $get): array => app(MedicalProblemTagCatalog::class)->optionsForSelection(app(OrganizationContext::class)->id(), (array) $get('tag_ids')))
                                     ->multiple()
                                     ->searchable()
                                     ->preload()
+                                    ->live()
                                     ->helperText(fn (Get $get): string => self::problemTagHelperText($get('tag_ids')))
                                     ->hintAction(self::problemTagConfigurationAction()),
                             ])
@@ -293,9 +340,13 @@ class EditMedicalSession extends LocalizedEditRecord
                             ->reorderable()
                             ->collapsible()
                             ->itemLabel(fn (array $state): string => (string) ($state['name'] ?? __('Новая боль')))
-                            ->addActionLabel(__('Добавить боль'))
+                            ->addActionLabel(__('+ Жалоба'))
+                            ->extraItemActions([SessionForm::addTimeOfDayAction()])
                             ->columnSpanFull(),
-                        Textarea::make('pain')->label(__('Особые жалобы'))->rows(3)->placeholder(__('Что ещё важно учесть специалисту')),
+                        Textarea::make('pain')->label(__('Особые жалобы'))->rows(3)->placeholder(__('Что ещё важно учесть специалисту'))->live(onBlur: true),
+                    ])->columnSpanFull(),
+                Section::make(__('2. Кинезиологические и мануальные тесты'))
+                    ->schema([
                         Placeholder::make('test_catalog_empty')
                             ->content(__('Каталог клинических тестов пока пуст. Настройте его перед заполнением протокола.'))
                             ->visible(fn (): bool => app(MedicalClinicalCatalog::class)->testOptions(app(OrganizationContext::class)->id()) === [] && $this->session()->testResults()->doesntExist())
@@ -344,11 +395,14 @@ class EditMedicalSession extends LocalizedEditRecord
                             ->columnSpanFull(),
                         Hidden::make('tests')->dehydrated()->nullable(),
                         Hidden::make('observations')->dehydrated()->nullable(),
+                    ])->columnSpanFull(),
+                Section::make(__('3. Первопричина нарушений и причины нарушений'))
+                    ->schema([
                         Repeater::make('root_causes')
                             ->label(__('Первопричина нарушений'))
                             ->schema([
-                                Select::make('cause_id')->label(__('Причина из сеанса'))->options(fn (Get $get): array => $this->rootCauseOptions($get))->searchable()->nullable(),
-                                Textarea::make('free_text')->label(__('Дополнительное описание'))->rows(2)->maxLength(10000),
+                                Select::make('cause_id')->label(__('Причина из сеанса'))->options(fn (Get $get): array => $this->rootCauseOptions($get))->searchable()->nullable()->live(),
+                                Textarea::make('free_text')->label(__('Дополнительное описание'))->rows(2)->maxLength(10000)->live(onBlur: true),
                             ])
                             ->columns(2)
                             ->defaultItems(0)
@@ -363,59 +417,94 @@ class EditMedicalSession extends LocalizedEditRecord
                                 ? (string) $get('root_cause_hypothesis')
                                 : __('Нет сохранённого значения'))
                             ->columnSpanFull(),
-                        Textarea::make('protocol')
-                            ->label(__('Алгоритм сеанса (пошаговый протокол сеанса)'))
-                            ->rows(3)
-                            ->placeholder(__('Пошаговый план сеанса'))
+                        Placeholder::make('root_cause_ai_version')
+                            ->label(__('Версия ИИ'))
+                            ->content(__('Не подключена. ИИ будет доступен на этапе 2.'))
+                            ->columnSpanFull(),
+                        Actions::make([
+                            Action::make('fillRootCauseStage2')
+                                ->label(__('Заполнить с ИИ'))
+                                ->icon('heroicon-o-sparkles')
+                                ->disabled()
+                                ->tooltip(__('ИИ подключается на этапе 2.')),
+                        ])->columnSpanFull(),
+                    ])->columnSpanFull(),
+                Section::make(__('4. Пошаговый протокол сеанса'))
+                    ->schema([
+                        Repeater::make('protocol_steps')
+                            ->label(__('Шаги протокола'))
+                            ->schema([
+                                Hidden::make('lineage_key')->dehydrated()->nullable(),
+                                Textarea::make('text')->label(__('Текст шага'))->rows(2)->required()->maxLength(10000)->live(onBlur: true),
+                            ])
+                            ->defaultItems(0)
+                            ->reorderable()
+                            ->collapsible()
+                            ->addActionLabel(__('Добавить шаг'))
+                            ->itemLabel(fn (array $state, ?int $index): string => 'Шаг '.((int) ($index ?? 0) + 1).(filled($state['text'] ?? null) ? ': '.(string) $state['text'] : ''))
+                            ->columnSpanFull(),
+                        Hidden::make('protocol')
+                            ->dehydrated()
+                            ->nullable()
                             ->hintAction(Action::make('fillProtocol')
-                                ->label(__('Заполнить'))
+                                ->label(__('Заполнить с ИИ'))
                                 ->icon('heroicon-o-sparkles')
-                                ->action(static function (): void {
-                                    Notification::make()
-                                        ->title(__('Автозаполнение алгоритма пока не подключено.'))
-                                        ->info()
-                                        ->send();
-                                })),
-                        Textarea::make('subjective_feelings')->label(__('Субъективные ощущения клиента после сеанса'))->rows(3)->placeholder(__('Что клиент почувствовал после сеанса')),
-                        Textarea::make('visual_posture_diagnostics')->label(__('Визуальная диагностика осанки'))->rows(3)->placeholder(__('Изменения линии плеч, таза и позвоночника')),
+                                ->disabled()
+                                ->tooltip(__('ИИ подключается на этапе 2.'))),
+                        Placeholder::make('protocol_legacy_hint')->label(__('Историческое поле протокола'))->content(__('Старый монолитный текст сохранён для истории. Новые шаги сохраняются отдельно.'))->columnSpanFull(),
+                        Placeholder::make('protocol_ai_hint')->label(__('Версия ИИ'))->content(__('Не подключена. ИИ будет доступен на этапе 2.'))->columnSpanFull(),
+                        Actions::make([
+                            Action::make('fillProtocolStage2')
+                                ->label(__('Заполнить с ИИ'))
+                                ->icon('heroicon-o-sparkles')
+                                ->disabled()
+                                ->tooltip(__('ИИ подключается на этапе 2.')),
+                        ])->columnSpanFull(),
+                    ])->collapsible()->columnSpanFull(),
+                Section::make(__('5. Субъективные ощущения клиента после сеанса'))
+                    ->schema([
+                        Textarea::make('subjective_feelings')->hiddenLabel()->rows(4)->placeholder(__('Что клиент почувствовал после сеанса'))->live(onBlur: true),
+                    ])->collapsible()->columnSpanFull(),
+                Section::make(__('6. Визуальные изменения в осанке после сеанса'))
+                    ->schema([
+                        Textarea::make('visual_posture_diagnostics')->hiddenLabel()->rows(4)->placeholder(__('Изменения линии плеч, таза и позвоночника'))->live(onBlur: true),
+                    ])->collapsible()->columnSpanFull(),
+                Section::make(__('7. Результат после сеанса'))
+                    ->schema([
                         Textarea::make('result')
-                            ->label(__('Результат после сеанса'))
-                            ->rows(3)
+                            ->hiddenLabel()
+                            ->rows(4)
+                            ->placeholder(__('Итог, который специалист вводит вручную'))
                             ->live(onBlur: true)
-                            ->placeholder(__('Эффект после процедур/до следующего сеанса'))
-                            ->hintAction(Action::make('fillResultField')
-                                ->label(__('Заполнить'))
+                            ->hintAction(Action::make('fillResult')
+                                ->label(__('Заполнить с ИИ'))
                                 ->icon('heroicon-o-sparkles')
-                                ->requiresConfirmation(fn (Get $get): bool => filled($get('result')))
-                                ->modalHeading(fn (Get $get): ?string => filled($get('result')) ? (string) __('Заменить текст результата?') : null)
-                                ->modalDescription(fn (Get $get): ?string => filled($get('result')) ? (string) __('Текущий текст будет заменён сводкой по данным сеанса.') : null)
-                                ->action(function (Action $action, Set $set): void {
-                                    try {
-                                        $actor = $this->actor();
-                                        $record = $this->getRecord();
-                                        abort_unless($record instanceof MedicalSession, 404);
-                                        $result = app(GenerateSessionResult::class)->handleDraft(
-                                            $actor,
-                                            $record,
-                                            $this->parentClient(),
-                                            $this->draftForResult(),
-                                        );
-                                        $set('result', $result);
-                                        $this->resultFormVersion++;
-                                        Notification::make()->title(__('Результат заполнен'))->success()->send();
-                                    } catch (ValidationException $exception) {
-                                        $mapped = FormValidationFeedback::forAction($exception, $action);
-                                        FormValidationFeedback::notifyValidation($mapped, __('Не удалось выполнить действие. Попробуйте ещё раз.'));
-                                        throw $mapped;
-                                    } catch (Throwable $exception) {
-                                        $mapped = FormValidationFeedback::unexpectedForAction($exception, $action);
-                                        FormValidationFeedback::notifyValidation($mapped);
-                                        throw $mapped;
-                                    }
-                                }))
-                            ->key(fn (): string => 'session-result-'.$this->resultFormVersion),
-                    ])
-                    ->columnSpanFull(),
+                                ->disabled()
+                                ->tooltip(__('ИИ подключается на этапе 2.'))),
+                        Placeholder::make('result_ai_version')
+                            ->label(__('Версия ИИ'))
+                            ->content(__('Не подключена. ИИ будет доступен на этапе 2.'))
+                            ->columnSpanFull(),
+                    ])->collapsible()->columnSpanFull(),
+                Section::make(__('8. Заметки терапевта'))
+                    ->schema([
+                        Textarea::make('therapist_notes')->hiddenLabel()->rows(4)->placeholder(__('Внутренние заметки специалиста. Клиент их не увидит.'))->live(onBlur: true),
+                    ])->collapsible()->columnSpanFull(),
+                Section::make(__('9. Эффективность проведённого сеанса'))
+                    ->schema([
+                        Placeholder::make('effectiveness_stage1b')->hiddenLabel()->content(__('Расчёты эффективности подключаются в этапе 1B. Данные для них сохраняются в жалобах и результатах выше.')),
+                    ])->collapsible()->columnSpanFull(),
+                Section::make(__('10. Рекомендации эксперта'))
+                    ->schema([
+                        Placeholder::make('recommendations_stage1b')->label(__('Версия ИИ'))->content(__('Рекомендации и отправка клиенту подключаются в этапе 1B; ИИ — на этапе 2.')),
+                        Actions::make([
+                            Action::make('fillRecommendations')
+                                ->label(__('Заполнить с ИИ'))
+                                ->icon('heroicon-o-sparkles')
+                                ->disabled()
+                                ->tooltip(__('ИИ подключается на этапе 2.')),
+                        ]),
+                    ])->collapsible()->columnSpanFull(),
                 Section::make(__('Фото до / после'))
                     ->schema([
                         Placeholder::make('session_photos_hint')
@@ -428,7 +517,35 @@ class EditMedicalSession extends LocalizedEditRecord
                         ])->columnSpanFull(),
                     ])
                     ->columnSpanFull(),
+                Section::make(__('Исторические значения'))
+                    ->schema([
+                        Placeholder::make('session_history_fields')->hiddenLabel()->content(__('Старые поля остаются доступными в истории и не показываются как активные поля новой формы.')),
+                    ])->columnSpanFull(),
             ]);
+    }
+
+    protected function afterFill(): void
+    {
+        $this->autosaveReady = true;
+    }
+
+    public function updatedData(mixed $value, string $key): void
+    {
+        if (! $this->autosaveReady || $this->autosaveInProgress || $key === 'expected_snapshot') {
+            return;
+        }
+
+        $this->autosaveInProgress = true;
+        try {
+            $this->save(false, false);
+            Notification::make()->success()->title(__('Изменения сохранены'))->send();
+        } catch (ValidationException $exception) {
+            Notification::make()->danger()->title(__('Изменения не сохранены'))->body((string) collect($exception->errors())->flatten()->first())->send();
+        } catch (Throwable) {
+            Notification::make()->danger()->title(__('Изменения не сохранены'))->body(__('Исправьте данные и повторите действие.'))->send();
+        } finally {
+            $this->autosaveInProgress = false;
+        }
     }
 
     private function uploadPhotoFormAction(MedicalSessionAttachmentGallery $gallery): Action
@@ -487,7 +604,6 @@ class EditMedicalSession extends LocalizedEditRecord
         $record = $this->getRecord();
         $actor = $this->actor();
         $parent = $this->parentClient();
-        $formState = $data;
 
         if (! $record instanceof MedicalSession) {
             return parent::mutateFormDataBeforeFill($data);
@@ -508,6 +624,9 @@ class EditMedicalSession extends LocalizedEditRecord
             'root_cause_hypothesis' => $decrypted->rootCauseHypothesis,
             'protocol' => $decrypted->protocol,
             'result' => $decrypted->result,
+            'therapist_notes' => $decrypted->therapistNotes,
+            'protocol_steps' => $decrypted->protocolSteps,
+            'status' => $decrypted->status,
             'pains' => array_map(static function ($pain): array {
                 $data = $pain->toArray();
                 $data['before_score_ui'] = self::scoreUiValue($data['before_score'] ?? null);
@@ -549,11 +668,14 @@ class EditMedicalSession extends LocalizedEditRecord
 
         try {
             $updated = app(UpdateSession::class)->handle($actor, $record, $command, $parent);
-
-            return MedicalSession::query()
+            $fresh = MedicalSession::query()
                 ->where('organization_id', $updated->organizationId)
                 ->where('id', $updated->id)
                 ->firstOrFail();
+            $this->record = $fresh;
+            $this->data['expected_snapshot'] = app(MedicalSessionSnapshotHasher::class)->forSession($fresh);
+
+            return $fresh;
         } catch (ValidationException $exception) {
             throw $this->formValidationFailure($exception, $formState);
         } catch (Throwable $exception) {
@@ -618,6 +740,20 @@ class EditMedicalSession extends LocalizedEditRecord
         }
 
         return $parent;
+    }
+
+    private function lifecycleSummary(): string
+    {
+        $session = $this->session();
+        $status = $session->status->value === 'completed' ? __('Завершён') : __('Черновик');
+        if ($session->edited_at === null) {
+            return __('Статус: :status', ['status' => $status]);
+        }
+
+        return __('Статус: :status · изменено :date', [
+            'status' => $status,
+            'date' => $session->edited_at->copy()->setTimezone(app(OrganizationContext::class)->defaultTimezone())->format('d.m.Y H:i'),
+        ]);
     }
 
     /** @return array<int, string> */
@@ -988,6 +1124,8 @@ class EditMedicalSession extends LocalizedEditRecord
             'root_causes',
             'cause_ids',
             'causes_manual_override',
+            'therapist_notes',
+            'protocol_steps',
         ];
 
         $normalized = [];
