@@ -7,7 +7,7 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-#[Fillable(['organization_id', 'name', 'group_name', 'is_active', 'sort_order'])]
+#[Fillable(['organization_id', 'name', 'group_name', 'synonyms', 'tooltip', 'moderation_status', 'merged_into_id', 'is_active', 'sort_order'])]
 class MedicalCauseDefinition extends Model
 {
     /** @return BelongsTo<Organization, $this> */
@@ -16,8 +16,14 @@ class MedicalCauseDefinition extends Model
         return $this->belongsTo(Organization::class);
     }
 
+    /** @return BelongsTo<MedicalCauseDefinition, $this> */
+    public function mergedInto(): BelongsTo
+    {
+        return $this->belongsTo(self::class, 'merged_into_id');
+    }
+
     protected function casts(): array
     {
-        return ['is_active' => 'boolean', 'sort_order' => 'integer'];
+        return ['synonyms' => 'array', 'is_active' => 'boolean', 'sort_order' => 'integer', 'merged_into_id' => 'integer'];
     }
 }

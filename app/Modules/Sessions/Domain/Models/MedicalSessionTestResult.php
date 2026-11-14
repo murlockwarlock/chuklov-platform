@@ -9,7 +9,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 
-#[Fillable(['organization_id', 'client_id', 'medical_session_id', 'medical_test_definition_id', 'before_value_id', 'after_value_id'])]
+#[Fillable(['organization_id', 'client_id', 'medical_session_id', 'medical_test_definition_id', 'before_value_id', 'after_value_id', 'structured_payload', 'structured_payload_key_version', 'before_violation_count', 'after_violation_count', 'review_again'])]
 class MedicalSessionTestResult extends Model
 {
     /** @return BelongsTo<Organization, $this> */
@@ -52,5 +52,15 @@ class MedicalSessionTestResult extends Model
     public function causes(): BelongsToMany
     {
         return $this->belongsToMany(MedicalCauseDefinition::class, 'medical_session_test_causes', 'medical_session_test_result_id', 'medical_cause_definition_id');
+    }
+
+    protected function casts(): array
+    {
+        return [
+            'structured_payload_key_version' => 'integer',
+            'before_violation_count' => 'integer',
+            'after_violation_count' => 'integer',
+            'review_again' => 'boolean',
+        ];
     }
 }
