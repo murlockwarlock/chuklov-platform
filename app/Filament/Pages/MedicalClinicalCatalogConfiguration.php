@@ -65,6 +65,8 @@ final class MedicalClinicalCatalogConfiguration extends LocalizedPage
     /** @var array<int|string, string> */
     public array $causeOptions = [];
 
+    public ?string $selectedTestKey = null;
+
     protected string $view = 'filament.pages.medical-clinical-catalog-configuration';
 
     public static function canAccess(): bool
@@ -129,329 +131,427 @@ final class MedicalClinicalCatalogConfiguration extends LocalizedPage
                 'is_active' => $complaint->is_active,
                 'sort_order' => $complaint->sort_order,
             ])->all();
-        $this->form->fill(['tests' => $tests, 'causes' => $causes, 'problem_tags' => $problemTags, 'complaints' => $complaints]);
+        $selected = collect($tests)->first(fn (array $test): bool => ($test['key'] ?? null) === $this->selectedTestKey);
+        $selected ??= $tests[0] ?? null;
+        $this->selectedTestKey = is_array($selected) ? (string) ($selected['key'] ?? '') : null;
+        $this->form->fill([
+            'tests' => $tests,
+            'selected_test_key' => $this->selectedTestKey,
+            'selected_test' => $selected,
+            'causes' => $causes,
+            'problem_tags' => $problemTags,
+            'complaints' => $complaints,
+        ]);
     }
 
     public function form(Schema $schema): Schema
     {
+        return $this->compactForm($schema);
+    }
+
+    private function compactForm(Schema $schema): Schema
+    {
         return $schema
             ->components([
-                Section::make(__('Тесты'))
-                    ->description(__('Эти тесты появляются у специалиста в блоке «Кинезиологические/мануальные тесты» медицинского сеанса. Отключённые значения нельзя выбрать заново, но они остаются читаемыми в истории. Например: «Название теста» и его допустимые значения.'))
-                    ->schema([
-                        Placeholder::make('tests_empty')
-                            ->label(__('Каталог пока пуст'))
-                            ->content(__('Добавьте первый тест кнопкой «Добавить тест». После сохранения он станет доступен в новом медицинском сеансе.'))
-                            ->visible(fn (Get $get): bool => ! is_array($get('tests')) || $get('tests') === [])
-                            ->columnSpanFull(),
-                        Repeater::make('tests')
-                            ->label(__('Тесты'))
-                            ->helperText(__('Нажмите «Настроить», чтобы открыть один тест. Перемещайте карточки кнопками или перетаскиванием; числовой порядок вводить не нужно.'))
-                            ->schema([
-                                Hidden::make('key')->default(fn (): string => 'test_'.Str::lower(Str::random(12))),
-                                TextInput::make('name')->label(__('Название теста'))->live(onBlur: true)->required()->maxLength(255),
-                                TextInput::make('section')->label(__('Раздел'))->helperText(__('Где этот тест будет виден специалисту в медицинском сеансе.'))->maxLength(255),
-                                Select::make('test_type')
-                                    ->label(__('Тип клинической формы'))
-                                    ->options(fn (): array => app(MedicalClinicalCatalog::class)->testTypeOptions())
-                                    ->helperText(__('Для Stage 1B выберите тип формы. Существующие старые записи можно оставить без типа.'))
-                                    ->searchable()
-                                    ->nullable()
-                                    ->live(),
-                                Select::make('catalog_set')
-                                    ->label(__('Набор'))
-                                    ->options(fn (): array => app(MedicalClinicalCatalog::class)->catalogSetOptions())
-                                    ->helperText(__('Основные тесты входят в набор по умолчанию; специализированные находятся через поиск при добавлении.'))
-                                    ->nullable()
-                                    ->live(),
-                                Select::make('cause_ids')
-                                    ->label(__('Разрешённые причины'))
-                                    ->options(fn (): array => $this->causeOptions)
-                                    ->multiple()
-                                    ->searchable()
-                                    ->helperText(__('Можно оставить пустым, если причины ещё не настроены.')),
-                                Toggle::make('default_in_session')
-                                    ->label(__('В наборе по умолчанию'))
-                                    ->helperText(__('Отметьте только основной тест. Для подтеста по умолчанию выберите его ниже.'))
-                                    ->visible(fn (Get $get): bool => ($get('catalog_set') ?? null) === 'main')
-                                    ->default(false),
-                                Toggle::make('is_active')->label(__('Активен'))->helperText(__('Отключённый тест не предлагается в новых сеансах, но старые записи остаются читаемыми.'))->default(true),
-                                Hidden::make('sort_order')->dehydrated(true),
-                                Section::make(__('Строки теста'))
-                                    ->description(__('Строки описывают то, что специалист заполняет до и после сеанса. Обозначение строки нужно только для устойчивого сохранения истории.'))
-                                    ->schema([
-                                        Repeater::make('rows')
-                                            ->label(__('Строки'))
-                                            ->schema($this->catalogRowSchema('row'))
-                                            ->defaultItems(0)
-                                            ->reorderable()
-                                            ->reorderableWithButtons()
-                                            ->collapsible()
-                                            ->collapsed()
-                                            ->itemLabel(fn (array $state): ?string => self::catalogItemLabel($state['label'] ?? null, true))
-                                            ->addActionLabel(__('Добавить строку'))
-                                            ->columnSpanFull(),
-                                    ])
-                                    ->collapsible()
-                                    ->collapsed()
-                                    ->columnSpanFull(),
-                                Repeater::make('feelings')
-                                    ->label(__('Чувства и дополнительные находки'))
-                                    ->schema($this->catalogRowSchema('feeling'))
-                                    ->defaultItems(0)
-                                    ->reorderable()
-                                    ->reorderableWithButtons()
-                                    ->collapsible()
-                                    ->collapsed()
-                                    ->addActionLabel(__('Добавить строку'))
-                                    ->columnSpanFull(),
-                                Section::make(__('Подтесты'))
-                                    ->description(__('Используйте подтесты, когда один номер содержит несколько самостоятельных частей, например 31.1, 31.2 и 31.3.'))
-                                    ->schema([
-                                        Repeater::make('subtests')
-                                            ->label(__('Подтесты'))
-                                            ->schema([
-                                                TextInput::make('key')->label(__('Обозначение подтеста'))->helperText(__('Например, 31.1'))->required()->maxLength(160),
-                                                TextInput::make('label')->label(__('Название подтеста'))->required()->maxLength(255),
-                                                Select::make('type')
-                                                    ->label(__('Тип формы подтеста'))
-                                                    ->options(fn (): array => app(MedicalClinicalCatalog::class)->testTypeOptions())
-                                                    ->nullable()
-                                                    ->searchable(),
-                                                Select::make('cause_ids')
-                                                    ->label(__('Разрешённые причины'))
-                                                    ->options(fn (): array => $this->causeOptions)
-                                                    ->multiple()
-                                                    ->searchable()
-                                                    ->helperText(__('Можно оставить пустым, если причины ещё не настроены.')),
-                                                Toggle::make('index_enabled')
-                                                    ->label(__('Показывать индекс 0–3'))
-                                                    ->default(true),
-                                                TagsInput::make('choices')
-                                                    ->label(__('Допустимые варианты'))
-                                                    ->placeholder(__('Добавьте вариант')),
-                                                TextInput::make('range.min')
-                                                    ->label(__('Минимальное значение'))
-                                                    ->numeric()
-                                                    ->nullable(),
-                                                TextInput::make('range.max')
-                                                    ->label(__('Максимальное значение'))
-                                                    ->numeric()
-                                                    ->nullable(),
-                                                Toggle::make('energy_enabled')
-                                                    ->label(__('Показывать энергетическое значение'))
-                                                    ->default(false),
-                                                TagsInput::make('method_options')
-                                                    ->label(__('Допустимые методы'))
-                                                    ->placeholder(__('Добавьте вариант метода'))
-                                                    ->helperText(__('Например, A, B или C.')),
-                                                Repeater::make('rows')
-                                                    ->label(__('Строки подтеста'))
-                                                    ->schema($this->catalogRowSchema('subtest_row'))
-                                                    ->defaultItems(0)
-                                                    ->reorderable()
-                                                    ->reorderableWithButtons()
-                                                    ->collapsible()
-                                                    ->collapsed()
-                                                    ->addActionLabel(__('Добавить строку подтеста'))
-                                                    ->columnSpanFull(),
-                                                Repeater::make('provoking_points')
-                                                    ->label(__('Провоцирующие точки'))
-                                                    ->schema($this->catalogRowSchema('provoking_point'))
-                                                    ->defaultItems(0)
-                                                    ->reorderable()
-                                                    ->reorderableWithButtons()
-                                                    ->collapsible()
-                                                    ->collapsed()
-                                                    ->addActionLabel(__('Добавить провоцирующую точку'))
-                                                    ->columnSpanFull(),
-                                                Repeater::make('feelings')
-                                                    ->label(__('Чувства и находки'))
-                                                    ->schema($this->catalogRowSchema('feeling'))
-                                                    ->defaultItems(0)
-                                                    ->reorderable()
-                                                    ->reorderableWithButtons()
-                                                    ->collapsible()
-                                                    ->collapsed()
-                                                    ->addActionLabel(__('Добавить строку'))
-                                                    ->columnSpanFull(),
-                                            ])
-                                            ->columns(2)
-                                            ->defaultItems(0)
-                                            ->reorderable()
-                                            ->reorderableWithButtons()
-                                            ->collapsible()
-                                            ->collapsed()
-                                            ->itemLabel(fn (array $state): ?string => self::catalogItemLabel($state['label'] ?? $state['key'] ?? null, true))
-                                            ->addActionLabel(__('Добавить подтест'))
-                                            ->columnSpanFull(),
-                                        Select::make('default_subtests')
-                                            ->label(__('Подтесты по умолчанию'))
-                                            ->options(fn (Get $get): array => self::subtestOptions($get('subtests')))
-                                            ->multiple()
-                                            ->searchable()
-                                            ->helperText(__('Оставьте пустым, если по умолчанию добавляется весь тест.'))
-                                            ->columnSpanFull(),
-                                    ])
-                                    ->collapsible()
-                                    ->collapsed()
-                                    ->columnSpanFull(),
-                                Section::make(__('Правила и подсказки'))
-                                    ->description(__('Настраивайте только подтверждённые значения. Пустая норма оставляет расчёт без автоматического вывода.'))
-                                    ->schema([
-                                        CheckboxList::make('rules.index_violation')
-                                            ->label(__('Индексы, считающиеся нарушением'))
-                                            ->options([0 => '0 · норма', 1 => '1', 2 => '2', 3 => '3'])
-                                            ->columns(4),
-                                        Toggle::make('index_enabled')
-                                            ->label(__('Показывать общий индекс 0–3'))
-                                            ->default(true),
-                                        TextInput::make('rules.energy_threshold')
-                                            ->label(__('Порог энергетического показателя'))
-                                            ->numeric()
-                                            ->nullable()
-                                            ->helperText(__('Оставьте пустым, пока порог не утверждён.')),
-                                        Select::make('rules.normal_tor_direction')
-                                            ->label(__('Нормальное направление тор-поля'))
-                                            ->options(['R' => 'Правая сторона', 'L' => 'Левая сторона'])
-                                            ->nullable(),
-                                        Toggle::make('rules.chakra_violation')->label(__('Отмеченная чакра считается нарушением')),
-                                        Toggle::make('rules.broken_transition_count')->label(__('Считать повторяющиеся переходы')),
-                                        Toggle::make('rules.ankle_sides')->label(__('Для голеностопа указывать стороны')),
-                                        Toggle::make('rules.forward_bend_without_side')->label(__('Для наклона поясницы не указывать сторону')),
-                                        TagsInput::make('priority_options')
-                                            ->label(__('Варианты приоритета'))
-                                            ->placeholder(__('Добавьте вариант')),
-                                        TagsInput::make('movement_options')
-                                            ->label(__('Движения провокации'))
-                                            ->placeholder(__('Добавьте вариант движения')),
-                                        TagsInput::make('tone_options')
-                                            ->label(__('Варианты тонуса'))
-                                            ->placeholder(__('Добавьте вариант тонуса')),
-                                        TagsInput::make('finding_options')
-                                            ->label(__('Варианты находки'))
-                                            ->placeholder(__('Добавьте вариант находки')),
-                                        TagsInput::make('answer_options')
-                                            ->label(__('Варианты ответа'))
-                                            ->placeholder(__('Добавьте вариант ответа')),
-                                        TagsInput::make('violation_types')
-                                            ->label(__('Типы нарушения'))
-                                            ->placeholder(__('Добавьте тип нарушения')),
-                                        Repeater::make('rules.allowed_sequences')
-                                            ->label(__('Допустимые последовательности'))
-                                            ->schema([
-                                                Select::make('values')
-                                                    ->label(__('Варианты последовательности'))
-                                                    ->options(['L' => 'Левая сторона', 'R' => 'Правая сторона'])
-                                                    ->multiple()
-                                                    ->required(),
-                                            ])
-                                            ->defaultItems(0)
-                                            ->reorderable()
-                                            ->reorderableWithButtons()
-                                            ->addActionLabel(__('Добавить последовательность'))
-                                            ->columnSpanFull(),
-                                        Textarea::make('help_text')
-                                            ->label(__('Подсказка для специалиста'))
-                                            ->rows(2)
-                                            ->maxLength(2000)
-                                            ->columnSpanFull(),
-                                        Textarea::make('safety_marker_text')
-                                            ->label(__('Предупреждение по безопасности'))
-                                            ->rows(2)
-                                            ->maxLength(2000)
-                                            ->columnSpanFull(),
-                                    ])
-                                    ->columns(2)
-                                    ->collapsible()
-                                    ->collapsed()
-                                    ->columnSpanFull(),
-                                Repeater::make('values')
-                                    ->label(__('Допустимые значения'))
-                                    ->helperText(__('Добавьте варианты, которые специалист сможет выбрать для этого теста.'))
-                                    ->schema([
-                                        Hidden::make('key')->default(fn (): string => 'value_'.Str::lower(Str::random(12))),
-                                        TextInput::make('label')->label(__('Название значения'))->live(onBlur: true)->required()->maxLength(255),
-                                        Select::make('value_type')
-                                            ->label(__('Тип значения'))
-                                            ->options(fn (): array => app(MedicalClinicalCatalog::class)->valueTypeOptions())
-                                            ->nullable(),
-                                        Toggle::make('is_abnormal')->label(__('Считать нарушением')),
-                                        Toggle::make('is_active')->label(__('Активно'))->helperText(__('Отключённое значение остаётся в истории старых сеансов.'))->default(true),
-                                        Hidden::make('sort_order')->dehydrated(true),
-                                    ])->columns(2)->defaultItems(0)->reorderable()->reorderableWithButtons()->collapsible()->collapsed()->itemLabel(fn (array $state): ?string => self::catalogItemLabel($state['label'] ?? null, $state['is_active'] ?? true))->addActionLabel(__('Добавить значение'))->columnSpanFull(),
-                            ])->columns(2)->defaultItems(0)->reorderable()->reorderableWithButtons()->collapsible()->collapsed()->itemLabel(fn (array $state): ?string => self::catalogItemLabel($state['name'] ?? null, $state['is_active'] ?? true))->addActionLabel(__('Добавить тест'))->columnSpanFull(),
-                    ])->columnSpanFull(),
-                Section::make(__('Причины нарушений'))
-                    ->description(__('Причины из этого списка доступны специалисту для ручной корректировки в медицинском сеансе после выявленного нарушения. Отключённые и скрытые причины нельзя выбирать заново, но они сохраняются в истории. Синонимы используются для поиска по всему справочнику.'))
-                    ->schema([
-                        Placeholder::make('causes_empty')
-                            ->label(__('Справочник пока пуст'))
-                            ->content(__('Добавьте первую причину кнопкой «Добавить причину».'))
-                            ->visible(fn (Get $get): bool => ! is_array($get('causes')) || $get('causes') === [])
-                            ->columnSpanFull(),
-                        Repeater::make('causes')
-                            ->label(__('Причины нарушений'))
-                            ->helperText(__('Откройте карточку только той причины, которую нужно изменить. Статус «На модерации» не разрешает выбор в сеансе; «Скрыта» выключает причину, сохраняя историю.'))
-                            ->schema([
-                                Hidden::make('id')->dehydrated()->nullable(),
-                                TextInput::make('name')->label(__('Название причины'))->live(onBlur: true)->required()->maxLength(255),
-                                TextInput::make('group_name')->label(__('Группа'))->maxLength(255),
-                                Textarea::make('synonyms')->label(__('Синонимы'))->rows(2)->placeholder(__('По одному синониму в строке'))->maxLength(4000),
-                                Textarea::make('tooltip')->label(__('Подсказка'))->rows(2)->placeholder(__('Короткая подсказка для поиска специалистом'))->maxLength(4000),
-                                Select::make('moderation_status')
-                                    ->label(__('Статус модерации'))
-                                    ->options([
-                                        MedicalCauseDefinition::MODERATION_ACTIVE => __('Активна'),
-                                        MedicalCauseDefinition::MODERATION_PENDING => __('На модерации'),
-                                        MedicalCauseDefinition::MODERATION_HIDDEN => __('Скрыта'),
-                                    ])
-                                    ->required()
-                                    ->default(MedicalCauseDefinition::MODERATION_ACTIVE),
-                                Toggle::make('is_active')->label(__('Активна'))->helperText(__('Отключённая причина не предлагается для новых корректировок, но история сохраняется.'))->default(true),
-                                Hidden::make('sort_order')->dehydrated(true),
-                            ])->columns(2)->defaultItems(0)->reorderable()->reorderableWithButtons()->collapsible()->collapsed()->itemLabel(fn (array $state): ?string => self::catalogCauseItemLabel($state))->addActionLabel(__('Добавить причину'))->columnSpanFull(),
-                    ])->columnSpanFull(),
-                Section::make(__('Категории проблем'))
-                    ->description(__('Категории из этого списка используются для классификации жалоб и статистики боли. Они не заменяют свободный текст жалобы. Отключённые категории остаются читаемыми в истории. Например: «Категория проблемы».'))
-                    ->schema([
-                        Placeholder::make('problem_tags_empty')
-                            ->label(__('Категории пока не настроены'))
-                            ->content(__('Добавьте первую категорию кнопкой «Добавить категорию», чтобы использовать её в профиле и медицинском сеансе.'))
-                            ->visible(fn (Get $get): bool => ! is_array($get('problem_tags')) || $get('problem_tags') === [])
-                            ->columnSpanFull(),
-                        Repeater::make('problem_tags')
-                            ->label(__('Категории проблем'))
-                            ->helperText(__('Эти категории появятся в профиле и медицинском сеансе; откройте карточку для редактирования.'))
-                            ->schema([
-                                TextInput::make('name')->label(__('Название категории'))->live(onBlur: true)->required()->maxLength(255),
-                                TextInput::make('group_name')->label(__('Группа'))->maxLength(255),
-                                Toggle::make('is_active')->label(__('Активна'))->helperText(__('Отключённая категория не выбирается в новых карточках, но остаётся видимой в старых данных.'))->default(true),
-                                Hidden::make('sort_order')->dehydrated(true),
-                            ])->columns(2)->defaultItems(0)->reorderable()->reorderableWithButtons()->collapsible()->collapsed()->itemLabel(fn (array $state): ?string => self::catalogItemLabel($state['name'] ?? null, $state['is_active'] ?? true))->addActionLabel(__('Добавить категорию'))->columnSpanFull(),
-                    ])->columnSpanFull(),
-                Section::make(__('Жалобы'))
-                    ->description(__('Это единый справочник для клиентской анкеты и карточки сеанса. Отключённые жалобы остаются в истории и не предлагаются для новых записей.'))
-                    ->schema([
-                        Placeholder::make('complaints_empty')
-                            ->label(__('Справочник пока пуст'))
-                            ->content(__('Добавьте первую жалобу кнопкой «Добавить жалобу».'))
-                            ->visible(fn (Get $get): bool => ! is_array($get('complaints')) || $get('complaints') === [])
-                            ->columnSpanFull(),
-                        Repeater::make('complaints')
-                            ->label(__('Жалобы'))
-                            ->helperText(__('Группа помогает специалисту быстрее найти жалобу. Синонимы указывайте по одному в строке.'))
-                            ->schema([
-                                Hidden::make('id')->dehydrated()->nullable(),
-                                TextInput::make('name')->label(__('Название жалобы'))->live(onBlur: true)->required()->maxLength(255),
-                                TextInput::make('group_name')->label(__('Группа'))->placeholder(__('Боль, дискомфорт или состояние'))->maxLength(120),
-                                Textarea::make('synonyms')->label(__('Синонимы'))->rows(2)->placeholder(__('По одному синониму в строке'))->maxLength(2000),
-                                Toggle::make('is_active')->label(__('Активна'))->helperText(__('Отключённая жалоба сохраняется в истории.'))->default(true),
-                                Hidden::make('sort_order')->dehydrated(true),
-                            ])->columns(2)->defaultItems(0)->reorderable()->reorderableWithButtons()->collapsible()->collapsed()->itemLabel(fn (array $state): ?string => self::catalogItemLabel($state['name'] ?? null, $state['is_active'] ?? true))->addActionLabel(__('Добавить жалобу'))->columnSpanFull(),
-                    ])->columnSpanFull(),
+                $this->testCatalogSection(),
+                ...$this->directorySections(),
             ])
             ->statePath('data');
+    }
+
+    private function testCatalogSection(): Section
+    {
+        return Section::make(__('Тесты'))
+            ->description(__('Настройте список тестов и откройте одну карточку для подробной настройки строк, позиций, причин и правил. Одновременное редактирование всех карточек не требуется.'))
+            ->schema([
+                Placeholder::make('tests_empty')
+                    ->label(__('Каталог пока пуст'))
+                    ->content(__('Добавьте первый тест кнопкой «Добавить тест». После сохранения он станет доступен в новом медицинском сеансе.'))
+                    ->visible(fn (Get $get): bool => ! is_array($get('tests')) || $get('tests') === [])
+                    ->columnSpanFull(),
+                Repeater::make('tests')
+                    ->label(__('Список тестов'))
+                    ->helperText(__('Выберите тест ниже, чтобы открыть его подробную настройку. Перемещайте карточки кнопками или перетаскиванием; числовой порядок вводить не нужно.'))
+                    ->schema([
+                        Hidden::make('key')->default(fn (): string => 'test_'.Str::lower(Str::random(12))),
+                        TextInput::make('name')->label(__('Название теста'))->live(onBlur: true)->required()->maxLength(255),
+                        TextInput::make('section')->label(__('Раздел'))->maxLength(255),
+                        Select::make('test_type')
+                            ->label(__('Тип клинической формы'))
+                            ->options(fn (): array => app(MedicalClinicalCatalog::class)->testTypeOptions())
+                            ->searchable()
+                            ->nullable(),
+                        Select::make('catalog_set')
+                            ->label(__('Набор'))
+                            ->options(fn (): array => app(MedicalClinicalCatalog::class)->catalogSetOptions())
+                            ->searchable()
+                            ->nullable(),
+                        Toggle::make('default_in_session')
+                            ->label(__('В наборе по умолчанию'))
+                            ->visible(fn (Get $get): bool => ($get('catalog_set') ?? null) === 'main')
+                            ->default(false),
+                        Toggle::make('is_active')->label(__('Активен'))->default(true),
+                        Hidden::make('sort_order')->dehydrated(true),
+                    ])
+                    ->columns(2)
+                    ->defaultItems(0)
+                    ->reorderable()
+                    ->reorderableWithButtons()
+                    ->collapsible()
+                    ->collapsed()
+                    ->itemLabel(fn (array $state): ?string => self::catalogItemLabel($state['name'] ?? null, $state['is_active'] ?? true))
+                    ->addActionLabel(__('Добавить тест'))
+                    ->columnSpanFull(),
+                Select::make('selected_test_key')
+                    ->label(__('Открыть тест для настройки'))
+                    ->options(fn (Get $get): array => self::testEditorOptions($get('tests')))
+                    ->searchable()
+                    ->live()
+                    ->afterStateUpdated(function (?string $state): void {
+                        $this->selectTest($state);
+                    })
+                    ->helperText(__('В карточке теста доступны строки, подтесты, допустимые значения, причины и правила.'))
+                    ->visible(fn (Get $get): bool => self::testEditorOptions($get('tests')) !== [])
+                    ->columnSpanFull(),
+                Section::make(__('Настройка выбранного теста'))
+                    ->description(__('Сохраняйте только подтверждённые медицинские значения. Пустая норма оставляет автоматический расчёт выключенным.'))
+                    ->schema($this->selectedTestSchema())
+                    ->visible(fn (Get $get): bool => filled($get('selected_test_key')))
+                    ->collapsible()
+                    ->collapsed(false)
+                    ->columnSpanFull(),
+            ])
+            ->columnSpanFull();
+    }
+
+    /** @return list<Section> */
+    private function directorySections(): array
+    {
+        return [
+            Section::make(__('Причины нарушений'))
+                ->description(__('Причины из этого списка доступны специалисту для ручной корректировки в медицинском сеансе после выявленного нарушения. Отключённые и скрытые причины сохраняются в истории.'))
+                ->schema([
+                    Placeholder::make('causes_empty')
+                        ->label(__('Справочник пока пуст'))
+                        ->content(__('Добавьте первую причину кнопкой «Добавить причину».'))
+                        ->visible(fn (Get $get): bool => ! is_array($get('causes')) || $get('causes') === [])
+                        ->columnSpanFull(),
+                    Repeater::make('causes')
+                        ->label(__('Причины нарушений'))
+                        ->helperText(__('Синонимы используются для поиска. Статус «На модерации» не разрешает выбор в сеансе; «Скрыта» сохраняет историю.'))
+                        ->schema([
+                            Hidden::make('id')->dehydrated()->nullable(),
+                            TextInput::make('name')->label(__('Название причины'))->live(onBlur: true)->required()->maxLength(255),
+                            TextInput::make('group_name')->label(__('Группа'))->maxLength(255),
+                            Textarea::make('synonyms')->label(__('Синонимы'))->rows(2)->placeholder(__('По одному синониму в строке'))->maxLength(4000),
+                            Textarea::make('tooltip')->label(__('Подсказка'))->rows(2)->placeholder(__('Короткая подсказка для поиска специалистом'))->maxLength(4000),
+                            Select::make('moderation_status')
+                                ->label(__('Статус модерации'))
+                                ->options([
+                                    MedicalCauseDefinition::MODERATION_ACTIVE => __('Активна'),
+                                    MedicalCauseDefinition::MODERATION_PENDING => __('На модерации'),
+                                    MedicalCauseDefinition::MODERATION_HIDDEN => __('Скрыта'),
+                                ])
+                                ->required()
+                                ->default(MedicalCauseDefinition::MODERATION_ACTIVE),
+                            Toggle::make('is_active')->label(__('Активна'))->default(true),
+                            Hidden::make('sort_order')->dehydrated(true),
+                        ])
+                        ->columns(2)
+                        ->defaultItems(0)
+                        ->reorderable()
+                        ->reorderableWithButtons()
+                        ->collapsible()
+                        ->collapsed()
+                        ->itemLabel(fn (array $state): string => self::catalogCauseItemLabel($state))
+                        ->addActionLabel(__('Добавить причину'))
+                        ->columnSpanFull(),
+                ])
+                ->columnSpanFull(),
+            Section::make(__('Категории проблем'))
+                ->description(__('Категории используются для классификации жалоб и статистики боли. Они не заменяют свободный текст жалобы.'))
+                ->schema([
+                    Placeholder::make('problem_tags_empty')
+                        ->label(__('Категории пока не настроены'))
+                        ->content(__('Добавьте первую категорию кнопкой «Добавить категорию».'))
+                        ->visible(fn (Get $get): bool => ! is_array($get('problem_tags')) || $get('problem_tags') === [])
+                        ->columnSpanFull(),
+                    Repeater::make('problem_tags')
+                        ->label(__('Категории проблем'))
+                        ->schema([
+                            TextInput::make('name')->label(__('Название категории'))->live(onBlur: true)->required()->maxLength(255),
+                            TextInput::make('group_name')->label(__('Группа'))->maxLength(255),
+                            Toggle::make('is_active')->label(__('Активна'))->default(true),
+                            Hidden::make('sort_order')->dehydrated(true),
+                        ])
+                        ->columns(2)
+                        ->defaultItems(0)
+                        ->reorderable()
+                        ->reorderableWithButtons()
+                        ->collapsible()
+                        ->collapsed()
+                        ->itemLabel(fn (array $state): string => self::catalogItemLabel($state['name'] ?? null, $state['is_active'] ?? true))
+                        ->addActionLabel(__('Добавить категорию'))
+                        ->columnSpanFull(),
+                ])
+                ->columnSpanFull(),
+            Section::make(__('Жалобы'))
+                ->description(__('Это единый справочник для клиентской анкеты и карточки сеанса. Отключённые жалобы остаются читаемыми в истории.'))
+                ->schema([
+                    Placeholder::make('complaints_empty')
+                        ->label(__('Справочник пока пуст'))
+                        ->content(__('Добавьте первую жалобу кнопкой «Добавить жалобу».'))
+                        ->visible(fn (Get $get): bool => ! is_array($get('complaints')) || $get('complaints') === [])
+                        ->columnSpanFull(),
+                    Repeater::make('complaints')
+                        ->label(__('Жалобы'))
+                        ->schema([
+                            Hidden::make('id')->dehydrated()->nullable(),
+                            TextInput::make('name')->label(__('Название жалобы'))->live(onBlur: true)->required()->maxLength(255),
+                            TextInput::make('group_name')->label(__('Группа'))->maxLength(255),
+                            Textarea::make('synonyms')->label(__('Синонимы'))->rows(2)->placeholder(__('По одному синониму в строке'))->maxLength(2000),
+                            Toggle::make('is_active')->label(__('Активна'))->default(true),
+                            Hidden::make('sort_order')->dehydrated(true),
+                        ])
+                        ->columns(2)
+                        ->defaultItems(0)
+                        ->reorderable()
+                        ->reorderableWithButtons()
+                        ->collapsible()
+                        ->collapsed()
+                        ->itemLabel(fn (array $state): string => self::catalogItemLabel($state['name'] ?? null, $state['is_active'] ?? true))
+                        ->addActionLabel(__('Добавить жалобу'))
+                        ->columnSpanFull(),
+                ])
+                ->columnSpanFull(),
+        ];
+    }
+
+    /** @return list<Component> */
+    private function selectedTestSchema(): array
+    {
+        $path = static fn (string $field): string => 'selected_test.'.$field;
+
+        return [
+            Hidden::make($path('key'))->dehydrated(true),
+            TextInput::make($path('name'))->label(__('Название теста'))->required()->maxLength(255),
+            TextInput::make($path('section'))->label(__('Раздел'))->maxLength(255),
+            Select::make($path('test_type'))
+                ->label(__('Тип клинической формы'))
+                ->options(fn (): array => app(MedicalClinicalCatalog::class)->testTypeOptions())
+                ->searchable()
+                ->nullable(),
+            Select::make($path('catalog_set'))
+                ->label(__('Набор'))
+                ->options(fn (): array => app(MedicalClinicalCatalog::class)->catalogSetOptions())
+                ->searchable()
+                ->nullable(),
+            Select::make($path('cause_ids'))
+                ->label(__('Разрешённые причины'))
+                ->options(fn (): array => $this->causeOptions)
+                ->multiple()
+                ->searchable()
+                ->helperText(__('Пустой список допустим, если причины ещё не настроены.')),
+            Toggle::make($path('default_in_session'))
+                ->label(__('В наборе по умолчанию'))
+                ->visible(fn (Get $get): bool => ($get($path('catalog_set')) ?? null) === 'main')
+                ->default(false),
+            Toggle::make($path('is_active'))->label(__('Активен'))->default(true),
+            Hidden::make($path('sort_order'))->dehydrated(true),
+            Section::make(__('Строки теста'))
+                ->description(__('Строки описывают то, что специалист заполняет до и после сеанса.'))
+                ->schema([
+                    Repeater::make($path('rows'))
+                        ->label(__('Строки'))
+                        ->schema($this->catalogRowSchema('row'))
+                        ->defaultItems(0)
+                        ->reorderable()
+                        ->reorderableWithButtons()
+                        ->collapsible()
+                        ->collapsed()
+                        ->itemLabel(fn (array $state): ?string => self::catalogItemLabel($state['label'] ?? null, true))
+                        ->addActionLabel(__('Добавить строку'))
+                        ->columnSpanFull(),
+                ])
+                ->collapsible()
+                ->collapsed()
+                ->columnSpanFull(),
+            Repeater::make($path('feelings'))
+                ->label(__('Чувства и дополнительные находки'))
+                ->schema($this->catalogRowSchema('feeling'))
+                ->defaultItems(0)
+                ->reorderable()
+                ->reorderableWithButtons()
+                ->collapsible()
+                ->collapsed()
+                ->addActionLabel(__('Добавить строку'))
+                ->columnSpanFull(),
+            Section::make(__('Подтесты'))
+                ->description(__('Используйте подтесты, когда один номер содержит несколько самостоятельных частей, например 31.1, 31.2 и 31.3.'))
+                ->schema([
+                    Repeater::make($path('subtests'))
+                        ->label(__('Подтесты'))
+                        ->schema([
+                            TextInput::make('key')->label(__('Обозначение подтеста'))->required()->maxLength(160),
+                            TextInput::make('label')->label(__('Название подтеста'))->required()->maxLength(255),
+                            Select::make('type')->label(__('Тип формы подтеста'))->options(fn (): array => app(MedicalClinicalCatalog::class)->testTypeOptions())->nullable()->searchable(),
+                            Select::make('cause_ids')->label(__('Разрешённые причины'))->options(fn (): array => $this->causeOptions)->multiple()->searchable(),
+                            Toggle::make('index_enabled')->label(__('Показывать индекс 0–3'))->default(true),
+                            TagsInput::make('choices')->label(__('Допустимые варианты'))->placeholder(__('Добавьте вариант')),
+                            TextInput::make('range.min')->label(__('Минимальное значение'))->numeric()->nullable(),
+                            TextInput::make('range.max')->label(__('Максимальное значение'))->numeric()->nullable(),
+                            Toggle::make('energy_enabled')->label(__('Показывать энергетическое значение'))->default(false),
+                            TagsInput::make('method_options')->label(__('Допустимые методы'))->placeholder(__('Добавьте вариант метода')),
+                            Repeater::make('rows')->label(__('Строки подтеста'))->schema($this->catalogRowSchema('subtest_row'))->defaultItems(0)->reorderable()->reorderableWithButtons()->collapsible()->collapsed()->addActionLabel(__('Добавить строку подтеста'))->columnSpanFull(),
+                            Repeater::make('provoking_points')->label(__('Провоцирующие точки'))->schema($this->catalogRowSchema('provoking_point'))->defaultItems(0)->reorderable()->reorderableWithButtons()->collapsible()->collapsed()->addActionLabel(__('Добавить провоцирующую точку'))->columnSpanFull(),
+                            Repeater::make('feelings')->label(__('Чувства и находки'))->schema($this->catalogRowSchema('feeling'))->defaultItems(0)->reorderable()->reorderableWithButtons()->collapsible()->collapsed()->addActionLabel(__('Добавить строку'))->columnSpanFull(),
+                        ])
+                        ->columns(2)
+                        ->defaultItems(0)
+                        ->reorderable()
+                        ->reorderableWithButtons()
+                        ->collapsible()
+                        ->collapsed()
+                        ->itemLabel(fn (array $state): ?string => self::catalogItemLabel($state['label'] ?? $state['key'] ?? null, true))
+                        ->addActionLabel(__('Добавить подтест'))
+                        ->columnSpanFull(),
+                    Select::make($path('default_subtests'))
+                        ->label(__('Подтесты по умолчанию'))
+                        ->options(fn (Get $get): array => self::subtestOptions($get($path('subtests'))))
+                        ->multiple()
+                        ->searchable()
+                        ->helperText(__('Оставьте пустым, если по умолчанию добавляется весь тест.'))
+                        ->columnSpanFull(),
+                ])
+                ->collapsible()
+                ->collapsed()
+                ->columnSpanFull(),
+            Section::make(__('Правила и подсказки'))
+                ->schema([
+                    CheckboxList::make($path('rules.index_violation'))->label(__('Индексы, считающиеся нарушением'))->options([0 => '0 · норма', 1 => '1', 2 => '2', 3 => '3'])->columns(4),
+                    Toggle::make($path('index_enabled'))->label(__('Показывать общий индекс 0–3'))->default(true),
+                    TextInput::make($path('rules.energy_threshold'))->label(__('Порог энергетического показателя'))->numeric()->nullable(),
+                    Select::make($path('rules.normal_tor_direction'))->label(__('Нормальное направление тор-поля'))->options(['R' => 'Правая сторона', 'L' => 'Левая сторона'])->nullable(),
+                    Toggle::make($path('rules.chakra_violation'))->label(__('Отмеченная чакра считается нарушением')),
+                    Toggle::make($path('rules.broken_transition_count'))->label(__('Считать повторяющиеся переходы')),
+                    Toggle::make($path('rules.ankle_sides'))->label(__('Для голеностопа указывать стороны')),
+                    Toggle::make($path('rules.forward_bend_without_side'))->label(__('Для наклона поясницы не указывать сторону')),
+                    TagsInput::make($path('priority_options'))->label(__('Варианты приоритета'))->placeholder(__('Добавьте вариант')),
+                    TagsInput::make($path('movement_options'))->label(__('Движения провокации'))->placeholder(__('Добавьте вариант движения')),
+                    TagsInput::make($path('tone_options'))->label(__('Варианты тонуса'))->placeholder(__('Добавьте вариант тонуса')),
+                    TagsInput::make($path('finding_options'))->label(__('Варианты находки'))->placeholder(__('Добавьте вариант находки')),
+                    TagsInput::make($path('answer_options'))->label(__('Варианты ответа'))->placeholder(__('Добавьте вариант ответа')),
+                    TagsInput::make($path('violation_types'))->label(__('Типы нарушения'))->placeholder(__('Добавьте тип нарушения')),
+                    Repeater::make($path('rules.allowed_sequences'))
+                        ->label(__('Допустимые последовательности'))
+                        ->schema([Select::make('values')->label(__('Варианты последовательности'))->options(['L' => 'Левая сторона', 'R' => 'Правая сторона'])->multiple()->required()])
+                        ->defaultItems(0)
+                        ->reorderable()
+                        ->reorderableWithButtons()
+                        ->addActionLabel(__('Добавить последовательность'))
+                        ->columnSpanFull(),
+                    Textarea::make($path('help_text'))->label(__('Подсказка для специалиста'))->rows(2)->maxLength(2000)->columnSpanFull(),
+                    Textarea::make($path('safety_marker_text'))->label(__('Предупреждение по безопасности'))->rows(2)->maxLength(2000)->columnSpanFull(),
+                ])
+                ->columns(2)
+                ->collapsible()
+                ->collapsed()
+                ->columnSpanFull(),
+            Repeater::make($path('values'))
+                ->label(__('Допустимые значения'))
+                ->helperText(__('Добавьте варианты, которые специалист сможет выбрать для этого теста.'))
+                ->schema([
+                    Hidden::make('key')->default(fn (): string => 'value_'.Str::lower(Str::random(12))),
+                    TextInput::make('label')->label(__('Название значения'))->required()->maxLength(255),
+                    Select::make('value_type')->label(__('Тип значения'))->options(fn (): array => app(MedicalClinicalCatalog::class)->valueTypeOptions())->nullable(),
+                    Toggle::make('is_abnormal')->label(__('Считать нарушением')),
+                    Toggle::make('is_active')->label(__('Активно'))->default(true),
+                    Hidden::make('sort_order')->dehydrated(true),
+                ])
+                ->columns(2)
+                ->defaultItems(0)
+                ->reorderable()
+                ->reorderableWithButtons()
+                ->collapsible()
+                ->collapsed()
+                ->itemLabel(fn (array $state): ?string => self::catalogItemLabel($state['label'] ?? null, $state['is_active'] ?? true))
+                ->addActionLabel(__('Добавить значение'))
+                ->columnSpanFull(),
+        ];
+    }
+
+    /** @param mixed $tests
+     * @return array<string, string>
+     */
+    private static function testEditorOptions(mixed $tests): array
+    {
+        if (! is_array($tests)) {
+            return [];
+        }
+
+        $typeLabels = app(MedicalClinicalCatalog::class)->testTypeOptions();
+        $options = [];
+        foreach ($tests as $test) {
+            if (! is_array($test) || ! filled($test['key'] ?? null)) {
+                continue;
+            }
+            $label = trim((string) ($test['name'] ?? ''));
+            if ($label === '') {
+                $label = __('Новый тест');
+            }
+            $type = trim((string) ($test['test_type'] ?? $test['type'] ?? ''));
+            if ($type !== '' && isset($typeLabels[$type])) {
+                $label .= ' · '.$typeLabels[$type];
+            }
+            $options[(string) $test['key']] = $label;
+        }
+
+        return $options;
+    }
+
+    public function selectTest(?string $key): void
+    {
+        $state = $this->form->getState();
+        $tests = $this->testsForSave($state, $this->selectedTestKey);
+        $selected = collect($tests)->first(fn (array $test): bool => ($test['key'] ?? null) === $key);
+        $this->selectedTestKey = $key;
+        $this->form->fill([
+            ...$state,
+            'tests' => $tests,
+            'selected_test_key' => $key,
+            'selected_test' => $selected,
+        ]);
+    }
+
+    /** @param array<string, mixed> $state
+     * @return list<array<string, mixed>>
+     */
+    private function testsForSave(array $state, ?string $editorKey = null): array
+    {
+        $stored = is_array($this->data['tests'] ?? null) ? $this->data['tests'] : [];
+        $submitted = is_array($state['tests'] ?? null) ? $state['tests'] : $stored;
+        $storedByKey = [];
+        foreach ($stored as $storedTest) {
+            if (is_array($storedTest) && filled($storedTest['key'] ?? null)) {
+                $storedByKey[(string) $storedTest['key']] = $storedTest;
+            }
+        }
+        $byKey = [];
+        foreach ($submitted as $test) {
+            if (! is_array($test) || ! filled($test['key'] ?? null)) {
+                continue;
+            }
+            $key = (string) $test['key'];
+            $byKey[$key] = array_replace_recursive(
+                $storedByKey[$key] ?? [],
+                $test,
+            );
+        }
+        if ($editorKey !== null && $editorKey !== '' && is_array($state['selected_test'] ?? null)) {
+            $byKey[$editorKey] = array_replace_recursive($byKey[$editorKey] ?? [], $state['selected_test']);
+        }
+
+        return array_values($byKey);
     }
 
     public function content(Schema $schema): Schema
@@ -490,7 +590,7 @@ final class MedicalClinicalCatalogConfiguration extends LocalizedPage
                     }
 
                     $state = $this->form->getState();
-                    $currentTests = is_array($state['tests'] ?? null) ? $state['tests'] : [];
+                    $currentTests = $this->testsForSave($state, $this->selectedTestKey);
                     $currentByKey = [];
                     foreach ($currentTests as $test) {
                         if (is_array($test) && filled($test['key'] ?? null)) {
@@ -634,7 +734,7 @@ final class MedicalClinicalCatalogConfiguration extends LocalizedPage
         $state = $this->form->getState();
         app(SaveMedicalClinicalCatalog::class)->handle(
             $actor,
-            self::withTestOrder(is_array($state['tests'] ?? null) ? $state['tests'] : []),
+            self::withTestOrder($this->testsForSave($state, $this->selectedTestKey)),
             self::withOrder(is_array($state['causes'] ?? null) ? $state['causes'] : []),
             self::withOrder(is_array($state['problem_tags'] ?? null) ? $state['problem_tags'] : []),
             self::withOrder(is_array($state['complaints'] ?? null) ? $state['complaints'] : []),
