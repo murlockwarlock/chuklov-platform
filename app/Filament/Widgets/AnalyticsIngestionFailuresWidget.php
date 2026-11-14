@@ -2,6 +2,7 @@
 
 namespace App\Filament\Widgets;
 
+use App\Filament\Support\HasDashboardLoadingPlaceholder;
 use App\Models\User;
 use App\Modules\Analytics\Application\Data\DashboardPeriod;
 use App\Modules\Analytics\Application\KnowledgeIngestionAnalytics;
@@ -15,6 +16,7 @@ use Illuminate\Support\Facades\Auth;
 
 class AnalyticsIngestionFailuresWidget extends StatsOverviewWidget
 {
+    use HasDashboardLoadingPlaceholder;
     use InteractsWithPageFilters;
 
     protected int|string|array $columnSpan = ['default' => 'full', 'lg' => 1];

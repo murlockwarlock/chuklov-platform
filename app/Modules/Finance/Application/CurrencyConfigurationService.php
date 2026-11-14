@@ -168,6 +168,7 @@ final class CurrencyConfigurationService
 
         foreach (DB::table('services')
             ->where('organization_id', $organizationId)
+            ->where('is_active', true)
             ->whereNotNull('price_currency')
             ->distinct()
             ->pluck('price_currency') as $currency) {
@@ -176,6 +177,7 @@ final class CurrencyConfigurationService
 
         foreach (DB::table('services')
             ->where('organization_id', $organizationId)
+            ->where('is_active', true)
             ->whereNotNull('price_matrix')
             ->pluck('price_matrix') as $matrix) {
             $values = is_string($matrix) ? json_decode($matrix, true) : $matrix;

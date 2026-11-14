@@ -392,12 +392,8 @@ final class WorkSchedule extends LocalizedPage
     public function specialistScheduleTimezoneLabel(): string
     {
         $timezone = $this->specialistScheduleTimezone();
-        $offsetHours = CarbonImmutable::now($timezone)->getOffset() / 3600;
-        $offset = $offsetHours === 0.0
-            ? 'UTC'
-            : 'UTC'.($offsetHours > 0 ? '+' : '').rtrim(rtrim(number_format($offsetHours, 2, '.', ''), '0'), '.');
 
-        return __('График задан по времени: ').TimezoneOptions::label($timezone).' ('.$offset.') · '.$timezone;
+        return __('График задан по времени: ').TimezoneOptions::display($timezone);
     }
 
     public function selectedDatesLabel(): string

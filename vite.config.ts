@@ -11,6 +11,7 @@ export default defineConfig({
                 'resources/js/app.ts',
                 'resources/js/filament/rich-text-editor.ts',
                 'resources/js/filament/database-notification-sound.ts',
+                'resources/js/filament/network-feedback.ts',
                 'resources/css/filament/admin/theme.css',
             ],
             refresh: true,

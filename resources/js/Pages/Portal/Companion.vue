@@ -56,6 +56,7 @@ const actionPendingId = ref<string | null>(null);
 const feedbackPending = ref<Record<string, boolean>>({});
 const feedbackSubmitted = ref<Record<string, 'helpful' | 'not_helpful'>>({});
 const feedbackErrors = ref<Record<string, string>>({});
+const sendRequestError = ref<string | null>(null);
 const sendForm = useForm<{ body: string; idempotency_key: string; images: File[]; reinspect_recent_images: boolean }>({
     body: '',
     idempotency_key: '',
@@ -113,6 +114,7 @@ function send(): void {
         return;
     }
     prepareForIncomingMessages();
+    sendRequestError.value = null;
     sendForm.body = text;
     sendForm.reinspect_recent_images = sendForm.images.length === 0 && sendForm.reinspect_recent_images;
     sendForm.idempotency_key = newIdempotencyKey();
@@ -122,6 +124,19 @@ function send(): void {
         onSuccess: () => {
             body.value = '';
             sendForm.reinspect_recent_images = false;
+        },
+        onError: () => {
+            sendRequestError.value = t('companion.sendNetworkError');
+        },
+        onHttpException: () => {
+            sendRequestError.value = t('companion.sendNetworkError');
+
+            return false;
+        },
+        onNetworkError: () => {
+            sendRequestError.value = t('companion.sendNetworkError');
+
+            return false;
         },
     });
 }
@@ -492,8 +507,16 @@ watch(messageSignature, async () => {
               <p
                 v-if="sendForm.errors.body || sendForm.errors.idempotency_key"
                 class="portal-copy portal-copy--small text-[var(--portal-color-danger)]"
+                role="alert"
               >
                 {{ t('common.error') }}
+              </p>
+              <p
+                v-else-if="sendRequestError"
+                class="portal-copy portal-copy--small text-[var(--portal-color-danger)]"
+                role="alert"
+              >
+                {{ sendRequestError }}
               </p>
               <p
                 v-else-if="sendForm.processing"

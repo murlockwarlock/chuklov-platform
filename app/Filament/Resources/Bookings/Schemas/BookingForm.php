@@ -631,7 +631,7 @@ class BookingForm
     {
         $timezone = self::viewerTimezone();
 
-        return TimezoneOptions::label($timezone).' ('.$timezone.')';
+        return TimezoneOptions::display($timezone);
     }
 
     private static function isBackdated(Get $get): bool
@@ -677,7 +677,7 @@ class BookingForm
 
         $timezone = self::scheduleTimezone($get, $startsAt);
 
-        return __('У специалиста: ').$startsAt->setTimezone($timezone)->format('H:i').' · '.TimezoneOptions::label($timezone).' ('.$timezone.')';
+        return __('У специалиста: ').$startsAt->setTimezone($timezone)->format('H:i').' · '.TimezoneOptions::display($timezone);
     }
 
     private static function startsAt(mixed $state): ?CarbonImmutable

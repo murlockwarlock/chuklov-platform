@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { router, useForm, useRemember } from '@inertiajs/vue3';
-import { computed, ref, unref, watch } from 'vue';
+import { computed, onMounted, ref, unref, watch } from 'vue';
 import AppShell from '../../Components/Portal/AppShell.vue';
 import BookingCalendar from '../../Components/Portal/BookingCalendar.vue';
 import BookingChoiceList from '../../Components/Portal/BookingChoiceList.vue';
@@ -17,9 +17,13 @@ import { usePortalLocale } from '../../composables/usePortalLocale';
 import type { PortalShell } from '../../types/portal';
 import { personalData, type PersonalData, type PersonalProfile } from '../../types/personalData';
 import { formatMajorPrice } from '../../utils/formatMajorPrice';
+import { timezoneLabel } from '../../utils/timezoneLabel';
 
 type VisitFormat = 'office' | 'home' | 'online';
 type BookingStep = 'time' | 'confirmation' | 'success';
+
+const selectedStartParam = 'selected_start_at';
+const bookingStepParam = 'booking_step';
 
 type ServiceOption = {
     id: number;
@@ -138,18 +142,95 @@ const { locale, t } = usePortalLocale();
 const selectedServiceId = ref<number | null>(props.query.serviceId);
 const selectedSpecialistId = ref<number | null>(props.query.specialistId);
 const selectedFormat = ref<VisitFormat | null>(props.query.formatSelected ? props.query.format : null);
-const selectedDate = ref<string | null>(props.query.dateFrom);
-const selectedStart = ref<string | null>(props.bookingResult?.startsAt ?? null);
+function readBookingSelection(): { start: string | null; step: BookingStep } {
+    if (typeof window === 'undefined') {
+        return { start: null, step: 'time' };
+    }
+
+    const params = new URL(window.location.href).searchParams;
+    const start = params.get(selectedStartParam);
+    const step = params.get(bookingStepParam) === 'confirmation' ? 'confirmation' : 'time';
+
+    return { start, step };
+}
+
+function updateBookingSelectionUrl(start: string | null, step: BookingStep | null): void {
+    if (typeof window === 'undefined') {
+        return;
+    }
+
+    const url = new URL(window.location.href);
+
+    if (start === null) {
+        url.searchParams.delete(selectedStartParam);
+    } else {
+        url.searchParams.set(selectedStartParam, start);
+    }
+
+    if (step === 'confirmation' && start !== null) {
+        url.searchParams.set(bookingStepParam, step);
+    } else {
+        url.searchParams.delete(bookingStepParam);
+    }
+
+    window.history.replaceState(window.history.state, '', url.pathname + url.search + url.hash);
+}
+
+function localSlotDate(value: string, timezone: string): string | null {
+    try {
+        const parts = new Intl.DateTimeFormat('en-CA', {
+            day: '2-digit',
+            month: '2-digit',
+            timeZone: timezone,
+            year: 'numeric',
+        }).formatToParts(new Date(value));
+        const part = (type: 'year' | 'month' | 'day'): string =>
+            parts.find((item) => item.type === type)?.value ?? '';
+        const result = `${part('year')}-${part('month')}-${part('day')}`;
+
+        return result.includes('undefined') || result === '--' ? null : result;
+    } catch {
+        return null;
+    }
+}
+
+function availableStart(value: string | null): boolean {
+    return value !== null && (props.availability?.slots.some((slot) => slot.startsAt === value) ?? false);
+}
+
+const requestedBookingSelection = readBookingSelection();
+const initialSelectedStart = props.bookingResult?.startsAt
+    ?? (availableStart(requestedBookingSelection.start) ? requestedBookingSelection.start : null);
+const initialSelectedDate = initialSelectedStart === null
+    ? props.query.dateFrom
+    : localSlotDate(initialSelectedStart, props.query.displayTimezone) ?? props.query.dateFrom;
+const selectedDate = ref<string | null>(initialSelectedDate);
+const selectedStart = ref<string | null>(initialSelectedStart);
 const { queuedStarts, startsAtList, canAdd, add: addSession, remove: removeQueuedSession, keyFor } = useBookingSessions(selectedStart);
 const selectionAvailability = computed(() => props.availability === null ? null : {
     ...props.availability,
     slots: props.availability.slots.filter((slot) => !queuedStarts.value.includes(slot.startsAt)),
 });
 const selectedClientTimezone = ref<string>(props.query.displayTimezone);
+const selectedClientTimezoneLabel = computed(() => timezoneLabel(selectedClientTimezone.value, locale.value));
 const selectedWorkingLocationId = ref<number | null>(props.query.workingLocationId);
 const selectedLocationArea = ref<string | null>(props.query.locationArea);
 const timezoneEditorOpen = ref(false);
-const bookingStep = ref<BookingStep>('time');
+const bookingStep = ref<BookingStep>(initialSelectedStart !== null && requestedBookingSelection.step === 'confirmation'
+    ? 'confirmation'
+    : 'time');
+const familyBookingState = computed(() => ({
+    serviceId: props.query.serviceId,
+    specialistId: props.query.specialistId,
+    format: props.query.format,
+    dateFrom: props.query.dateFrom,
+    dateTo: props.query.dateTo,
+    displayTimezone: selectedClientTimezone.value,
+    workingLocationId: selectedWorkingLocationId.value,
+    locationArea: selectedLocationArea.value,
+    selectedStartAt: selectedStart.value,
+    bookingStep: bookingStep.value === 'confirmation' ? 'confirmation' as const : 'time' as const,
+}));
 const cityLookupLoading = ref(false);
 const confirmationForm = ref<HTMLFormElement | null>(null);
 const bookingForm = useForm<{
@@ -178,7 +259,7 @@ const bookingForm = useForm<{
     personal_data: personalData(props.profile),
     service_id: props.query.serviceId,
     specialist_id: props.query.specialistId,
-    starts_at: null,
+    starts_at: initialSelectedStart,
     additional_starts_at: [],
     idempotency_key: null,
     format: props.query.format,
@@ -197,6 +278,11 @@ const bookingForm = useForm<{
     attribution_source: null,
     attribution_source_detail: '',
 });
+
+watch(() => props.selectedPatientId, (patientId) => {
+    bookingForm.patient_profile_id = patientId;
+}, { immediate: true });
+
 const personalErrors = computed(() => Object.fromEntries(Object.entries(bookingForm.errors)
     .filter(([key]) => key.startsWith('personal_data.')).map(([key, message]) => [key.slice('personal_data.'.length), message])));
 
@@ -245,12 +331,23 @@ watch(
         bookingForm.location_area = locationArea;
 
         if (props.bookingResult === null) {
-            selectedStart.value = null;
-            bookingStep.value = 'time';
-            bookingForm.starts_at = null;
+            const restoredStart = availableStart(selectedStart.value) ? selectedStart.value : null;
+            selectedStart.value = restoredStart;
+            selectedDate.value = restoredStart === null
+                ? dateFrom
+                : localSlotDate(restoredStart, displayTimezone) ?? dateFrom;
+            bookingStep.value = restoredStart !== null && readBookingSelection().step === 'confirmation'
+                ? 'confirmation'
+                : 'time';
+            bookingForm.starts_at = restoredStart;
+
+            if (restoredStart === null) {
+                updateBookingSelectionUrl(null, null);
+            }
         } else {
             selectedStart.value = props.bookingResult.startsAt;
             bookingStep.value = 'success';
+            updateBookingSelectionUrl(null, null);
         }
     },
     { immediate: true },
@@ -264,6 +361,7 @@ watch(
         }
 
         rememberedBookingNavigation.acknowledgedBookingId = bookingId;
+        updateBookingSelectionUrl(null, null);
         if (props.bookingResult?.medicalProfileUrl) {
             router.visit(props.bookingResult.medicalProfileUrl);
             return;
@@ -273,6 +371,25 @@ watch(
     },
     { immediate: true },
 );
+
+watch(selectedStart, (value) => {
+    bookingForm.starts_at = value;
+    updateBookingSelectionUrl(value, value === null || bookingStep.value !== 'confirmation' ? null : 'confirmation');
+});
+
+watch(bookingStep, (value) => {
+    updateBookingSelectionUrl(selectedStart.value, value === 'confirmation' ? 'confirmation' : null);
+});
+
+onMounted(() => {
+    window.setTimeout(() => {
+        const selection = readBookingSelection();
+
+        if (selection.start !== null && !availableStart(selection.start)) {
+            updateBookingSelectionUrl(null, null);
+        }
+    }, 50);
+});
 
 const selectedService = computed(() =>
     props.services.find((service) => service.id === props.query.serviceId) ?? null,
@@ -537,6 +654,9 @@ function continueFormat(): void {
 }
 
 function changeService(): void {
+    selectedStart.value = null;
+    bookingForm.starts_at = null;
+    bookingStep.value = 'time';
     visitBooking({ date_from: props.query.dateFrom, date_to: props.query.dateTo, display_timezone: selectedClientTimezone.value }, false);
 }
 
@@ -556,6 +676,9 @@ function changeFormat(): void {
         query.specialist_id = props.query.specialistId;
     }
 
+    selectedStart.value = null;
+    bookingForm.starts_at = null;
+    bookingStep.value = 'time';
     visitBooking(query, false);
 }
 
@@ -564,6 +687,9 @@ function changeSpecialist(): void {
         return;
     }
 
+    selectedStart.value = null;
+    bookingForm.starts_at = null;
+    bookingStep.value = 'time';
     visitBooking({
         date_from: props.query.dateFrom,
         date_to: props.query.dateTo,
@@ -573,6 +699,9 @@ function changeSpecialist(): void {
 }
 
 function changeMonth(dateFrom: string, dateTo: string): void {
+    selectedStart.value = null;
+    bookingForm.starts_at = null;
+    bookingStep.value = 'time';
     visitBooking(bookingQuery(dateFrom, dateTo), true, true);
 }
 
@@ -588,6 +717,7 @@ function selectDate(date: string): void {
     selectedDate.value = date;
     selectedStart.value = null;
     bookingForm.starts_at = null;
+    bookingStep.value = 'time';
 }
 
 function selectSlot(slot: AvailabilitySlot): void {
@@ -692,7 +822,7 @@ function submitBooking(): void {
         v-if="!bookingCompleted"
         :title="t('booking.title')"
         :back-href="props.urls.services"
-        :back-label="t('services.title')"
+        :back-label="t('services.back')"
       />
 
       <section class="portal-booking-flow portal-panel">
@@ -702,10 +832,7 @@ function submitBooking(): void {
           :patients="props.patients.items"
           :has-more="props.patients.hasMore"
           :create-url="props.urls.createPatient"
-          :family-url="props.urls.family"
-          :service-id="props.query.serviceId"
-          :specialist-id="props.query.specialistId"
-          :format="props.query.format"
+          :booking-state="familyBookingState"
         />
 
         <nav
@@ -868,14 +995,14 @@ function submitBooking(): void {
               </p>
               <p class="portal-booking-context-summary__timezone">
                 {{ t('booking.yourTime') }}:
-                <strong data-testid="booking-client-timezone">{{ selectedClientTimezone }}</strong>
+                <strong data-testid="booking-client-timezone">{{ selectedClientTimezoneLabel }}</strong>
                 <span v-if="clientTimezoneOffset"> · {{ clientTimezoneOffset }}</span>
               </p>
               <p
                 v-if="selectedWorkingLocation"
                 class="portal-copy portal-copy--small portal-booking-context-summary__location-copy"
               >
-                {{ selectedWorkingLocation.address }} · {{ selectedWorkingLocation.timezone }}
+                {{ selectedWorkingLocation.address }} · {{ timezoneLabel(selectedWorkingLocation.timezone, locale) }}
               </p>
               <p
                 v-if="locationDaySummary"

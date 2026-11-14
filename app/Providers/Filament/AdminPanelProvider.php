@@ -70,6 +70,10 @@ class AdminPanelProvider extends PanelProvider
                 $assets[] = Js::make('chuklov-database-notification-sound', Vite::asset('resources/js/filament/database-notification-sound.ts'))->module();
             }
 
+            if (Vite::isRunningHot() || is_array($manifest) && array_key_exists('resources/js/filament/network-feedback.ts', $manifest)) {
+                $assets[] = Js::make('chuklov-network-feedback', Vite::asset('resources/js/filament/network-feedback.ts'))->module();
+            }
+
             $panel->assets($assets);
         }
 

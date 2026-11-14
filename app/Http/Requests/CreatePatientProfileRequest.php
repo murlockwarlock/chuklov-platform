@@ -22,6 +22,11 @@ final class CreatePatientProfileRequest extends FormRequest
             'relationship' => ['required', 'in:SPOUSE,CHILD,PARENT'],
             'return_to' => ['sometimes', 'in:family,booking'], 'service_id' => ['sometimes', 'nullable', 'integer', 'min:1'],
             'specialist_id' => ['sometimes', 'nullable', 'integer', 'min:1'], 'format' => ['sometimes', 'in:office,home,online'],
+            'date_from' => ['sometimes', 'nullable', 'date_format:Y-m-d'], 'date_to' => ['sometimes', 'nullable', 'date_format:Y-m-d'],
+            'display_timezone' => ['sometimes', 'nullable', 'string', 'max:64'],
+            'working_location_id' => ['sometimes', 'nullable', 'integer', 'min:1'],
+            'location_area' => ['sometimes', 'nullable', 'string', 'max:160'],
+            'selected_start_at' => ['sometimes', 'nullable', 'date'], 'booking_step' => ['sometimes', 'in:time,confirmation'],
         ];
     }
 

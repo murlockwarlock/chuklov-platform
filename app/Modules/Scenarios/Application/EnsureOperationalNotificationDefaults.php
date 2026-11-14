@@ -119,8 +119,8 @@ final class EnsureOperationalNotificationDefaults
                     organization: $organization,
                     key: 'companion-fallback-failed',
                     name: 'Сбой AI-компаньона',
-                    body: 'AI-компаньон не смог подготовить ответ клиенту {{ client.full_name }}. Причина: {{ companion.failure_label }} (попытка {{ companion.attempt_number }}). Проверьте настройки AI: {{ companion.ai_monitoring_url }}. Диалог: {{ companion.crm_url }}.',
-                    variables: ['client.full_name', 'companion.failure_label', 'companion.attempt_number', 'companion.ai_monitoring_url', 'companion.crm_url'],
+                    body: 'AI-компаньон не смог подготовить ответ клиенту {{ client.full_name }}. Причина: {{ companion.failure_label }}. Откройте диалог и проверьте настройки AI.',
+                    variables: ['client.full_name', 'companion.failure_label'],
                     subject: 'Сбой AI-компаньона',
                 )),
                 'survey-completed-crm' => $this->ensureTemplate(
@@ -896,7 +896,8 @@ final class EnsureOperationalNotificationDefaults
     private function upgradeDefaultCompanionFailureTemplate(NotificationTemplateVersion $version): NotificationTemplateVersion
     {
         $legacyBody = 'AI-компаньон не смог продолжить разговор с клиентом {{ client.full_name }}. Проверьте обращение.';
-        if ($version->body !== $legacyBody || $version->created_by_user_id !== null) {
+        $technicalBody = 'AI-компаньон не смог подготовить ответ клиенту {{ client.full_name }}. Причина: {{ companion.failure_label }} (попытка {{ companion.attempt_number }}). Проверьте настройки AI: {{ companion.ai_monitoring_url }}. Диалог: {{ companion.crm_url }}.';
+        if (! in_array($version->body, [$legacyBody, $technicalBody], true) || $version->created_by_user_id !== null) {
             return $version;
         }
 
@@ -913,8 +914,8 @@ final class EnsureOperationalNotificationDefaults
             'version' => $version->version + 1,
             'status' => NotificationTemplateStatus::Published->value,
             'subject' => 'Сбой AI-компаньона',
-            'body' => 'AI-компаньон не смог подготовить ответ клиенту {{ client.full_name }}. Причина: {{ companion.failure_label }} (попытка {{ companion.attempt_number }}). Проверьте настройки AI: {{ companion.ai_monitoring_url }}. Диалог: {{ companion.crm_url }}.',
-            'variables' => ['client.full_name', 'companion.failure_label', 'companion.attempt_number', 'companion.ai_monitoring_url', 'companion.crm_url'],
+            'body' => 'AI-компаньон не смог подготовить ответ клиенту {{ client.full_name }}. Причина: {{ companion.failure_label }}. Откройте диалог и проверьте настройки AI.',
+            'variables' => ['client.full_name', 'companion.failure_label'],
             'published_at' => now(),
         ])->save();
 

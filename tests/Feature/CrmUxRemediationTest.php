@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Filament\Livewire\DatabaseNotifications;
 use App\Filament\Pages\FeedbackConfiguration;
 use App\Filament\Pages\SchedulingConfiguration;
 use App\Filament\Resources\Bookings\Pages\ListBookings;
@@ -12,6 +13,8 @@ use App\Filament\Resources\LegalDocuments\Pages\ListLegalDocuments;
 use App\Filament\Resources\NotificationTemplates\Pages\ListNotificationTemplates;
 use App\Filament\Resources\ScenarioActions\Pages\ListScenarioActions;
 use App\Filament\Resources\ScenarioRules\Pages\CreateScenarioRule;
+use App\Filament\Support\TimezoneOptions;
+use App\Filament\Widgets\AnalyticsKpiWidget;
 use App\Models\User;
 use App\Modules\Channels\Application\NotificationChannelRegistry;
 use App\Modules\Feedback\Domain\Models\FeedbackTheme;
@@ -43,6 +46,7 @@ use Filament\Schemas\Components\Image as SchemaImage;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Enums\RecordActionsPosition;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Notifications\DatabaseNotification;
 use Illuminate\Support\Facades\DB;
 use Livewire\Livewire;
 use Tests\Support\RecordingNotificationChannel;
@@ -129,6 +133,100 @@ final class CrmUxRemediationTest extends TestCase
         }
     }
 
+    public function test_admin_network_failures_have_human_retry_guidance(): void
+    {
+        $feedback = (string) file_get_contents(resource_path('js/filament/network-feedback.ts'));
+        $viteConfig = (string) file_get_contents(base_path('vite.config.ts'));
+
+        self::assertStringContainsString('Livewire.interceptRequest', $feedback);
+        self::assertStringContainsString('onFailure', $feedback);
+        self::assertStringContainsString('onError', $feedback);
+        self::assertStringContainsString('Введённые значения формы останутся на экране', $feedback);
+        self::assertStringContainsString('resources/js/filament/network-feedback.ts', $viteConfig);
+    }
+
+    public function test_dashboard_lazy_widgets_show_a_visible_loading_state(): void
+    {
+        $placeholder = app(AnalyticsKpiWidget::class)->placeholder()->render();
+
+        self::assertStringContainsString('Показатели загружаются', $placeholder);
+        self::assertStringContainsString('aria-busy="true"', $placeholder);
+    }
+
+    public function test_database_notification_center_humanizes_legacy_technical_messages(): void
+    {
+        $component = app(DatabaseNotifications::class);
+        $notification = DatabaseNotification::make([
+            'id' => '00000000-0000-0000-0000-000000000001',
+            'created_at' => now(),
+            'data' => [
+                'format' => 'filament',
+                'title' => 'Сбой AI-компаньона',
+                'body' => 'AI-компаньон не смог подготовить ответ клиенту #298. Причина: AI-провайдер временно недоступен (попытка 1). Проверьте настройки AI: https://example.test/admin/ai-monitoring-overview. Диалог: https://example.test/admin/messages?client=298.',
+            ],
+        ]);
+
+        $rendered = $component->getNotification($notification);
+
+        self::assertStringContainsString('сервис AI временно недоступен', (string) $rendered->getBody());
+        self::assertStringNotContainsString('#298', (string) $rendered->getBody());
+        self::assertStringNotContainsString('попытка', (string) $rendered->getBody());
+        self::assertStringNotContainsString('https://example.test', (string) $rendered->getBody());
+    }
+
+    public function test_content_order_uses_reordering_controls_instead_of_numeric_inputs(): void
+    {
+        $table = (string) file_get_contents(app_path('Filament/Resources/ContentSections/Tables/ContentSectionsTable.php'));
+        $form = (string) file_get_contents(app_path('Filament/Resources/ContentSections/Schemas/ContentSectionForm.php'));
+
+        self::assertStringContainsString("->reorderable('sort_order')", $table);
+        self::assertStringNotContainsString("TextColumn::make('sort_order')", $table);
+        self::assertStringNotContainsString("TextInput::make('sort_order')", $form);
+        self::assertStringContainsString('->reorderable()', $form);
+    }
+
+    public function test_configuration_order_uses_human_reordering_and_filament_actions_are_localized(): void
+    {
+        $tracker = (string) file_get_contents(app_path('Filament/Pages/TrackerSettings.php'));
+        $frequency = (string) file_get_contents(app_path('Filament/Pages/MedicalFrequencyConfiguration.php'));
+
+        foreach ([$tracker, $frequency] as $source) {
+            self::assertStringContainsString("Hidden::make('sort_order')->dehydrated(true)", $source);
+            self::assertStringNotContainsString("TextInput::make('sort_order')", $source);
+            self::assertStringContainsString('->reorderableWithButtons()', $source);
+        }
+
+        self::assertSame('Удалить выбранный формат', trans('filament-forms::components.select.actions.remove_option.label'));
+        self::assertSame('Развернуть раздел', trans('filament-schemas::components.section.actions.expand.label'));
+    }
+
+    public function test_crm_timezone_labels_do_not_expose_iana_keys(): void
+    {
+        $options = TimezoneOptions::options(current: 'Asia/Almaty', organization: 'Asia/Almaty');
+
+        self::assertSame('Алматы (UTC+05:00)', $options['Asia/Almaty']);
+        self::assertStringNotContainsString('Asia/Almaty', $options['Asia/Almaty']);
+    }
+
+    public function test_timezone_values_in_operational_surfaces_use_human_labels(): void
+    {
+        foreach ([
+            app_path('Filament/Resources/WorkingLocations/Tables/WorkingLocationsTable.php'),
+            app_path('Filament/Resources/LocationDays/Tables/LocationDaysTable.php'),
+            app_path('Filament/Resources/BroadcastCampaigns/BroadcastCampaignResource.php'),
+            app_path('Filament/Pages/ReferralRewardConfiguration.php'),
+        ] as $path) {
+            self::assertStringContainsString('TimezoneOptions', (string) file_get_contents($path));
+        }
+    }
+
+    public function test_common_numeric_and_url_validation_messages_are_human(): void
+    {
+        self::assertSame('Значение должно быть не меньше 1.', trans('validation.min.numeric', ['min' => 1]));
+        self::assertSame('Укажите корректную ссылку.', trans('validation.url'));
+        self::assertStringNotContainsString('validation.', trans('validation.min.numeric', ['min' => 1]));
+    }
+
     public function test_operational_tables_keep_primary_actions_compact_and_human(): void
     {
         [$organization, $admin, $client, $specialist, $service] = $this->fixture(includePeople: true);
@@ -157,6 +255,8 @@ final class CrmUxRemediationTest extends TestCase
         self::assertNotNull($clientIdColumn);
         self::assertTrue($clientIdColumn->isToggleable());
         self::assertTrue($clientIdColumn->isToggledHiddenByDefault());
+        self::assertFalse($clients->instance()->getTable()->getColumn('full_name')->canWrap());
+        self::assertSame('xl', $clients->instance()->getTable()->getColumn('timezone')->getVisibleFrom());
 
         $bookings = Livewire::actingAs($admin)
             ->test(ListBookings::class)

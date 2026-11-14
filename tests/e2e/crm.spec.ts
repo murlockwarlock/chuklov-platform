@@ -1812,9 +1812,25 @@ test('cancelled Journal booking offers its released time as a real create action
             createReleasedSlot = cancelledCard.getByTestId('journal-released-booking-create');
             await expect(createReleasedSlot).toBeVisible();
             await expect(createReleasedSlot).toHaveAccessibleName(`Создать новую запись на ${time}`);
+            await expect(createReleasedSlot).toHaveAttribute('title', 'Записать на это время');
+            const desktopActionBox = await createReleasedSlot.boundingBox();
+            expect(desktopActionBox?.width).toBeGreaterThanOrEqual(28);
+            expect(desktopActionBox?.width).toBeLessThanOrEqual(32);
+            expect(desktopActionBox?.height).toBeGreaterThanOrEqual(28);
+            expect(desktopActionBox?.height).toBeLessThanOrEqual(32);
 
             continue;
         }
+
+        const mobileReleasedSlot = page.getByTestId('journal-released-booking-create');
+        await expect(mobileReleasedSlot).toHaveCount(1);
+        await expect(mobileReleasedSlot).toBeVisible();
+        await expect(mobileReleasedSlot).toHaveAttribute('title', 'Записать на это время');
+        const mobileActionBox = await mobileReleasedSlot.boundingBox();
+        expect(mobileActionBox?.width).toBeGreaterThanOrEqual(28);
+        expect(mobileActionBox?.width).toBeLessThanOrEqual(32);
+        expect(mobileActionBox?.height).toBeGreaterThanOrEqual(28);
+        expect(mobileActionBox?.height).toBeLessThanOrEqual(32);
 
         await expect.poll(async () => {
             const createLinks = await page.locator('a[href]').evaluateAll((anchors) => anchors.map((anchor) => {
@@ -1851,6 +1867,12 @@ test('cancelled Journal booking offers its released time as a real create action
     await expect(bookingTime).toContainText(`${time} — выбрано в Журнале, доступность не проверена`);
     await expect(bookingTime).toBeDisabled();
     await expect(page.getByText('После выбора услуги и формата визита проверим, свободно ли это время.', { exact: true })).toBeVisible();
+    await page.goBack();
+    await expect(page.getByRole('heading', { name: 'Журнал записей', exact: true })).toBeVisible();
+    await expect(page.getByTestId('journal-released-booking-card')).toBeVisible();
+    createReleasedSlot = page.getByTestId('journal-released-booking-card').getByTestId('journal-released-booking-create');
+    await createReleasedSlot.click();
+    await expect(page.getByRole('heading', { name: 'Создать Запись' })).toBeVisible();
     for (const width of [320, 360, 390, 768, 1024, 1440]) {
         await page.setViewportSize({ width, height: 900 });
         await expect(bookingTime).toBeVisible();
@@ -2072,14 +2094,14 @@ test.describe('specialist viewer timezone suggestion', () => {
         await login(page, fixture);
         await page.goto('/admin/working-intervals');
 
-        await expect(page.getByText('Время: Asia/Almaty', { exact: true })).toBeVisible();
-        await expect(page.getByText('Мы определили ваш часовой пояс как Europe/Berlin.', { exact: true })).toBeVisible();
-        await page.getByRole('button', { name: 'Оставить Asia/Almaty', exact: true }).click();
-        await expect(page.getByText('Мы определили ваш часовой пояс как Europe/Berlin.', { exact: true })).not.toBeVisible();
+        await expect(page.getByText(/Время: Алматы \(UTC\+\d{2}:\d{2}\)/)).toBeVisible();
+        await expect(page.getByText(/Мы определили ваш часовой пояс как Берлин \(UTC\+\d{2}:\d{2}\)\./)).toBeVisible();
+        await page.getByRole('button', { name: /Оставить Алматы \(UTC\+\d{2}:\d{2}\)/ }).click();
+        await expect(page.getByText(/Мы определили ваш часовой пояс как Берлин \(UTC\+\d{2}:\d{2}\)\./)).not.toBeVisible();
 
         await page.reload();
-        await expect(page.getByText('Время: Asia/Almaty', { exact: true })).toBeVisible();
-        await expect(page.getByText('Мы определили ваш часовой пояс как Europe/Berlin.', { exact: true })).not.toBeVisible();
+        await expect(page.getByText(/Время: Алматы \(UTC\+\d{2}:\d{2}\)/)).toBeVisible();
+        await expect(page.getByText(/Мы определили ваш часовой пояс как Берлин \(UTC\+\d{2}:\d{2}\)\./)).not.toBeVisible();
     });
 
     test('specialist can accept the device timezone without changing booking instants', async ({ page }) => {
@@ -2088,10 +2110,10 @@ test.describe('specialist viewer timezone suggestion', () => {
         await login(page, fixture);
         await page.goto('/admin/working-intervals');
 
-        await expect(page.getByRole('button', { name: 'Использовать Europe/Berlin', exact: true })).toBeVisible();
-        await page.getByRole('button', { name: 'Использовать Europe/Berlin', exact: true }).click();
-        await expect(page.getByText('Время: Europe/Berlin', { exact: true })).toBeVisible();
-        await expect(page.getByText('Мы определили ваш часовой пояс как Europe/Berlin.', { exact: true })).not.toBeVisible();
+        await expect(page.getByRole('button', { name: /Использовать Берлин \(UTC\+\d{2}:\d{2}\)/ })).toBeVisible();
+        await page.getByRole('button', { name: /Использовать Берлин \(UTC\+\d{2}:\d{2}\)/ }).click();
+        await expect(page.getByText(/Время: Берлин \(UTC\+\d{2}:\d{2}\)/)).toBeVisible();
+        await expect(page.getByText(/Мы определили ваш часовой пояс как Берлин \(UTC\+\d{2}:\d{2}\)\./)).not.toBeVisible();
     });
 });
 
@@ -2126,8 +2148,8 @@ test('staff gets actionable validation and can save a location day after correct
 
     const timezone = page.getByRole('combobox', { name: 'Часовой пояс*', exact: true });
     await timezone.click();
-    await page.getByRole('textbox', { name: 'Search' }).fill('Asia/Almaty');
-    await page.getByRole('option', { name: /Asia\/Almaty/ }).click();
+    await page.getByRole('textbox', { name: 'Search' }).fill('Алматы');
+    await page.getByRole('option', { name: /Алматы \(UTC\+\d{2}:\d{2}\)/ }).click();
     await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
 
     await expect(page).toHaveURL(/\/admin\/location-days\/\d+\/edit$/);

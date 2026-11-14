@@ -373,17 +373,15 @@ final class WorkingIntervals extends LocalizedPage
     {
         $specialist = $this->selectedSpecialist();
         $timezone = $specialist?->timezone ?: app(OrganizationContext::class)->defaultTimezone();
-        $offsetHours = now($timezone)->getOffset() / 3600;
-        $offset = $offsetHours === 0.0
-            ? 'UTC'
-            : 'UTC'.($offsetHours > 0 ? '+' : '').rtrim(rtrim(number_format($offsetHours, 2, '.', ''), '0'), '.');
 
-        return __('График задан по времени: ').TimezoneOptions::label($timezone).' ('.$offset.') · '.$timezone;
+        return __('График задан по времени: ').TimezoneOptions::display($timezone);
     }
 
     private function humanScheduleError(string $message): string
     {
-        return str_contains(mb_strtolower($message), 'overlap')
+        $message = mb_strtolower($message);
+
+        return str_contains($message, 'overlap') || str_contains($message, 'пересек')
             ? (string) __('Рабочие интервалы не должны пересекаться.')
             : (string) __('Проверьте рабочие интервалы и повторите попытку.');
     }

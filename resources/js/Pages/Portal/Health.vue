@@ -351,21 +351,29 @@ const profileFields = computed(() => [
           <div
             v-for="material in props.health.materials"
             :key="material.id"
-            class="flex min-w-0 flex-wrap items-center justify-between gap-3 rounded-lg border border-gray-200 p-3 dark:border-gray-800"
+            class="portal-health-material"
           >
-            <span class="min-w-0 break-words text-sm">{{ material.filename }}</span>
-            <span class="flex shrink-0 flex-wrap gap-2 text-sm">
+            <span class="portal-health-material__filename">{{ material.filename }}</span>
+            <span class="portal-health-material__actions">
               <a
                 v-if="material.previewUrl"
                 :href="material.previewUrl"
                 target="_blank"
                 rel="noreferrer"
-                class="portal-link"
-              >{{ t('health.materialsPreview') }}</a>
+                class="portal-button portal-button--secondary portal-health-material__action"
+                :aria-label="`${t('health.materialsPreview')}: ${material.filename}`"
+              >
+                <PortalIcon name="external-link" />
+                <span>{{ t('health.materialsPreview') }}</span>
+              </a>
               <a
                 :href="material.downloadUrl"
-                class="portal-link"
-              >{{ t('health.materialsDownload') }}</a>
+                class="portal-button portal-button--secondary portal-health-material__action"
+                :aria-label="`${t('health.materialsDownload')}: ${material.filename}`"
+              >
+                <PortalIcon name="download" />
+                <span>{{ t('health.materialsDownload') }}</span>
+              </a>
             </span>
           </div>
         </div>

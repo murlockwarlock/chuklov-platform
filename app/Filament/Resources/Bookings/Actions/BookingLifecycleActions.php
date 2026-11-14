@@ -564,6 +564,6 @@ final class BookingLifecycleActions
     {
         $timezone = self::viewerTimezone();
 
-        return TimezoneOptions::label($timezone).' ('.$timezone.')';
+        return TimezoneOptions::display($timezone);
     }
 }

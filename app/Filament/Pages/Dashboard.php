@@ -41,10 +41,9 @@ final class Dashboard extends LocalizedDashboard
             $endDate = CarbonImmutable::createFromFormat('!Y-m-d', $period->endDate, 'UTC')->format('d.m.Y');
             $range = $startDate === $endDate ? $startDate : $startDate.' — '.$endDate;
 
-            return __('Период: :range · Часовой пояс: :timezone (:zone)', [
+            return __('Период: :range · Часовой пояс: :timezone', [
                 'range' => $range,
-                'timezone' => TimezoneOptions::label($period->timezone),
-                'zone' => $period->timezone,
+                'timezone' => TimezoneOptions::display($period->timezone),
             ]);
         } catch (\Throwable) {
             return __('Период: последние 30 дней');

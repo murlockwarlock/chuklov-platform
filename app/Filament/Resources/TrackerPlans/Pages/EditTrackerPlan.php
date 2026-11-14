@@ -64,7 +64,7 @@ final class EditTrackerPlan extends LocalizedEditRecord
         unset($data['lava_enabled'], $data['lava_offer_id']);
 
         try {
-            $version = app(SaveTrackerPlan::class)->handle($actor, $record, (string) $data['name'], (bool) $data['is_active'], (bool) $data['is_visible'], (string) $data['price'], (string) $data['currency'], (int) $data['duration_days'], isset($data['description']) ? (string) $data['description'] : null, (bool) $data['included_access'], (int) $data['display_order'], isset($data['monthly_practice']) ? (string) $data['monthly_practice'] : null);
+            $version = app(SaveTrackerPlan::class)->handle($actor, $record, (string) $data['name'], (bool) $data['is_active'], (bool) $data['is_visible'], (string) $data['price'], (string) $data['currency'], (int) $data['duration_days'], isset($data['description']) ? (string) $data['description'] : null, (bool) $data['included_access'], isset($data['display_order']) && is_numeric($data['display_order']) ? (int) $data['display_order'] : null, isset($data['monthly_practice']) ? (string) $data['monthly_practice'] : null);
 
             if (app(FinanceAuthorization::class)->allowsManage($actor)) {
                 app(SavePaymentProviderOfferMappings::class)->handle(

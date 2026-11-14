@@ -50,7 +50,7 @@ final class NotifyCompanionEscalation
         }
 
         $client = $escalation->client;
-        $clientName = trim((string) $client->full_name) ?: 'Клиент #'.$client->getKey();
+        $clientName = trim((string) $client->full_name) ?: 'Клиент без имени';
         [$title, $body] = match ($escalation->reason) {
             CompanionEscalationReason::HumanRequested => [
                 'Клиент '.$clientName.' попросил подключить специалиста',

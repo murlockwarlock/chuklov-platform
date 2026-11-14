@@ -3290,6 +3290,7 @@ test('September 26 client selects multiple sessions before the medical editor an
     expect(detailPage.props.portal.locale).toBe('ru');
     expect(detailPage.props.booking.canCancel, JSON.stringify({ startsAt: detailPage.props.booking.startsAt, expectedDate: fixture.date, status: detailPage.props.booking.statusLabel })).toBe(true);
     await expect(page.getByRole('heading', { name: fixture.serviceName, exact: true })).toBeVisible();
+    page.once('dialog', (dialog) => dialog.accept());
     await page.getByRole('button', { name: 'Отменить', exact: true }).first().click();
     await expect(page.getByText('Отменена', { exact: true })).toBeVisible();
     await page.reload();
@@ -3367,12 +3368,22 @@ test('September 26 multi-session booking explains a stale slot and succeeds afte
 
     await page.getByRole('button', { name: finalDate, exact: true }).click();
     await page.getByTestId('availability-slot').first().click();
+    const addSessionButton = page.getByTestId('booking-add-session');
+    const continueButton = page.getByRole('button', { name: 'Продолжить', exact: true });
     for (const width of [320, 360, 390, 768, 1024, 1440]) {
         await page.setViewportSize({ width, height: 900 });
         await assertNoHorizontalOverflow(page);
+        await expect(page.locator('.portal-booking-flow')).toHaveCSS('display', 'grid');
+        await expect.poll(async () => continueButton.evaluate((element) => getComputedStyle(element).position)).toBe('static');
+        await expect(addSessionButton).toHaveClass(/portal-button--secondary/);
+        await expect(continueButton).toHaveClass(/portal-button--primary/);
+        const [addSessionBox, continueBox] = await Promise.all([addSessionButton.boundingBox(), continueButton.boundingBox()]);
+        expect(addSessionBox).not.toBeNull();
+        expect(continueBox).not.toBeNull();
+        expect((continueBox?.y ?? 0)).toBeGreaterThanOrEqual((addSessionBox?.y ?? 0) + (addSessionBox?.height ?? 0) + 12);
     }
 
-    await page.getByRole('button', { name: 'Продолжить', exact: true }).click();
+    await continueButton.click();
     await acceptRequiredConsents(page);
     await page.getByRole('button', { name: 'Подтвердить запись', exact: true }).click();
     await expect(page).toHaveURL(/\/portal\/medical-profile\?booking_id=\d+&edit=1/);
@@ -3504,7 +3515,7 @@ test('client can change display timezone and choose a physical office', async ({
     await expect(timezoneSelect).toBeVisible();
     await expect(timezoneSelect).toHaveValue('UTC');
     await timezoneSelect.selectOption('Europe/Berlin');
-    await expect(page.getByTestId('booking-client-timezone')).toHaveText('Europe/Berlin');
+    await expect(page.getByTestId('booking-client-timezone')).toHaveText('Берлин');
     await expect(page.getByTestId('booking-client-timezone-select')).toHaveCount(0);
     await expect(page.getByTestId('availability-slot').first()).toBeVisible();
 });
@@ -3935,6 +3946,7 @@ test('authenticated client can manage an upcoming booking from My bookings', asy
             contentType: 'text/html',
             body: 'Request could not be completed',
         }));
+        page.once('dialog', (dialog) => dialog.accept());
         await cancelButton.click();
         await expect(page.getByRole('alert')).toHaveText(failure.message);
         await expect(cancelButton).toBeEnabled();
@@ -3942,6 +3954,7 @@ test('authenticated client can manage an upcoming booking from My bookings', asy
     }
 
     await page.route(cancelRoute, (route) => route.abort('failed'));
+    page.once('dialog', (dialog) => dialog.accept());
     await cancelButton.click();
     await expect(page.getByRole('alert')).toHaveText('Связь с сервером прервалась. Обновите страницу, чтобы проверить статус записи; если она ещё активна, повторите отмену.');
     await expect(cancelButton).toBeEnabled();
@@ -3950,6 +3963,7 @@ test('authenticated client can manage an upcoming booking from My bookings', asy
 
     await page.reload();
     await expect(cancelButton).toBeVisible();
+    page.once('dialog', (dialog) => dialog.accept());
     await cancelButton.click();
     await expect(page.getByText('Отменена', { exact: true })).toBeVisible();
     await expect(page.locator('li').filter({ hasText: 'Запись отменена' })).toBeVisible();
@@ -4047,6 +4061,81 @@ test('family profiles persist, invitations retry safely, and linked patients can
             ['.portal-family-card', '.portal-family-card__identity'],
         );
     }
+
+    await page.goto(`/portal/bookings/create?service_id=${owner.serviceId}&date_from=${owner.date}&date_to=${owner.date}&format=office`);
+    const bookingPatientSelector = page.getByLabel('Кого записываем?');
+    await expect(bookingPatientSelector).toBeVisible();
+    await expect(page.locator('.portal-booking-flow').getByRole('link', { name: 'Члены семьи', exact: true })).toHaveCount(0);
+    const bookingAddFamilyButton = page.getByRole('button', { name: 'Добавить члена семьи', exact: true });
+    await expect(bookingAddFamilyButton).toHaveClass(/portal-button--secondary/);
+    await expect(bookingAddFamilyButton).not.toHaveClass(/portal-link/);
+    await page.getByTestId('booking-client-timezone-edit').click();
+    const timezoneResponse = page.waitForResponse((response) => response.url().includes('/portal/bookings/create')
+        && response.request().method() === 'GET'
+        && response.status() === 200);
+    await page.getByTestId('booking-client-timezone-select').selectOption('Europe/Berlin');
+    await timezoneResponse;
+    await expect(page.getByTestId('booking-client-timezone')).toContainText('Берлин');
+    await page.getByRole('button', { name: owner.date, exact: true }).click();
+    await page.getByTestId('availability-slot').first().click();
+    const preservedSlot = page.locator('[data-testid="availability-slot"][aria-pressed="true"]');
+    await expect(preservedSlot).toHaveCount(1);
+    const preservedStart = new URL(page.url()).searchParams.get('selected_start_at');
+    expect(preservedStart).not.toBeNull();
+    await expect(page.getByTestId('booking-selection-service')).toHaveText(owner.serviceName);
+    await expect(page.getByTestId('booking-selection-specialist')).toHaveText(owner.specialistName);
+    await expect(page.getByTestId('booking-context-summary')).toContainText(owner.firstWorkingLocationName as string);
+
+    await bookingAddFamilyButton.click();
+    const bookingFamilyDialog = page.getByRole('dialog');
+    await expect(bookingFamilyDialog).toBeVisible();
+    await bookingFamilyDialog.getByRole('button', { name: 'Сохранить', exact: true }).click();
+    await expect(bookingFamilyDialog.getByText('Укажите имя и фамилию пациента.', { exact: true }).first()).toBeVisible();
+    await bookingFamilyDialog.getByLabel('Фамилия').fill('Booking Flow');
+    await bookingFamilyDialog.getByLabel('Имя').fill('Семья');
+    await bookingFamilyDialog.getByRole('radio', { name: 'Женский' }).check({ force: true });
+    await bookingFamilyDialog.getByLabel('Дата рождения').fill('2018-01-02');
+    await bookingFamilyDialog.getByLabel('Кем приходится').selectOption('SPOUSE');
+    await bookingFamilyDialog.getByRole('button', { name: 'Сохранить', exact: true }).click();
+    await expect(bookingFamilyDialog).not.toBeVisible();
+    await expect(bookingPatientSelector.locator('option:checked')).toContainText('Семья');
+    await expect(page.getByTestId('booking-selection-service')).toHaveText(owner.serviceName);
+    await expect(page.getByTestId('booking-selection-specialist')).toHaveText(owner.specialistName);
+    await expect(page.getByTestId('booking-selection-format')).toHaveText('В клинике');
+    await expect(page.getByTestId('booking-context-summary')).toContainText(owner.firstWorkingLocationName as string);
+    await expect(page.getByTestId('booking-client-timezone')).toContainText('Берлин');
+    await expect(page.locator('[data-testid="availability-slot"][aria-pressed="true"]')).toHaveCount(1);
+    const returnedBookingUrl = new URL(page.url());
+    expect(returnedBookingUrl.pathname).toBe('/portal/bookings/create');
+    expect(returnedBookingUrl.searchParams.get('service_id')).toBe(String(owner.serviceId));
+    expect(returnedBookingUrl.searchParams.get('specialist_id')).toBe(String(owner.specialistId));
+    expect(returnedBookingUrl.searchParams.get('format')).toBe('office');
+    expect(returnedBookingUrl.searchParams.get('display_timezone')).toBe('Europe/Berlin');
+    expect(returnedBookingUrl.searchParams.get('selected_start_at')).toBe(preservedStart);
+
+    for (const width of [320, 360, 390, 768, 1024]) {
+        await page.setViewportSize({ width, height: 900 });
+        await assertNoHorizontalOverflow(page);
+        await assertRenderedViewportGeometry(
+            page,
+            ['.portal-booking-patient-selector__add', '.portal-booking-flow__cta'],
+            ['.portal-booking-context-summary', '.portal-booking-flow'],
+        );
+    }
+
+    await page.getByRole('button', { name: 'Продолжить', exact: true }).click();
+    await expect(page.locator('#booking-confirmation-heading')).toBeVisible();
+    await page.locator('.portal-booking-confirmation').getByRole('button', { name: 'Изменить дату и время', exact: true }).click();
+    await expect(page.getByTestId('booking-selection-service')).toHaveText(owner.serviceName);
+    await expect(page.locator('[data-testid="availability-slot"][aria-pressed="true"]')).toHaveCount(1);
+    await expect(bookingPatientSelector.locator('option:checked')).toContainText('Семья');
+    await page.reload();
+    await expect(page.getByTestId('booking-selection-service')).toHaveText(owner.serviceName);
+    await expect(page.getByTestId('booking-selection-specialist')).toHaveText(owner.specialistName);
+    await expect(page.getByTestId('booking-client-timezone')).toContainText('Берлин');
+    await expect(bookingPatientSelector.locator('option:checked')).toContainText('Семья');
+    await expect(page.locator('[data-testid="availability-slot"][aria-pressed="true"]')).toHaveCount(1);
+    await page.goto('/portal/family');
 
     await patientCard.getByRole('button', { name: 'Редактировать данные' }).click();
     const editDialog = page.getByRole('dialog');
@@ -4173,6 +4262,8 @@ test('family profiles persist, invitations retry safely, and linked patients can
     await bookingLink.click();
     const bookingPatient = page.getByLabel('Кого записываем?');
     await expect(bookingPatient).toHaveValue(String(recipient.patientId));
+    await expect(page.getByRole('button', { name: 'Добавить члена семьи', exact: true })).toBeVisible();
+    await expect(page.locator('.portal-booking-flow').getByRole('link', { name: 'Члены семьи', exact: true })).toHaveCount(0);
     await bookingPatient.selectOption('');
     await expect(bookingPatient).toHaveValue('');
     await bookingPatient.selectOption(String(recipient.patientId));
