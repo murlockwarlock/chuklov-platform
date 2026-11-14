@@ -4097,7 +4097,7 @@ test('family profiles persist, invitations retry safely, and linked patients can
     await expect(bookingPatientSelector.locator('option:checked')).toContainText('Семья');
     await expect(page.getByTestId('booking-selection-service')).toHaveText(owner.serviceName);
     await expect(page.getByTestId('booking-selection-specialist')).toHaveText(owner.specialistName);
-    await expect(page.getByTestId('booking-selection-format')).toHaveText('Очно');
+    await expect(page.getByTestId('booking-selection-format')).toHaveText('В клинике');
     await expect(page.getByTestId('booking-context-summary')).toContainText(owner.firstWorkingLocationName as string);
     await expect(page.getByTestId('booking-client-timezone')).toContainText('Берлин');
     await expect(page.locator('[data-testid="availability-slot"][aria-pressed="true"]')).toHaveCount(1);
