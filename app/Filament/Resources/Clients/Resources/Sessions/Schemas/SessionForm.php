@@ -97,7 +97,8 @@ final class SessionForm
                                 Select::make('frequency_period_unit')->label(__('Период'))->options(fn (Get $get): array => app(MedicalFrequencyPeriodCatalog::class)->optionsForSelection(app(OrganizationContext::class)->id(), $get('frequency_period_unit')))
                                     ->visible(fn (Get $get): bool => $get('frequency_mode') === 'count')
                                     ->required(fn (Get $get): bool => $get('frequency_mode') === 'count')
-                                    ->searchable(),
+                                    ->searchable()
+                                    ->live(),
                                 CheckboxList::make('time_of_day')->label(__('Время суток'))->options([
                                     'all' => __('Весь день'),
                                     'morning' => __('Утро'),
@@ -216,6 +217,7 @@ final class SessionForm
                                     ->multiple()
                                     ->searchable()
                                     ->preload()
+                                    ->live()
                                     ->helperText(fn (Get $get): string => self::problemTagHelperText($get('tag_ids')))
                                     ->hintAction(self::problemTagConfigurationAction()),
                             ])

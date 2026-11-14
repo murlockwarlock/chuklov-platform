@@ -331,6 +331,7 @@ class EditMedicalSession extends LocalizedEditRecord
                                     ->multiple()
                                     ->searchable()
                                     ->preload()
+                                    ->live()
                                     ->helperText(fn (Get $get): string => self::problemTagHelperText($get('tag_ids')))
                                     ->hintAction(self::problemTagConfigurationAction()),
                             ])
