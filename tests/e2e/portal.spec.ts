@@ -3378,7 +3378,7 @@ test('September 26 multi-session booking explains a stale slot and succeeds afte
             const [addSessionBox, continueBox] = await Promise.all([addSessionButton.boundingBox(), continueButton.boundingBox()]);
             expect(addSessionBox).not.toBeNull();
             expect(continueBox).not.toBeNull();
-            expect((continueBox?.y ?? 0)).toBeGreaterThanOrEqual((addSessionBox?.y ?? 0) + (addSessionBox?.height ?? 0));
+            expect((continueBox?.y ?? 0)).toBeGreaterThanOrEqual((addSessionBox?.y ?? 0) + (addSessionBox?.height ?? 0) + 12);
         }
     }
 
