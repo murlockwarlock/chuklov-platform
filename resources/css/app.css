@@ -3200,6 +3200,7 @@ select.portal-input[aria-invalid='true'] {
 }
 
 .portal-booking-flow {
+    display: grid;
     min-width: 0;
     gap: clamp(1.25rem, 3vw, 2rem);
     border: 1px solid var(--portal-color-border);
