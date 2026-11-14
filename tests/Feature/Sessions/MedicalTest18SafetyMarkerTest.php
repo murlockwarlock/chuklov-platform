@@ -51,7 +51,7 @@ final class MedicalTest18SafetyMarkerTest extends TestCase
         self::assertNotSame(MedicalTest18SafetyMarker::DEFAULT_TEXT, $rawClientText);
         self::assertSame(MedicalTest18SafetyMarker::DEFAULT_TEXT, app(MedicalSafetyMarkerReader::class)->forClient($admin, $client)[0]['marker_text']);
 
-        $laterSession = $this->session($organization, $client);
+        $laterSession = $this->medicalSession($organization, $client);
         self::assertSame(MedicalTest18SafetyMarker::DEFAULT_TEXT, app(MedicalSafetyMarkerReader::class)->forClient($admin, $client)[0]['marker_text']);
         self::assertSame(MedicalTest18SafetyMarker::DEFAULT_TEXT, app(MedicalSafetyMarkerReader::class)->forSession($admin, $laterSession)[0]['marker_text']);
     }
@@ -59,7 +59,7 @@ final class MedicalTest18SafetyMarkerTest extends TestCase
     public function test_clear_requires_date_and_reason_and_text_edit_is_authorized_and_encrypted(): void
     {
         [$organization, $admin, $client] = $this->organizationClientAndAdmin();
-        $session = $this->session($organization, $client);
+        $session = $this->medicalSession($organization, $client);
         app(MedicalTest18SafetyMarker::class)->handle($admin, $session, true);
 
         $this->expectException(ValidationException::class);
@@ -69,7 +69,7 @@ final class MedicalTest18SafetyMarkerTest extends TestCase
     public function test_clear_records_reason_and_date_and_edit_does_not_change_session_evidence(): void
     {
         [$organization, $admin, $client] = $this->organizationClientAndAdmin();
-        $session = $this->session($organization, $client);
+        $session = $this->medicalSession($organization, $client);
         app(MedicalTest18SafetyMarker::class)->handle($admin, $session, true);
 
         app(UpdateMedicalTest18SafetyMarkerText::class)->handle($admin, $client, 'Текст маркера для текущего отображения.');

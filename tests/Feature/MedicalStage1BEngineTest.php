@@ -6,7 +6,7 @@ use App\Modules\Sessions\Application\MedicalStage1BCatalogPreset;
 use App\Modules\Sessions\Application\MedicalClinicalTypeEngine;
 use App\Modules\Sessions\Domain\Enums\MedicalTestType;
 use Illuminate\Validation\ValidationException;
-use PHPUnit\Framework\TestCase;
+use Tests\TestCase;
 
 final class MedicalStage1BEngineTest extends TestCase
 {

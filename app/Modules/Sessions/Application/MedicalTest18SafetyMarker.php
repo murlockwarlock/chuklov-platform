@@ -126,7 +126,7 @@ final readonly class MedicalTest18SafetyMarker
             if (($value['marked'] ?? false) === true) {
                 return true;
             }
-            if (isset($value['answer']) && in_array(strtolower(trim((string) $value['answer'])), $yesValues, true)) {
+            if (isset($value['answer']) && in_array(mb_strtolower(trim((string) $value['answer'])), $yesValues, true)) {
                 return true;
             }
             foreach ($value as $child) {
