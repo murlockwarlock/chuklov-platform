@@ -1,6 +1,6 @@
 <?php
 
-namespace Tests\Unit\Sessions;
+namespace Tests\Feature;
 
 use App\Modules\Sessions\Application\MedicalStage1BCatalogPreset;
 use App\Modules\Sessions\Application\MedicalClinicalTypeEngine;
