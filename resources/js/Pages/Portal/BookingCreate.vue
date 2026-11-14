@@ -817,7 +817,7 @@ function submitBooking(): void {
         v-if="!bookingCompleted"
         :title="t('booking.title')"
         :back-href="props.urls.services"
-        :back-label="t('services.title')"
+        :back-label="t('services.back')"
       />
 
       <section class="portal-booking-flow portal-panel">

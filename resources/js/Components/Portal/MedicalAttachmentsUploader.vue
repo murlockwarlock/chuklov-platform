@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { useForm } from '@inertiajs/vue3';
 import { computed, onBeforeUnmount, ref } from 'vue';
+import PortalIcon from './PortalIcon.vue';
 import { usePortalLocale } from '../../composables/usePortalLocale';
 
 const props = defineProps<{ url: string; materials: { id: number; filename: string; downloadUrl: string }[] }>();
@@ -228,7 +229,8 @@ function send(index: number): void {
           class="portal-button portal-button--secondary"
           :aria-label="t('medical.downloadFile', { name: material.filename })"
         >
-          {{ t('medical.download') }}
+          <PortalIcon name="download" />
+          <span>{{ t('medical.download') }}</span>
         </a>
       </li>
     </ul>

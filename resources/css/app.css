@@ -2635,6 +2635,58 @@ select.portal-input[aria-invalid='true'] {
         text-underline-offset: 0.2em;
     }
 
+    .portal-health-material {
+        display: flex;
+        min-width: 0;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: var(--portal-space-3);
+        border: 1px solid var(--portal-color-border);
+        border-radius: var(--portal-radius-md);
+        background: var(--portal-color-surface);
+        padding: var(--portal-space-3);
+    }
+
+    .portal-health-material__filename {
+        min-width: 0;
+        flex: 1 1 14rem;
+        overflow-wrap: anywhere;
+        color: var(--portal-color-ink);
+        font-size: 0.9rem;
+        font-weight: 650;
+    }
+
+    .portal-health-material__actions {
+        display: flex;
+        min-width: 0;
+        flex: 0 1 auto;
+        flex-wrap: wrap;
+        gap: var(--portal-space-2);
+    }
+
+    .portal-health-material__action {
+        min-height: 2.5rem;
+        padding: 0.55rem 0.85rem;
+        font-size: 0.82rem;
+    }
+
+    .portal-health-material__action .portal-icon {
+        width: 1.1rem;
+        height: 1.1rem;
+        flex-basis: 1.1rem;
+    }
+
+    @media (max-width: 40rem) {
+        .portal-health-material__actions {
+            width: 100%;
+        }
+
+        .portal-health-material__action {
+            flex: 1 1 8rem;
+        }
+    }
+
     .portal-field {
         min-width: 0;
         display: flex;

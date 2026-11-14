@@ -112,6 +112,16 @@ defineProps<{
       v-if="name === 'plus'"
       d="M12 5v14M5 12h14"
     />
+    <template v-if="name === 'external-link'">
+      <path d="M14 4h6v6" />
+      <path d="m20 4-9 9" />
+      <path d="M18 13v5a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h5" />
+    </template>
+    <template v-if="name === 'download'">
+      <path d="M12 3.5v11" />
+      <path d="m7.5 10.5 4.5 4.5 4.5-4.5" />
+      <path d="M4.5 19.5h15" />
+    </template>
     <template v-if="name === 'map'">
       <path d="m3.5 5.5 5.67-2 5.66 2 5.67-2v15l-5.67 2-5.66-2-5.67 2v-15Z" />
       <path d="M9.17 3.5v15M14.83 5.5v15" />

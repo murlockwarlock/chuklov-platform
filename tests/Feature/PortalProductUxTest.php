@@ -136,6 +136,7 @@ class PortalProductUxTest extends TestCase
         $section = (string) file_get_contents(resource_path('js/Pages/Portal/Section.vue'));
         $more = (string) file_get_contents(resource_path('js/Pages/Portal/More.vue'));
         $finance = (string) file_get_contents(resource_path('js/Pages/Portal/Finance.vue'));
+        $medicalUploader = (string) file_get_contents(resource_path('js/Components/Portal/MedicalAttachmentsUploader.vue'));
         $portalLocale = (string) file_get_contents(resource_path('js/locales/portal.ts'));
         $portalCss = (string) file_get_contents(resource_path('css/app.css'));
 
@@ -167,6 +168,14 @@ class PortalProductUxTest extends TestCase
         self::assertStringContainsString('onNetworkError: ()', $companion);
         self::assertStringContainsString('companion.sendNetworkError', $companion);
         self::assertStringContainsString("window.confirm(t('booking.confirmCancel'))", $bookingShow);
+        self::assertStringContainsString(':back-label="t(\'services.back\')"', $booking);
+        self::assertStringNotContainsString(':back-label="t(\'services.title\')"', $booking);
+        self::assertStringContainsString("'services.back': 'Услуги'", $portalLocale);
+        self::assertStringContainsString('portal-health-material', $health);
+        self::assertStringContainsString('<PortalIcon name="external-link" />', $health);
+        self::assertStringContainsString('<PortalIcon name="download" />', $health);
+        self::assertStringNotContainsString('class="portal-link"', $health);
+        self::assertStringContainsString('<PortalIcon name="download" />', $medicalUploader);
         self::assertStringContainsString('group-required-acceptance', $confirmation);
         self::assertStringContainsString('@update:required-consent', $booking);
         self::assertStringContainsString('@required-change', $confirmation);

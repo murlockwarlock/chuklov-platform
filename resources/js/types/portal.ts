@@ -51,6 +51,8 @@ export type PortalIconName =
     | 'arrow'
     | 'close'
     | 'plus'
+    | 'external-link'
+    | 'download'
     | 'map'
     | 'pin'
     | 'compass'
