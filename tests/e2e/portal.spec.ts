@@ -3515,7 +3515,7 @@ test('client can change display timezone and choose a physical office', async ({
     await expect(timezoneSelect).toBeVisible();
     await expect(timezoneSelect).toHaveValue('UTC');
     await timezoneSelect.selectOption('Europe/Berlin');
-    await expect(page.getByTestId('booking-client-timezone')).toHaveText('Europe/Berlin');
+    await expect(page.getByTestId('booking-client-timezone')).toHaveText('Берлин');
     await expect(page.getByTestId('booking-client-timezone-select')).toHaveCount(0);
     await expect(page.getByTestId('availability-slot').first()).toBeVisible();
 });
@@ -4071,7 +4071,7 @@ test('family profiles persist, invitations retry safely, and linked patients can
     await expect(bookingAddFamilyButton).not.toHaveClass(/portal-link/);
     await page.getByTestId('booking-client-timezone-edit').click();
     await page.getByTestId('booking-client-timezone-select').selectOption('Europe/Berlin');
-    await expect(page.getByTestId('booking-client-timezone')).toContainText('Europe/Berlin');
+    await expect(page.getByTestId('booking-client-timezone')).toContainText('Берлин');
     await page.getByRole('button', { name: owner.date, exact: true }).click();
     await page.getByTestId('availability-slot').first().click();
     const preservedSlot = page.locator('[data-testid="availability-slot"][aria-pressed="true"]');
@@ -4099,7 +4099,7 @@ test('family profiles persist, invitations retry safely, and linked patients can
     await expect(page.getByTestId('booking-selection-specialist')).toHaveText(owner.specialistName);
     await expect(page.getByTestId('booking-selection-format')).toHaveText('Очно');
     await expect(page.getByTestId('booking-context-summary')).toContainText(owner.firstWorkingLocationName as string);
-    await expect(page.getByTestId('booking-client-timezone')).toContainText('Europe/Berlin');
+    await expect(page.getByTestId('booking-client-timezone')).toContainText('Берлин');
     await expect(page.locator('[data-testid="availability-slot"][aria-pressed="true"]')).toHaveCount(1);
     const returnedBookingUrl = new URL(page.url());
     expect(returnedBookingUrl.pathname).toBe('/portal/bookings/create');
@@ -4128,7 +4128,7 @@ test('family profiles persist, invitations retry safely, and linked patients can
     await page.reload();
     await expect(page.getByTestId('booking-selection-service')).toHaveText(owner.serviceName);
     await expect(page.getByTestId('booking-selection-specialist')).toHaveText(owner.specialistName);
-    await expect(page.getByTestId('booking-client-timezone')).toContainText('Europe/Berlin');
+    await expect(page.getByTestId('booking-client-timezone')).toContainText('Берлин');
     await expect(bookingPatientSelector.locator('option:checked')).toContainText('Семья');
     await expect(page.locator('[data-testid="availability-slot"][aria-pressed="true"]')).toHaveCount(1);
     await page.goto('/portal/family');
