@@ -3368,12 +3368,21 @@ test('September 26 multi-session booking explains a stale slot and succeeds afte
 
     await page.getByRole('button', { name: finalDate, exact: true }).click();
     await page.getByTestId('availability-slot').first().click();
+    const addSessionButton = page.getByTestId('booking-add-session');
+    const continueButton = page.getByRole('button', { name: 'Продолжить', exact: true });
     for (const width of [320, 360, 390, 768, 1024, 1440]) {
         await page.setViewportSize({ width, height: 900 });
         await assertNoHorizontalOverflow(page);
+        await expect.poll(async () => continueButton.evaluate((element) => getComputedStyle(element).position)).toBe('static');
+        if (width <= 390) {
+            const [addSessionBox, continueBox] = await Promise.all([addSessionButton.boundingBox(), continueButton.boundingBox()]);
+            expect(addSessionBox).not.toBeNull();
+            expect(continueBox).not.toBeNull();
+            expect((continueBox?.y ?? 0)).toBeGreaterThanOrEqual((addSessionBox?.y ?? 0) + (addSessionBox?.height ?? 0));
+        }
     }
 
-    await page.getByRole('button', { name: 'Продолжить', exact: true }).click();
+    await continueButton.click();
     await acceptRequiredConsents(page);
     await page.getByRole('button', { name: 'Подтвердить запись', exact: true }).click();
     await expect(page).toHaveURL(/\/portal\/medical-profile\?booking_id=\d+&edit=1/);
@@ -4177,6 +4186,8 @@ test('family profiles persist, invitations retry safely, and linked patients can
     await bookingLink.click();
     const bookingPatient = page.getByLabel('Кого записываем?');
     await expect(bookingPatient).toHaveValue(String(recipient.patientId));
+    await expect(page.getByRole('button', { name: 'Добавить члена семьи', exact: true })).toBeVisible();
+    await expect(page.locator('.portal-booking-flow').getByRole('link', { name: 'Члены семьи', exact: true })).toHaveCount(0);
     await bookingPatient.selectOption('');
     await expect(bookingPatient).toHaveValue('');
     await bookingPatient.selectOption(String(recipient.patientId));
