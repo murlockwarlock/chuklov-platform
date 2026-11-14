@@ -4070,7 +4070,11 @@ test('family profiles persist, invitations retry safely, and linked patients can
     await expect(bookingAddFamilyButton).toHaveClass(/portal-button--secondary/);
     await expect(bookingAddFamilyButton).not.toHaveClass(/portal-link/);
     await page.getByTestId('booking-client-timezone-edit').click();
+    const timezoneResponse = page.waitForResponse((response) => response.url().includes('/portal/bookings/create')
+        && response.request().method() === 'GET'
+        && response.status() === 200);
     await page.getByTestId('booking-client-timezone-select').selectOption('Europe/Berlin');
+    await timezoneResponse;
     await expect(page.getByTestId('booking-client-timezone')).toContainText('Берлин');
     await page.getByRole('button', { name: owner.date, exact: true }).click();
     await page.getByTestId('availability-slot').first().click();
