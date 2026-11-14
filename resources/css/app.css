@@ -3684,13 +3684,24 @@ select.portal-input[aria-invalid='true'] {
     padding: 0.65rem 1rem;
 }
 
-@media (max-width: 47.99rem) {
-    .portal-booking-flow__cta {
-        position: sticky;
-        z-index: 5;
-        bottom: calc(5.75rem + env(safe-area-inset-bottom));
-        margin-bottom: calc(5.75rem + env(safe-area-inset-bottom));
-    }
+.portal-booking-patient-selector__actions {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    justify-content: flex-start;
+}
+
+.portal-booking-patient-selector__add {
+    min-height: 2.5rem;
+    align-self: flex-start;
+    padding: 0.55rem 0.9rem;
+    font-size: 0.84rem;
+}
+
+.portal-booking-flow__cta {
+    position: static;
+    z-index: auto;
+    margin-bottom: 0;
 }
 
 .portal-booking-session-selection {
