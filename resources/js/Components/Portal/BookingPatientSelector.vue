@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { Link, useForm } from '@inertiajs/vue3';
+import { useForm } from '@inertiajs/vue3';
 import { watch } from 'vue';
 import { ref } from 'vue';
 import PatientIdentityFields from './PatientIdentityFields.vue';
+import PortalIcon from './PortalIcon.vue';
 import { usePortalLocale } from '../../composables/usePortalLocale';
 import { emptyPatientIdentity, type PatientSummary } from '../../types/patients';
 
@@ -43,20 +44,15 @@ watch(() => [props.serviceId, props.specialistId, props.format] as const, ([serv
         {{ patient.name }} · {{ patient.relationshipLabel }}
       </option>
     </select>
-    <div class="portal-form-actions">
+    <div class="portal-booking-patient-selector__actions">
       <button
         type="button"
-        class="portal-link"
+        class="portal-button portal-button--secondary portal-booking-patient-selector__add"
         @click="dialog?.showModal()"
       >
+        <PortalIcon name="plus" />
         {{ t('family.add') }}
       </button>
-      <Link
-        :href="props.familyUrl"
-        class="portal-link"
-      >
-        {{ t('family.title') }}
-      </Link>
     </div>
     <dialog
       ref="dialog"
