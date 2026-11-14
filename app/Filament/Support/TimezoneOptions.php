@@ -43,7 +43,7 @@ final class TimezoneOptions
                 continue;
             }
 
-            $options[$timezone] = self::label($timezone).' ('.$timezone.')';
+            $options[$timezone] = self::display($timezone);
         }
 
         return $options;
@@ -58,6 +58,26 @@ final class TimezoneOptions
         return array_key_exists($timezone, self::LABELS)
             ? __(self::LABELS[$timezone])
             : self::cityLabel($timezone);
+    }
+
+    public static function display(?string $timezone): string
+    {
+        if ($timezone === null || $timezone === '') {
+            return self::label($timezone);
+        }
+
+        return self::label($timezone).' ('.self::offsetLabel($timezone).')';
+    }
+
+    public static function offsetLabel(string $timezone): string
+    {
+        $offset = now($timezone)->getOffset();
+        $sign = $offset < 0 ? '-' : '+';
+        $seconds = abs($offset);
+        $hours = intdiv($seconds, 3600);
+        $minutes = intdiv($seconds % 3600, 60);
+
+        return sprintf('UTC%s%02d:%02d', $sign, $hours, $minutes);
     }
 
     private static function cityLabel(string $timezone): string

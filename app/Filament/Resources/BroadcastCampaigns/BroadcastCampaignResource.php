@@ -13,6 +13,7 @@ use App\Filament\Support\CrmLabel;
 use App\Filament\Support\LocalizedResource;
 use App\Filament\Support\MessageComposer;
 use App\Filament\Support\RichTextPresentation;
+use App\Filament\Support\TimezoneOptions;
 use App\Models\User;
 use App\Modules\Broadcasts\Application\BroadcastCampaignMedia;
 use App\Modules\Broadcasts\Application\BroadcastCampaignName;
@@ -251,10 +252,10 @@ final class BroadcastCampaignResource extends LocalizedResource
             Section::make(__('Запуск'))->schema([
                 Select::make('send_mode')->label(__('Когда отправить'))->options(['immediate' => __('Сейчас'), 'scheduled' => __('Запланировать')])->default('immediate')->required()->live(),
                 DateTimePicker::make('scheduled_at')
-                    ->label(fn (): string => __('Дата и время (').app(OrganizationContext::class)->defaultTimezone().')')
+                    ->label(fn (): string => __('Дата и время (').TimezoneOptions::display(app(OrganizationContext::class)->defaultTimezone()).')')
                     ->timezone(fn (): string => app(OrganizationContext::class)->defaultTimezone())
                     ->seconds(false)
-                    ->helperText(fn (): string => __('Время указывается по часовому поясу организации: ').app(OrganizationContext::class)->defaultTimezone().'.')
+                    ->helperText(fn (): string => __('Время указывается по часовому поясу организации: ').TimezoneOptions::display(app(OrganizationContext::class)->defaultTimezone()).'.')
                     ->visible(fn (Get $get): bool => $get('send_mode') === 'scheduled')
                     ->required(fn (Get $get): bool => $get('send_mode') === 'scheduled'),
             ])->columns(2)->columnSpanFull(),
@@ -281,7 +282,7 @@ final class BroadcastCampaignResource extends LocalizedResource
             TextEntry::make('media_summary')
                 ->label(__('Медиа'))
                 ->state(fn (BroadcastCampaign $record): string => self::mediaSummary($record)),
-            TextEntry::make('scheduled_at')->label(fn (): string => __('Запланировано (').app(OrganizationContext::class)->defaultTimezone().')')->dateTime('d.m.Y H:i')->timezone(fn (): string => app(OrganizationContext::class)->defaultTimezone())->placeholder(__('Сразу')),
+            TextEntry::make('scheduled_at')->label(fn (): string => __('Запланировано (').TimezoneOptions::display(app(OrganizationContext::class)->defaultTimezone()).')')->dateTime('d.m.Y H:i')->timezone(fn (): string => app(OrganizationContext::class)->defaultTimezone())->placeholder(__('Сразу')),
             TextEntry::make('audience_count')->label(__('Найдено')),
             TextEntry::make('delivered_count')->label(__('Доставлено')),
             TextEntry::make('failed_count')->label(__('Ошибки')),
@@ -330,7 +331,7 @@ final class BroadcastCampaignResource extends LocalizedResource
                     ->formatStateUsing(fn ($state): string => self::stateLabel($state instanceof BroadcastCampaignState ? $state : BroadcastCampaignState::from((string) $state)))
                     ->width('9rem'),
                 TextColumn::make('scheduled_at')
-                    ->label(fn (): string => __('Запуск (').app(OrganizationContext::class)->defaultTimezone().')')
+                    ->label(fn (): string => __('Запуск (').TimezoneOptions::display(app(OrganizationContext::class)->defaultTimezone()).')')
                     ->dateTime('d.m.Y H:i')
                     ->timezone(fn (): string => app(OrganizationContext::class)->defaultTimezone())
                     ->placeholder(__('Сразу'))

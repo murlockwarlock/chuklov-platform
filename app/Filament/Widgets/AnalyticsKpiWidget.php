@@ -3,6 +3,7 @@
 namespace App\Filament\Widgets;
 
 use App\Filament\Resources\FinancialObligations\FinancialObligationResource;
+use App\Filament\Support\HasDashboardLoadingPlaceholder;
 use App\Models\User;
 use App\Modules\Analytics\Application\AcquisitionAnalytics;
 use App\Modules\Analytics\Application\Data\AcquisitionAnalyticsData;
@@ -24,6 +25,7 @@ use Illuminate\Support\Facades\Auth;
 
 final class AnalyticsKpiWidget extends StatsOverviewWidget
 {
+    use HasDashboardLoadingPlaceholder;
     use InteractsWithPageFilters;
 
     protected static ?int $sort = 2;

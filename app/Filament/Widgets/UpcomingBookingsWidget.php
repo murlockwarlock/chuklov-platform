@@ -3,6 +3,7 @@
 namespace App\Filament\Widgets;
 
 use App\Filament\Support\CrmLabel;
+use App\Filament\Support\HasDashboardLoadingPlaceholder;
 use App\Models\User;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
@@ -17,6 +18,8 @@ use Illuminate\Support\Facades\Auth;
 
 class UpcomingBookingsWidget extends Widget
 {
+    use HasDashboardLoadingPlaceholder;
+
     protected string $view = 'filament.widgets.upcoming-bookings-widget';
 
     protected int|string|array $columnSpan = 'full';

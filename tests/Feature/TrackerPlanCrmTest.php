@@ -9,6 +9,7 @@ use App\Filament\Resources\TrackerPlans\Pages\CreateTrackerPlan;
 use App\Filament\Resources\TrackerPlans\TrackerPlanResource;
 use App\Filament\Resources\WorkingLocations\WorkingLocationResource;
 use App\Models\User;
+use App\Modules\Commerce\Domain\Models\PaymentProviderOfferMapping;
 use App\Modules\Finance\Application\SaveCurrencyConfiguration;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\MedicalProfiles\Application\DTOs\UpdateMedicalProfileCommand;
@@ -18,12 +19,18 @@ use App\Modules\Organizations\Domain\Enums\OrganizationFeature;
 use App\Modules\Organizations\Domain\Enums\OrganizationRole;
 use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Organizations\Domain\Models\OrganizationFeatureFlag;
+use App\Modules\Tracker\Application\MoveTrackerPlan;
+use App\Modules\Tracker\Application\SaveTrackerPlan;
 use App\Modules\Tracker\Domain\Enums\TrackerTaskType;
+use App\Modules\Tracker\Domain\Models\TrackerPlan;
+use App\Modules\Tracker\Domain\Models\TrackerPlanVersion;
 use Filament\Facades\Filament;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Toggle;
 use Filament\Schemas\Components\Section;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 use Livewire\Livewire;
 use Tests\TestCase;
 
@@ -70,6 +77,129 @@ final class TrackerPlanCrmTest extends TestCase
                 self::assertFalse($component->isInline());
             }
         }
+    }
+
+    public function test_tracker_plan_order_is_changed_by_human_move_actions_without_mutating_versions(): void
+    {
+        $admin = $this->trackerAdmin();
+        $first = app(SaveTrackerPlan::class)->handle($admin, null, 'Первый тариф', true, true, '10.00', 'USD', 30, null, true, null);
+        $second = app(SaveTrackerPlan::class)->handle($admin, null, 'Второй тариф', true, true, '20.00', 'USD', 30, null, true, null);
+        $firstPlan = $first->plan()->firstOrFail();
+        $secondPlan = $second->plan()->firstOrFail();
+
+        app(MoveTrackerPlan::class)->handle($admin, $secondPlan, 'up');
+
+        self::assertSame(1, (int) $this->currentVersionOrFail($firstPlan)->display_order);
+        self::assertSame(0, (int) $this->currentVersionOrFail($secondPlan)->display_order);
+        self::assertGreaterThan(1, $firstPlan->versions()->count());
+        self::assertGreaterThan(1, $secondPlan->versions()->count());
+    }
+
+    public function test_tracker_plan_order_supports_both_directions_and_rejects_first_and_last_boundaries(): void
+    {
+        $admin = $this->trackerAdmin();
+        $firstPlan = app(SaveTrackerPlan::class)->handle($admin, null, 'Первый тариф', true, true, '10.00', 'USD', 30, null, true, 0)->plan()->firstOrFail();
+        $secondPlan = app(SaveTrackerPlan::class)->handle($admin, null, 'Второй тариф', true, true, '20.00', 'USD', 30, null, true, 1)->plan()->firstOrFail();
+        $lastPlan = app(SaveTrackerPlan::class)->handle($admin, null, 'Последний тариф', true, true, '30.00', 'USD', 30, null, true, 2)->plan()->firstOrFail();
+
+        $this->assertMoveRejected($admin, $firstPlan, 'up', 'Тариф уже находится в начале списка.');
+        $this->assertMoveRejected($admin, $lastPlan, 'down', 'Тариф уже находится в конце списка.');
+
+        app(MoveTrackerPlan::class)->handle($admin, $secondPlan, 'down');
+        self::assertSame(0, (int) $this->currentVersionOrFail($firstPlan)->display_order);
+        self::assertSame(2, (int) $this->currentVersionOrFail($secondPlan)->display_order);
+        self::assertSame(1, (int) $this->currentVersionOrFail($lastPlan)->display_order);
+
+        app(MoveTrackerPlan::class)->handle($admin, $secondPlan, 'up');
+        self::assertSame(0, (int) $this->currentVersionOrFail($firstPlan)->display_order);
+        self::assertSame(1, (int) $this->currentVersionOrFail($secondPlan)->display_order);
+        self::assertSame(2, (int) $this->currentVersionOrFail($lastPlan)->display_order);
+    }
+
+    public function test_tracker_plan_reorder_preserves_version_history_mappings_and_audit_events(): void
+    {
+        $admin = $this->trackerAdmin();
+        $firstPlan = app(SaveTrackerPlan::class)->handle($admin, null, 'Первый тариф', true, true, '10.00', 'USD', 30, 'Первое описание', true, 0)->plan()->firstOrFail();
+        $secondVersion = app(SaveTrackerPlan::class)->handle($admin, null, 'Второй тариф', true, true, '20.00', 'USD', 30, 'Второе описание', true, 1);
+        $secondPlan = $secondVersion->plan()->firstOrFail();
+
+        $mapping = new PaymentProviderOfferMapping;
+        $mapping->forceFill([
+            'organization_id' => $this->organization()->getKey(),
+            'gateway' => 'lava',
+            'sellable_type' => $secondVersion::class,
+            'sellable_id' => $secondVersion->getKey(),
+            'currency' => 'USD',
+            'external_offer_id' => 'tracker-reorder-offer',
+            'provider_metadata' => ['source' => 'tracker-reorder-test'],
+            'is_active' => true,
+        ])->save();
+
+        $oldVersionId = (int) $secondVersion->getKey();
+        $oldVersionCount = $secondPlan->versions()->count();
+
+        app(MoveTrackerPlan::class)->handle($admin, $secondPlan, 'up');
+
+        $secondPlan->refresh();
+        $newVersion = $this->currentVersionOrFail($secondPlan);
+        self::assertNotSame($oldVersionId, (int) $newVersion->getKey());
+        self::assertSame(0, (int) $newVersion->display_order);
+        self::assertSame($oldVersionCount + 1, $secondPlan->versions()->count());
+        self::assertSame(1, (int) $this->currentVersionOrFail($firstPlan)->display_order);
+        self::assertDatabaseHas('tracker_plan_versions', [
+            'id' => $oldVersionId,
+            'display_order' => 1,
+            'description' => 'Второе описание',
+        ]);
+        self::assertDatabaseHas('payment_provider_offer_mappings', [
+            'organization_id' => $this->organization()->getKey(),
+            'sellable_type' => $secondVersion::class,
+            'sellable_id' => $oldVersionId,
+            'external_offer_id' => 'tracker-reorder-offer',
+            'is_active' => true,
+        ]);
+        self::assertDatabaseHas('payment_provider_offer_mappings', [
+            'organization_id' => $this->organization()->getKey(),
+            'sellable_type' => $secondVersion::class,
+            'sellable_id' => $newVersion->getKey(),
+            'external_offer_id' => 'tracker-reorder-offer',
+            'is_active' => true,
+        ]);
+        self::assertSame(2, DB::table('audit_events')
+            ->where('organization_id', $this->organization()->getKey())
+            ->where('action', 'tracker.plan.reordered')
+            ->count());
+    }
+
+    public function test_tracker_plan_reorder_ignores_plan_without_current_version_and_keeps_tenant_boundary(): void
+    {
+        $admin = $this->trackerAdmin();
+        $organization = $this->organization();
+        $version = app(SaveTrackerPlan::class)->handle($admin, null, 'Локальный тариф', true, true, '10.00', 'USD', 30, null, true, 0);
+        $plan = $version->plan()->firstOrFail();
+        app(SaveTrackerPlan::class)->handle($admin, null, 'Соседний тариф', true, true, '20.00', 'USD', 30, null, true, 1);
+        $draftPlan = TrackerPlan::factory()->create([
+            'organization_id' => $organization->getKey(),
+            'name' => 'Черновик без версии',
+        ]);
+
+        app(MoveTrackerPlan::class)->handle($admin, $plan, 'down');
+
+        self::assertNull($draftPlan->refresh()->current_version_id);
+        self::assertNotNull($this->currentVersionOrFail($plan));
+
+        $foreignOrganization = Organization::factory()->create();
+        $foreignAdmin = User::factory()->forOrganization($foreignOrganization, OrganizationRole::Administrator)->create();
+        app(OrganizationContext::class)->set($foreignOrganization);
+        $foreignVersion = app(SaveTrackerPlan::class)->handle($foreignAdmin, null, 'Чужой тариф', true, true, '30.00', 'USD', 30, null, true, 0);
+        $foreignPlan = $foreignVersion->plan()->firstOrFail();
+        $foreignVersionId = (int) $foreignPlan->current_version_id;
+
+        app(OrganizationContext::class)->set($organization);
+        $this->assertMoveRejected($admin, $foreignPlan, 'up', 'Выбранный тариф недоступен в этой организации.');
+
+        self::assertSame($foreignVersionId, (int) $foreignPlan->refresh()->current_version_id);
+        self::assertSame(1, $foreignPlan->versions()->count());
     }
 
     public function test_invalid_tracker_plan_price_keeps_form_state_and_shows_human_error(): void
@@ -199,5 +329,30 @@ final class TrackerPlanCrmTest extends TestCase
         app(OrganizationContext::class)->set($organization);
 
         return $admin;
+    }
+
+    private function organization(): Organization
+    {
+        return app(OrganizationContext::class)->organization();
+    }
+
+    private function currentVersionOrFail(TrackerPlan $plan): TrackerPlanVersion
+    {
+        $version = $plan->refresh()->currentVersion;
+        if (! $version instanceof TrackerPlanVersion) {
+            self::fail('The tracker plan must have a current version.');
+        }
+
+        return $version;
+    }
+
+    private function assertMoveRejected(User $admin, TrackerPlan $plan, string $direction, string $message): void
+    {
+        try {
+            app(MoveTrackerPlan::class)->handle($admin, $plan, $direction);
+            self::fail('The tracker plan move should have been rejected.');
+        } catch (ValidationException $exception) {
+            self::assertSame($message, $exception->errors()['plan'][0]);
+        }
     }
 }

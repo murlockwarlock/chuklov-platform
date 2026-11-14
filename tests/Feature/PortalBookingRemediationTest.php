@@ -12,6 +12,7 @@ use App\Modules\Identity\Application\RevokePatientRelationship;
 use App\Modules\Identity\Application\UnblockClientBlacklist;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Identity\Domain\Models\LegalDocument;
+use App\Modules\Identity\Domain\Models\PatientProfile;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Application\OrganizationFeatureGate;
 use App\Modules\Organizations\Domain\Enums\OrganizationFeature;
@@ -107,6 +108,56 @@ class PortalBookingRemediationTest extends TestCase
             'consents' => $this->acceptedConsents($organization),
         ]))->assertForbidden();
         self::assertSame(1, Booking::query()->count());
+    }
+
+    public function test_booking_family_member_creation_returns_to_the_same_booking_context(): void
+    {
+        [$organization, $client, $specialist, $service] = $this->portalFixture();
+        $this->withSession(['client_portal.client_id' => $client->getKey()]);
+        $selectedStart = '2026-03-18T09:00:00+00:00';
+
+        $response = $this->post(route('portal.family.store'), [
+            'creation_key' => '00000000-0000-4000-8000-000000000322',
+            'first_name' => 'Booking',
+            'last_name' => 'Family',
+            'gender' => 'FEMALE',
+            'birth_date' => '2018-01-02',
+            'relationship' => 'CHILD',
+            'return_to' => 'booking',
+            'service_id' => $service->getKey(),
+            'specialist_id' => $specialist->getKey(),
+            'format' => VisitFormat::Office->value,
+            'date_from' => '2026-03-01',
+            'date_to' => '2026-03-31',
+            'display_timezone' => 'Asia/Bangkok',
+            'location_area' => 'Central',
+            'selected_start_at' => $selectedStart,
+            'booking_step' => 'confirmation',
+        ]);
+
+        $response->assertSessionHasNoErrors()->assertRedirect();
+        $location = (string) $response->headers->get('Location');
+        $query = [];
+        parse_str((string) parse_url($location, PHP_URL_QUERY), $query);
+
+        self::assertSame((string) $service->getKey(), $query['service_id'] ?? null);
+        self::assertSame((string) $specialist->getKey(), $query['specialist_id'] ?? null);
+        self::assertSame(VisitFormat::Office->value, $query['format'] ?? null);
+        self::assertSame('2026-03-01', $query['date_from'] ?? null);
+        self::assertSame('2026-03-31', $query['date_to'] ?? null);
+        self::assertSame('Asia/Bangkok', $query['display_timezone'] ?? null);
+        self::assertSame('Central', $query['location_area'] ?? null);
+        self::assertSame($selectedStart, $query['selected_start_at'] ?? null);
+        self::assertSame('confirmation', $query['booking_step'] ?? null);
+
+        $this->get($location)->assertInertia(fn (AssertableInertia $page) => $page
+            ->component('Portal/BookingCreate')
+            ->where('selectedPatientId', PatientProfile::query()->where('first_name', 'Booking')->value('id'))
+            ->where('query.serviceId', $service->getKey())
+            ->where('query.specialistId', $specialist->getKey())
+            ->where('query.dateFrom', '2026-03-01')
+            ->where('query.displayTimezone', 'Asia/Bangkok')
+            ->where('query.locationArea', 'Central'));
     }
 
     public function test_nonmedical_booking_remains_available_when_medical_records_are_disabled(): void

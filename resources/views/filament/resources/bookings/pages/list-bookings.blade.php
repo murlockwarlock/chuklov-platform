@@ -18,10 +18,11 @@
         $canCreateBooking = $this->canCreateBooking();
         $calendarDensity = in_array($this->calendarDensity, ['compact', 'normal', 'wide'], true) ? $this->calendarDensity : 'normal';
         $calendarCardClass = match ($calendarDensity) {
-            'compact' => 'p-1 text-[10px]',
+            'compact' => 'p-0 text-[10px]',
             'wide' => 'p-2 text-xs',
             default => 'p-1.5 text-[11px]',
         };
+        $calendarCardHeaderGap = $calendarDensity === 'compact' ? 'gap-0' : 'gap-1';
         $calendarGridStyle = 'grid-template-columns: 4rem repeat(7, minmax(var(--journal-day-min-width), 1fr));';
         $densityOptions = [
             'compact' => ['label' => __('Компактно'), 'icon' => 'heroicon-o-arrows-pointing-in'],
@@ -167,17 +168,17 @@
                                         <div draggable="{{ $booking['is_terminal'] ? 'false' : 'true' }}" x-on:dragstart="event.dataTransfer.setData('booking-id', '{{ $booking['id'] }}'); event.dataTransfer.setData('event-version', '{{ $booking['event_version'] }}'); event.dataTransfer.effectAllowed = 'move'" class="absolute z-10 min-w-0 overflow-hidden rounded-md border {{ $calendarCardClass }} leading-tight shadow-sm transition hover:shadow-md {{ $booking['is_terminal'] ? '' : 'cursor-grab active:cursor-grabbing' }} {{ $booking['status_class'] }} {{ $booking['retention_warning'] ? 'ring-2 ring-danger-400 dark:ring-danger-500' : '' }}" style="{{ $this->bookingStyle($booking) }}" aria-label="{{ $booking['specialist'] }}: {{ $booking['time_range'] }}" @if ($booking['released_for_rebooking']) data-testid="journal-released-booking-card" @endif>
                                             <a href="{{ $booking['url'] }}" aria-label="{{ __('Открыть запись') }}" class="absolute inset-0 z-0 rounded-md"></a>
                                             <div class="relative z-10 pointer-events-none">
-                                                <div class="flex min-w-0 items-center gap-1">
+                                                <div class="flex min-w-0 items-center {{ $calendarCardHeaderGap }}">
                                                     <span class="min-w-0 flex-1 {{ $calendarDensity === 'wide' ? 'whitespace-normal break-words' : 'truncate' }} font-semibold" title="{{ $booking['specialist'] }}">{{ $booking['start_time'] }} · {{ $booking['specialist'] }}</span>
                                                     @if ($booking['released_for_rebooking'])
                                                         <a
                                                             href="{{ $this->bookingCreationUrl($day['date'], $booking['start_time'], $booking['specialist_id']) }}"
                                                             aria-label="{{ __('Создать новую запись на :time', ['time' => $booking['start_time']]) }}"
+                                                            title="{{ __('Записать на это время') }}"
                                                             data-testid="journal-released-booking-create"
-                                                            class="pointer-events-auto relative z-20 inline-flex shrink-0 items-center gap-1 rounded-md border border-primary-200 bg-white/90 px-1.5 py-1 text-[10px] font-semibold text-primary-700 shadow-sm hover:bg-primary-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-primary-600 dark:border-primary-900/60 dark:bg-gray-900/90 dark:text-primary-300 dark:hover:bg-primary-950/30"
+                                                            class="pointer-events-auto relative z-20 inline-flex size-7 shrink-0 items-center justify-center rounded-md border border-primary-200 bg-white/90 text-primary-700 shadow-sm hover:bg-primary-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-primary-600 dark:border-primary-900/60 dark:bg-gray-900/90 dark:text-primary-300 dark:hover:bg-primary-950/30"
                                                         >
-                                                            <x-filament::icon icon="heroicon-o-plus" class="size-3" />
-                                                            <span>{{ __('Добавить') }}</span>
+                                                            <x-filament::icon icon="heroicon-o-plus" class="size-4" />
                                                         </a>
                                                     @endif
                                                 </div>
@@ -229,6 +230,17 @@
                                                             <div class="flex min-w-0 items-start justify-between gap-2">
                                                                 <span class="min-w-0 truncate font-semibold">@if ($booking['client_url'])<a href="{{ $booking['client_url'] }}" class="pointer-events-auto relative z-20 crm-entity-link">{{ $booking['client'] }}</a>@else{{ $booking['client'] }}@endif</span>
                                                                 <span class="shrink-0 text-xs">{{ $booking['time_range'] }}</span>
+                                                                @if ($booking['released_for_rebooking'])
+                                                                    <a
+                                                                        href="{{ $this->bookingCreationUrl($day['date'], $booking['start_time'], $booking['specialist_id']) }}"
+                                                                        aria-label="{{ __('Создать новую запись на :time', ['time' => $booking['start_time']]) }}"
+                                                                        title="{{ __('Записать на это время') }}"
+                                                                        data-testid="journal-released-booking-create"
+                                                                        class="pointer-events-auto relative z-20 inline-flex size-7 shrink-0 items-center justify-center rounded-md border border-primary-200 bg-white/90 text-primary-700 shadow-sm hover:bg-primary-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-primary-600 dark:border-primary-900/60 dark:bg-gray-900/90 dark:text-primary-300 dark:hover:bg-primary-950/30"
+                                                                    >
+                                                                        <x-filament::icon icon="heroicon-o-plus" class="size-4" />
+                                                                    </a>
+                                                                @endif
                                                             </div>
                                                             <div class="mt-1 break-words text-xs">{{ $booking['service'] }} · {{ $booking['status'] }} · {{ $booking['location_label'] }}@if ($booking['party_size_label']) · {{ $booking['party_size_label'] }}@endif @if ($booking['has_debt']) · {{ __('Есть долг') }}@endif</div>
                                                             @if ($booking['retention_warning'])
@@ -279,6 +291,17 @@
                                                 <div class="flex min-w-0 items-start justify-between gap-2">
                                                     <span class="min-w-0 truncate font-semibold">@if ($booking['client_url'])<a href="{{ $booking['client_url'] }}" class="pointer-events-auto relative z-20 crm-entity-link">{{ $booking['client'] }}</a>@else{{ $booking['client'] }}@endif</span>
                                                     <span class="shrink-0 text-xs">{{ $booking['time_range'] }}</span>
+                                                    @if ($booking['released_for_rebooking'])
+                                                        <a
+                                                            href="{{ $this->bookingCreationUrl($day['date'], $booking['start_time'], $booking['specialist_id']) }}"
+                                                            aria-label="{{ __('Создать новую запись на :time', ['time' => $booking['start_time']]) }}"
+                                                            title="{{ __('Записать на это время') }}"
+                                                            data-testid="journal-released-booking-create"
+                                                            class="pointer-events-auto relative z-20 inline-flex size-7 shrink-0 items-center justify-center rounded-md border border-primary-200 bg-white/90 text-primary-700 shadow-sm hover:bg-primary-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-primary-600 dark:border-primary-900/60 dark:bg-gray-900/90 dark:text-primary-300 dark:hover:bg-primary-950/30"
+                                                        >
+                                                            <x-filament::icon icon="heroicon-o-plus" class="size-4" />
+                                                        </a>
+                                                    @endif
                                                 </div>
                                                 <div class="mt-1 break-words text-xs">{{ $booking['service'] }} · {{ $booking['status'] }} · {{ $booking['location_label'] }}@if ($booking['party_size_label']) · {{ $booking['party_size_label'] }}@endif @if ($booking['has_debt']) · {{ __('Есть долг') }}@endif</div>
                                                 @if ($booking['retention_warning'])

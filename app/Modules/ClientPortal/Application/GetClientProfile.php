@@ -17,6 +17,25 @@ use Illuminate\Support\Collection;
 
 final class GetClientProfile
 {
+    /** @var array<string, array{ru: string, en: string}> */
+    private const TIMEZONE_LABELS = [
+        'UTC' => ['ru' => 'UTC', 'en' => 'UTC'],
+        'Asia/Almaty' => ['ru' => 'Алматы', 'en' => 'Almaty'],
+        'Asia/Aqtau' => ['ru' => 'Актау', 'en' => 'Aktau'],
+        'Asia/Atyrau' => ['ru' => 'Атырау', 'en' => 'Atyrau'],
+        'Asia/Aqtobe' => ['ru' => 'Актобе', 'en' => 'Aktobe'],
+        'Asia/Bangkok' => ['ru' => 'Бангкок', 'en' => 'Bangkok'],
+        'Asia/Dubai' => ['ru' => 'Дубай', 'en' => 'Dubai'],
+        'Asia/Tashkent' => ['ru' => 'Ташкент', 'en' => 'Tashkent'],
+        'Asia/Tokyo' => ['ru' => 'Токио', 'en' => 'Tokyo'],
+        'Europe/Berlin' => ['ru' => 'Берлин', 'en' => 'Berlin'],
+        'Europe/London' => ['ru' => 'Лондон', 'en' => 'London'],
+        'Europe/Moscow' => ['ru' => 'Москва', 'en' => 'Moscow'],
+        'Europe/Paris' => ['ru' => 'Париж', 'en' => 'Paris'],
+        'America/Los_Angeles' => ['ru' => 'Лос-Анджелес', 'en' => 'Los Angeles'],
+        'America/New_York' => ['ru' => 'Нью-Йорк', 'en' => 'New York'],
+    ];
+
     public function __construct(
         private readonly ClientPortalContext $clientContext,
         private readonly ListPublishedLegalDocuments $legalDocuments,
@@ -81,7 +100,7 @@ final class GetClientProfile
                     && $marketingConsent->version === $marketingDocument->version
                     && $marketingConsent->granted,
             ],
-            'timezoneOptions' => $this->timezoneOptions($client->timezone),
+            'timezoneOptions' => $this->timezoneOptions($client->timezone, $this->locale($client->language)),
             'urls' => [
                 'family' => app(OrganizationFeatureGate::class)->isEnabled($client->organization,
                     OrganizationFeature::ClientRecords) ? route('portal.family') : null,
@@ -100,17 +119,39 @@ final class GetClientProfile
     }
 
     /** @return list<array{value: string, label: string}> */
-    public function timezoneOptions(?string $current = null): array
+    public function timezoneOptions(?string $current = null, ?string $locale = null): array
     {
         $timezones = timezone_identifiers_list();
         if ($current !== null && in_array($current, $timezones, true)) {
             $timezones = [$current, ...array_values(array_diff($timezones, [$current]))];
         }
 
-        return array_map(static fn (string $timezone): array => [
+        $locale = $locale === 'en' ? 'en' : 'ru';
+
+        return array_map(fn (string $timezone): array => [
             'value' => $timezone,
-            'label' => $timezone,
+            'label' => $this->timezoneLabel($timezone, $locale),
         ], $timezones);
+    }
+
+    private function timezoneLabel(string $timezone, string $locale): string
+    {
+        $city = self::TIMEZONE_LABELS[$timezone][$locale] ?? str_replace('_', ' ', (string) last(explode('/', $timezone)));
+
+        return trim($city) === ''
+            ? $timezone
+            : $city.' ('.$this->timezoneOffset($timezone).')';
+    }
+
+    private function timezoneOffset(string $timezone): string
+    {
+        $offset = (new \DateTimeZone($timezone))->getOffset(new \DateTimeImmutable('now', new \DateTimeZone('UTC')));
+        $sign = $offset < 0 ? '-' : '+';
+        $seconds = abs($offset);
+        $hours = intdiv($seconds, 3600);
+        $minutes = intdiv($seconds % 3600, 60);
+
+        return sprintf('UTC%s%02d:%02d', $sign, $hours, $minutes);
     }
 
     /**

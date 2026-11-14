@@ -34,6 +34,8 @@ class PortalBookingQueryRequest extends FormRequest
             'display_timezone' => ['sometimes', 'nullable', 'string', 'max:64'],
             'working_location_id' => ['sometimes', 'nullable', 'integer', 'min:1'],
             'location_area' => ['sometimes', 'nullable', 'string', 'max:160'],
+            'selected_start_at' => ['sometimes', 'nullable', 'date'],
+            'booking_step' => ['sometimes', 'in:time,confirmation'],
         ];
     }
 

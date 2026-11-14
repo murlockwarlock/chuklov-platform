@@ -126,7 +126,7 @@ final class SchedulingJournalProductionPassTest extends TestCase
 
         Livewire::actingAs($admin)
             ->test(WorkingIntervals::class)
-            ->assertSee('График задан по времени: Алматы (UTC+5) · Asia/Almaty');
+            ->assertSee('График задан по времени: Алматы (UTC+05:00)');
     }
 
     public function test_settings_save_round_trips_multiple_intervals_and_validity_dates(): void
@@ -234,7 +234,7 @@ final class SchedulingJournalProductionPassTest extends TestCase
                 'clear_working_hours' => false,
             ])
             ->call('save')
-            ->assertHasErrors(['working_hours']);
+            ->assertHasErrors(['data.working_hours']);
 
         self::assertDatabaseHas('specialist_working_hours', [
             'organization_id' => $organization->getKey(),
@@ -317,7 +317,7 @@ final class SchedulingJournalProductionPassTest extends TestCase
                 'clear_working_hours' => false,
             ])
             ->call('save')
-            ->assertHasErrors(['working_hours']);
+            ->assertHasErrors(['data.working_hours']);
 
         self::assertStringContainsString(
             'Рабочие интервалы не должны пересекаться.',
@@ -1283,6 +1283,8 @@ final class SchedulingJournalProductionPassTest extends TestCase
             ->assertSet('calendarDensity', 'compact');
         self::assertStringContainsString('--journal-day-min-width: 112px;', $journal->html());
         self::assertStringNotContainsString('--journal-day-min-width: 136px;', $journal->html());
+        self::assertStringContainsString('p-0 text-[10px]', $journal->html());
+        self::assertStringContainsString('flex min-w-0 items-center gap-0', $journal->html());
 
         $journal->call('setCalendarDensity', 'normal')->assertSet('calendarDensity', 'normal');
         self::assertStringContainsString('--journal-day-min-width: 136px;', $journal->html());
@@ -1299,7 +1301,7 @@ final class SchedulingJournalProductionPassTest extends TestCase
         $compactCardStyle = $journal->instance()->bookingStyle($overlapStyle);
         self::assertNotSame($normalCardStyle, $compactCardStyle);
         self::assertStringContainsString('- 4px', $normalCardStyle);
-        self::assertStringContainsString('- 18px', $compactCardStyle);
+        self::assertStringContainsString('- 6px', $compactCardStyle);
 
         $journal->call('setCalendarDensity', 'wide')->assertSet('calendarDensity', 'wide');
         self::assertStringContainsString('--journal-day-min-width: 360px;', $journal->html());
@@ -1507,6 +1509,10 @@ final class SchedulingJournalProductionPassTest extends TestCase
         self::assertTrue($projection['released_for_rebooking']);
         self::assertStringContainsString('Добавить запись на 10:00', $journal->html());
         self::assertStringContainsString('Создать новую запись на 10:00', $journal->html());
+        self::assertStringContainsString('title="Записать на это время"', $journal->html());
+        self::assertStringContainsString('data-testid="journal-released-booking-create"', $journal->html());
+        self::assertStringContainsString('size-7 shrink-0', $journal->html());
+        self::assertStringNotContainsString('>Добавить</span>', $journal->html());
     }
 
     public function test_journal_retention_warning_waits_for_completion_window_and_rechecks_next_booking(): void

@@ -172,7 +172,7 @@ class SpecialistResource extends LocalizedResource
     {
         return $timezone === null || $timezone === ''
             ? __($fallback)
-            : TimezoneOptions::label($timezone).' ('.$timezone.')';
+            : TimezoneOptions::display($timezone);
     }
 
     public static function getPages(): array

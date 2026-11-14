@@ -7,6 +7,7 @@ use App\Modules\Finance\Application\CurrencyConfigurationService;
 use App\Modules\Finance\Application\FinanceAuthorization;
 use App\Modules\Finance\Domain\Services\CurrencyCatalog;
 use App\Modules\Organizations\Application\OrganizationContext;
+use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
@@ -48,11 +49,12 @@ final class TrackerPlanForm
                 ->columns(2)
                 ->columnSpanFull(),
             Section::make(__('Публикация и доступ'))
+                ->description(__('Порядок меняется кнопками «Выше» и «Ниже» в списке тарифов.'))
                 ->schema([
                     Toggle::make('is_active')->label(__('Тариф активен'))->default(true)->inline(false),
                     Toggle::make('is_visible')->label(__('Показывать клиентам'))->default(true)->inline(false),
                     Toggle::make('included_access')->label(__('Включает доступ к трекеру'))->default(true)->inline(false),
-                    TextInput::make('display_order')->label(__('Порядок отображения'))->integer()->minValue(0)->default(0)->required(),
+                    Hidden::make('display_order')->dehydrated(true),
                 ])
                 ->columns(2)
                 ->columnSpanFull(),

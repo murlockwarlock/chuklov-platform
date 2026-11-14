@@ -86,6 +86,25 @@ class PortalProductUxTest extends TestCase
                 ->where('portal.urls.referrals', route('portal.referrals')));
     }
 
+    public function test_portal_timezone_choices_are_human_readable(): void
+    {
+        $organization = $this->organizationWithClientRecords();
+        $client = Client::factory()->forOrganization($organization)->create([
+            'language' => 'ru',
+            'timezone' => 'Asia/Bangkok',
+        ]);
+        $this->withSession(['client_portal.client_id' => $client->getKey()]);
+
+        $this->get(route('portal.profile'))
+            ->assertOk()
+            ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
+                ->where('timezoneOptions.0.value', 'Asia/Bangkok')
+                ->where('timezoneOptions.0.label', 'Бангкок (UTC+07:00)'));
+
+        $timezoneLabel = (string) file_get_contents(resource_path('js/utils/timezoneLabel.ts'));
+        self::assertStringContainsString('Asia/Bangkok', $timezoneLabel);
+    }
+
     public function test_authenticated_booking_catalog_keeps_the_primary_shell_and_client_actions_are_not_duplicated(): void
     {
         $organization = $this->organizationWithClientRecords();
@@ -104,6 +123,7 @@ class PortalProductUxTest extends TestCase
         $shell = (string) file_get_contents(resource_path('js/Components/Portal/MobileBottomNavigation.vue'));
         $home = (string) file_get_contents(resource_path('js/Pages/Portal/Home.vue'));
         $companion = (string) file_get_contents(resource_path('js/Pages/Portal/Companion.vue'));
+        $bookingShow = (string) file_get_contents(resource_path('js/Pages/Portal/BookingShow.vue'));
         $success = (string) file_get_contents(resource_path('js/Components/Portal/BookingSuccess.vue'));
         $health = (string) file_get_contents(resource_path('js/Pages/Portal/Health.vue'));
         $tracker = (string) file_get_contents(resource_path('js/Pages/Portal/Tracker.vue'));
@@ -116,7 +136,9 @@ class PortalProductUxTest extends TestCase
         $section = (string) file_get_contents(resource_path('js/Pages/Portal/Section.vue'));
         $more = (string) file_get_contents(resource_path('js/Pages/Portal/More.vue'));
         $finance = (string) file_get_contents(resource_path('js/Pages/Portal/Finance.vue'));
+        $medicalUploader = (string) file_get_contents(resource_path('js/Components/Portal/MedicalAttachmentsUploader.vue'));
         $portalLocale = (string) file_get_contents(resource_path('js/locales/portal.ts'));
+        $portalCss = (string) file_get_contents(resource_path('css/app.css'));
 
         self::assertStringContainsString('active="bookings"', $servicesPage);
         self::assertStringContainsString('return props.portal.urls.services;', $shell);
@@ -137,10 +159,23 @@ class PortalProductUxTest extends TestCase
         self::assertStringNotContainsString('partner-personal-copy', $partner);
         self::assertStringNotContainsString('disableLink', $partner);
         self::assertStringNotContainsString('disableUrl', $partner);
+        self::assertStringContainsString('scroll-padding-bottom', $portalCss);
+        self::assertStringContainsString('scroll-margin-bottom', $portalCss);
         self::assertStringContainsString('partner-create-link-form', $partner);
         self::assertStringContainsString('portal-companion__composer-buttons', $companion);
         self::assertStringContainsString('@keydown="handleComposerKeydown"', $companion);
         self::assertStringContainsString('event.shiftKey', $companion);
+        self::assertStringContainsString('onNetworkError: ()', $companion);
+        self::assertStringContainsString('companion.sendNetworkError', $companion);
+        self::assertStringContainsString("window.confirm(t('booking.confirmCancel'))", $bookingShow);
+        self::assertStringContainsString(':back-label="t(\'services.back\')"', $booking);
+        self::assertStringNotContainsString(':back-label="t(\'services.title\')"', $booking);
+        self::assertStringContainsString("'services.back': 'Услуги'", $portalLocale);
+        self::assertStringContainsString('portal-health-material', $health);
+        self::assertStringContainsString('<PortalIcon name="external-link" />', $health);
+        self::assertStringContainsString('<PortalIcon name="download" />', $health);
+        self::assertStringNotContainsString('class="portal-link"', $health);
+        self::assertStringContainsString('<PortalIcon name="download" />', $medicalUploader);
         self::assertStringContainsString('group-required-acceptance', $confirmation);
         self::assertStringContainsString('@update:required-consent', $booking);
         self::assertStringContainsString('@required-change', $confirmation);
@@ -173,6 +208,27 @@ class PortalProductUxTest extends TestCase
         self::assertStringContainsString("'shell.companion': 'Чат'", $portalLocale);
         self::assertStringContainsString("'more.title': 'Кабинет'", $portalLocale);
         self::assertStringContainsString("'survey.technicalDetails': 'Все показатели'", $portalLocale);
+    }
+
+    public function test_booking_selection_keeps_the_selected_slot_and_step_after_reload(): void
+    {
+        $booking = (string) file_get_contents(resource_path('js/Pages/Portal/BookingCreate.vue'));
+
+        self::assertStringContainsString('selected_start_at', $booking);
+        self::assertStringContainsString('booking_step', $booking);
+        self::assertStringContainsString('window.history.replaceState', $booking);
+        self::assertStringContainsString('localSlotDate', $booking);
+        self::assertStringContainsString('onMounted', $booking);
+        self::assertStringContainsString('setTimeout', $booking);
+
+        $portalCss = (string) file_get_contents(resource_path('css/app.css'));
+
+        self::assertStringContainsString('.portal-booking-flow {', $portalCss);
+        self::assertStringContainsString('display: grid;', $portalCss);
+        self::assertStringContainsString('.portal-booking-flow__cta {', $portalCss);
+        self::assertStringContainsString('position: static;', $portalCss);
+        self::assertStringNotContainsString("position: sticky;\n        z-index: 5;\n        bottom: calc(5.75rem + env(safe-area-inset-bottom));", $portalCss);
+        self::assertStringNotContainsString('margin-bottom: calc(5.75rem + env(safe-area-inset-bottom));', $portalCss);
     }
 
     public function test_common_client_portal_sources_do_not_expose_raw_translation_keys(): void
@@ -208,6 +264,18 @@ class PortalProductUxTest extends TestCase
                 );
             }
         }
+    }
+
+    public function test_medical_profile_explains_required_fields_before_submit_and_summarizes_errors(): void
+    {
+        $source = (string) file_get_contents(resource_path('js/Pages/Portal/MedicalProfile.vue'));
+        $localeSource = (string) file_get_contents(resource_path('js/locales/portal.ts'));
+
+        self::assertStringContainsString("t('medical.requiredField')", $source);
+        self::assertStringContainsString("t('medical.validationSummary')", $source);
+        self::assertStringContainsString('role="alert"', $source);
+        self::assertStringContainsString("'medical.requiredField': 'обязательно'", $localeSource);
+        self::assertStringContainsString("'medical.validationSummary': 'Проверьте обязательные поля и исправьте отмеченные ошибки.'", $localeSource);
     }
 
     public function test_authenticated_home_exposes_the_authorized_referrals_destination_and_personal_link(): void

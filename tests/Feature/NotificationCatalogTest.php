@@ -52,7 +52,7 @@ final class NotificationCatalogTest extends TestCase
             ->assertSee('Запрос специалиста из AI-компаньона')
             ->assertSee('Включено')
             ->assertSee('Переход по реферальной ссылке')
-            ->assertSee('Выключено')
+            ->assertSee('Требуется настройка')
             ->assertSee('Отправок пока нет');
     }
 
@@ -79,7 +79,7 @@ final class NotificationCatalogTest extends TestCase
         self::assertStringNotContainsString('запросил специалиста', $rendered['companion']['notification_body']);
     }
 
-    public function test_operational_ai_failure_notification_shows_safe_diagnostics_and_monitoring_link(): void
+    public function test_operational_ai_failure_notification_shows_human_next_action_without_internal_diagnostics(): void
     {
         $organization = Organization::factory()->create();
         $client = Client::factory()->forOrganization($organization)->create(['full_name' => 'Анна Клиент']);
@@ -108,11 +108,16 @@ final class NotificationCatalogTest extends TestCase
         self::assertSame(ScenarioRulePurpose::Transactional, $rule->purpose);
         self::assertSame(NotificationTemplateStatus::Published, $template->status);
         self::assertContains('companion.failure_label', $template->variables);
-        self::assertContains('companion.ai_monitoring_url', $template->variables);
+        self::assertNotContains('companion.ai_monitoring_url', $template->variables);
+        self::assertNotContains('companion.crm_url', $template->variables);
+        self::assertNotContains('companion.attempt_number', $template->variables);
         self::assertSame('Ошибка настроек AI-провайдера', $rendered['companion']['failure_label']);
         self::assertSame(2, $rendered['companion']['attempt_number']);
         self::assertSame(route('filament.admin.pages.ai-monitoring-overview'), $rendered['companion']['ai_monitoring_url']);
         self::assertStringNotContainsString('provider_misconfigured', $template->body);
+        self::assertStringContainsString('Откройте диалог и проверьте настройки AI', $template->body);
+        self::assertStringNotContainsString('ai_monitoring_url', $template->body);
+        self::assertStringNotContainsString('crm_url', $template->body);
     }
 
     public function test_untouched_legacy_ai_failure_defaults_are_upgraded_without_rewriting_published_versions(): void

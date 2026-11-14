@@ -2,6 +2,7 @@
 
 namespace App\Filament\Widgets;
 
+use App\Filament\Support\HasDashboardLoadingPlaceholder;
 use App\Models\User;
 use App\Modules\Analytics\Application\Data\DashboardPeriod;
 use App\Modules\Analytics\Application\Data\SchedulingAnalyticsData;
@@ -16,6 +17,7 @@ use Illuminate\Support\Facades\Auth;
 
 class AnalyticsSchedulingWidget extends StatsOverviewWidget
 {
+    use HasDashboardLoadingPlaceholder;
     use InteractsWithPageFilters;
 
     protected static ?int $sort = 4;

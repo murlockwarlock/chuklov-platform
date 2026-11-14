@@ -69,6 +69,7 @@ class UpdateContentSection
                         $storedPath,
                     ),
                 ];
+                $finalAttributes['sort_order'] ??= $lockedSection->sort_order;
                 $data = ContentSectionData::from($finalAttributes);
                 $changedFields = [];
 

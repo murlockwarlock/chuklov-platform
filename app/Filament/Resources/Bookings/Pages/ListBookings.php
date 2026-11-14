@@ -508,7 +508,7 @@ class ListBookings extends LocalizedListRecords
         $columnWidth = 100 / $columnCount;
         $left = $column * $columnWidth;
         $horizontalInset = match ($this->normalizeCalendarDensity($this->calendarDensity)) {
-            'compact' => 18,
+            'compact' => 6,
             default => 4,
         };
 
@@ -559,7 +559,7 @@ class ListBookings extends LocalizedListRecords
     {
         $timezone = $this->journalTimezone();
 
-        return TimezoneOptions::label($timezone).' ('.$timezone.')';
+        return TimezoneOptions::display($timezone);
     }
 
     public static function statusClass(BookingStatus|string $status): string

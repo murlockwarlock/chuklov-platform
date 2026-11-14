@@ -161,6 +161,9 @@ final class FinancePaymentActions
             ->color('success')
             ->modalHeading(__('Записать оплату'))
             ->modalSubmitActionLabel(__('Записать оплату'))
+            ->modalSubmitAction(fn (Action $action): Action => $action->extraAttributes([
+                'wire:loading.attr' => 'disabled',
+            ]))
             ->schema(self::paymentSchema())
             ->action(function (Action $action, Model $record, array $data): void {
                 $actor = auth()->user();
