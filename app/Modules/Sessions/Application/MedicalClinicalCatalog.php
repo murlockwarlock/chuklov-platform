@@ -4,6 +4,7 @@ namespace App\Modules\Sessions\Application;
 
 use App\Modules\Sessions\Domain\Models\MedicalCauseDefinition;
 use App\Modules\Sessions\Domain\Models\MedicalTestDefinition;
+use App\Modules\Sessions\Domain\Models\MedicalTestValue;
 use Illuminate\Database\Eloquent\Collection;
 
 final class MedicalClinicalCatalog
@@ -80,7 +81,7 @@ final class MedicalClinicalCatalog
         return $this->catalogRows($organizationId);
     }
 
-    /** @return array<string, string> */
+    /** @return array<int, string> */
     public function specializedTestOptions(int $organizationId, string $search = ''): array
     {
         $search = trim($search);

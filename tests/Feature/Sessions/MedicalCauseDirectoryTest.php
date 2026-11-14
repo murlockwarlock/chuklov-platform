@@ -77,7 +77,7 @@ final class MedicalCauseDirectoryTest extends TestCase
             'is_active' => true,
             'sort_order' => 1,
         ])->save();
-        $session = $this->session($organization, $admin);
+        $session = $this->medicalSession($organization);
         $result = new MedicalSessionTestResult;
         $result->forceFill([
             'organization_id' => $organization->getKey(),
@@ -189,7 +189,7 @@ final class MedicalCauseDirectoryTest extends TestCase
         return [$organization, $admin];
     }
 
-    private function session(Organization $organization, User $admin): MedicalSession
+    private function medicalSession(Organization $organization): MedicalSession
     {
         $client = Client::factory()->forOrganization($organization)->create();
         $specialist = Specialist::factory()->forOrganization($organization)->create();
