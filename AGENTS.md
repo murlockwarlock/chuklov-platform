@@ -92,10 +92,12 @@ data-loss risk. Apply the matching domain skill and evidence gates.
 Missing business data, authored content, thresholds, mappings, formulas,
 medical doctrine, legal copy, and provider credentials do not block building
 the surrounding mechanism. Implement the complete safe mechanism, expose
-business values through normal authorized CRM controls, verify technical
-behavior with controlled human-readable illustrative data, and report the
-remaining value as required configuration/content. Never use fabricated
-medical or financial facts as test data.
+business values through normal authorized CRM controls, verify fields,
+validation, storage, and lifecycle with safe fictional data, and report the
+remaining value as required configuration/content. Never present fictional
+data as a real client's information or medical result. Never invent medical
+norms, diagnoses, scoring, formulas, recommendations, or other medical
+doctrine as a business rule.
 
 Never invent medical doctrine, clinical recommendations, formulas, legal text,
 or authored content. Use disabled or fail-closed behavior when activation
@@ -147,22 +149,30 @@ asking for owner acceptance.
 
 ## Data and environments
 
-- The Mac is an 8 GB workstation and thin control plane only. Use it for editing, Git, SSH, and remote-operation control.
-- Do not run application tests, Docker, PostgreSQL, Redis, full builds, heavy linters, or browser test suites on the Mac. If staging is unavailable, report the capability blocker instead of replacing staging with a local heavy stack unless the owner explicitly changes this rule.
-- PostgreSQL is authoritative. SQLite is local signal only and cannot prove
-  constraints, indexes, locks, races, JSON/native types, timestamps,
-  transactions, or upsert semantics.
-- Product, runtime, database, browser, and integration testing is performed on
-  staging. Hosted CI is not a substitute for staging acceptance and is used
-  only when a separate repository gate explicitly requires it.
+- The Mac is an 8 GB workstation and thin control plane only. Use it only for
+  editing, Git, SSH, `git diff --check`, and lightweight syntax checks that do
+  not run tests.
+- Do not run application, database, integration, or browser tests, Docker,
+  PostgreSQL, Redis, full builds, heavy linters, or browser test suites on the
+  Mac. If staging is unavailable, report the capability blocker instead of
+  replacing staging with local testing.
+- All application, database, integration, and browser testing is performed on
+  staging. PostgreSQL is the only database used for testing. Do not use SQLite,
+  including for local preliminary checks.
+- Hosted CI is not a substitute for staging acceptance and is used only when a
+  separate repository gate explicitly requires it.
 - Staging is the primary and, before production exists, the only product
   acceptance environment for PostgreSQL, Redis, queues, scheduler, migrations,
   integrations, and real user paths.
 - Do not start local PostgreSQL, Redis, workers, scheduler, full Compose, or
-  heavy browser/integration infrastructure on the Mac. Use lightweight
-  repository or documentation checks locally and staging for product evidence.
-- Never run destructive resets, wipes, truncations, or `migrate:fresh` against
-  the staging acceptance database. Use isolated CI/test databases.
+  heavy browser/integration infrastructure on the Mac. Use staging for product
+  evidence; on the Mac, only the lightweight checks listed above are allowed.
+- Destructive tests run only against isolated PostgreSQL databases or isolated
+  data inside staging. Before a risky operation, determine its impact and
+  create a recoverable backup.
+- Do not run `migrate:fresh`, `db:wipe`, `TRUNCATE`, or equivalent destructive
+  operations against the shared staging database. Do not destroy QA access,
+  required data, or audit history. CI does not replace staging acceptance.
 - `.codex/staging-deploy.md` contains local environment/deploy mechanics only;
   it is not a source of product requirements and must not contain committed
   credentials.

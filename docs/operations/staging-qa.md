@@ -61,17 +61,22 @@ presence, database rows, and mocks alone are not browser acceptance.
 Real AI-provider evidence requires execution through the application runtime and
 matching run/provider provenance. Never call a provider directly as a substitute.
 Snapshot shared AI/settings before changes, restore test-only changes in cleanup,
-and retain failed attempts and historical evidence. Do not invent medical text,
-scoring, legal copy, prices, or provider choices.
+and retain failed attempts and historical evidence. Safe fictional values are
+allowed for field, validation, storage, and lifecycle checks, but must never be
+presented as real client information or medical results. Do not invent medical
+norms, diagnoses, scoring, formulas, recommendations, medical text, legal copy,
+prices, or provider choices as business rules.
 
 Keep technical fixtures out of the ordinary operational state. Use human-readable
 illustrative records where helpful; ordinary CRM names must not contain `QA`,
-`synthetic`, `fixture`, raw IDs, or invented medical/financial facts. Before
-removing a synthetic Portal Client, verify exact identity, task provenance,
-dependencies, active jobs, and recoverable scope, then use the CRM staging reset
-lifecycle if safe. Preserve commerce and audit evidence when reset is blocked.
-Staging permits necessary schema and record changes, but before any potentially
-destructive action resolve the exact target and create a recoverable backup.
+`synthetic`, `fixture`, `test`, raw IDs, or invented medical/financial facts.
+Temporary verification records may be cleaned up safely after verifying exact
+identity, task provenance, dependencies, active jobs, and recoverable scope;
+preserve required business and audit history and do not destroy necessary QA
+access or data. For a synthetic Portal Client, use the CRM staging reset
+lifecycle if safe. Staging permits necessary schema and record changes, but
+before any potentially destructive action resolve the exact target and create a
+recoverable backup.
 Never reset the acceptance database or run `migrate:fresh`, `db:wipe`, or
 `TRUNCATE` against staging.
 
