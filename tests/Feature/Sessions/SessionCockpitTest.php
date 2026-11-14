@@ -743,7 +743,6 @@ final class SessionCockpitTest extends TestCase
             ->call('create')
             ->assertHasNoErrors();
 
-        $session = MedicalSession::query()->where('client_id', $client->getKey())->sole();
         $pain = $session->pains()->sole();
         self::assertSame(0, $pain->before_score);
         self::assertNull($pain->after_score);
@@ -1020,7 +1019,7 @@ final class SessionCockpitTest extends TestCase
         self::assertSame('Черновик протокола', app(GetSession::class)->handle($admin, $session->fresh(), $client)?->protocol);
     }
 
-    public function test_filament_session_result_action_fills_deterministic_summary_and_confirms_replacement(): void
+    public function test_filament_session_ai_actions_are_reserved_and_disabled_without_mutation(): void
     {
         [$organization, $admin, $client, $specialist] = $this->fixture();
         $this->resolveFilamentContext($admin, $organization);
@@ -1028,141 +1027,53 @@ final class SessionCockpitTest extends TestCase
         $created = app(CreateSession::class)->handle($admin, $client, new CreateSessionCommand(
             specialistId: (int) $specialist->getKey(),
             occurredAt: Carbon::parse('2026-08-16 10:00:00', 'UTC'),
-            pains: [[
-                'name' => 'Шея',
-                'before_score' => 7,
-                'after_score' => 3,
-            ]],
-            subjectiveFeelings: 'Двигаться стало легче',
-            visualPostureDiagnostics: 'Плечи выровнены',
+            protocol: 'Исторический монолитный протокол',
+            result: 'Исходный ручной результат',
         ));
         $session = MedicalSession::query()->whereKey($created->id)->firstOrFail();
-
-        Livewire::actingAs($admin)
-            ->test(CreateMedicalSession::class, ['parentRecord' => $client])
-            ->assertSuccessful()
-            ->assertSchemaComponentExists('cause_ids')
-            ->assertSchemaComponentExists('causes_manual_override')
-            ->assertSchemaComponentExists('derived_causes')
-            ->assertSchemaComponentExists('protocol');
 
         $component = Livewire::actingAs($admin)
             ->test(EditMedicalSession::class, ['parentRecord' => $client, 'record' => $session->getKey()])
             ->assertActionExists('fillResult')
+            ->assertActionDisabled('fillResult')
             ->assertActionVisible('suggestSessionPainTags')
             ->assertActionExists('acceptSessionPainTags')
             ->mountAction('suggestSessionPainTags')
             ->assertFormFieldExists('pain_id')
             ->unmountAction()
             ->assertFormComponentActionExists('protocol', 'fillProtocol')
-            ->fillForm(['protocol' => 'Исходный алгоритм'])
-            ->callFormComponentAction('protocol', 'fillProtocol')
-            ->assertNotified('Автозаполнение алгоритма пока не подключено.')
-            ->assertSet('data.protocol', 'Исходный алгоритм')
-            ->callAction('fillResult')
-            ->assertNotified('Результат заполнен')
-            ->assertSet('data.result', "Боли: Шея: было 7, стало 3 из 10\nСубъективные ощущения: Двигаться стало легче\nВизуальная диагностика осанки: Плечи выровнены");
+            ->assertFormComponentActionDisabled('protocol', 'fillProtocol')
+            ->fillForm([
+                'protocol' => 'Ручной пошаговый протокол пока не заполнен',
+                'result' => 'Ручная правка специалиста',
+            ])
+            ->call('save')
+            ->assertHasNoErrors();
 
-        $component
-            ->fillForm(['result' => 'Ручная правка специалиста'])
-            ->mountAction('fillResult')
-            ->assertActionMounted('fillResult');
-        self::assertSame('Заменить текст результата?', $component->instance()->getMountedAction()?->getModalHeading());
-        $component
-            ->callMountedAction()
-            ->assertNotified('Результат заполнен')
-            ->assertSet('data.result', "Боли: Шея: было 7, стало 3 из 10\nСубъективные ощущения: Двигаться стало легче\nВизуальная диагностика осанки: Плечи выровнены");
-
-        $component->call('save')->assertHasNoErrors();
         self::assertSame(
-            "Боли: Шея: было 7, стало 3 из 10\nСубъективные ощущения: Двигаться стало легче\nВизуальная диагностика осанки: Плечи выровнены",
+            'Ручная правка специалиста',
             app(GetSession::class)->handle($admin, $session->fresh(), $client)?->result,
+        );
+        self::assertSame(
+            'Ручной пошаговый протокол пока не заполнен',
+            app(GetSession::class)->handle($admin, $session->fresh(), $client)?->protocol,
         );
     }
 
-    public function test_filament_create_session_result_action_uses_unsaved_draft_and_persists_after_confirmation(): void
+    public function test_filament_create_form_reserves_result_action_without_stage_one_ai(): void
     {
-        [$organization, $admin, $client, $specialist] = $this->fixture();
+        [$organization, $admin, $client] = $this->fixture();
         $this->resolveFilamentContext($admin, $organization);
-        $test = MedicalTestDefinition::query()->create([
-            'organization_id' => $organization->getKey(),
-            'key' => 'create_draft_result_test',
-            'name' => 'CREATE DRAFT TEST',
-            'section' => 'Synthetic',
-            'is_active' => true,
-            'sort_order' => 1,
-        ]);
-        $normal = MedicalTestValue::query()->create([
-            'organization_id' => $organization->getKey(),
-            'medical_test_definition_id' => $test->getKey(),
-            'key' => 'normal',
-            'label' => 'Normal',
-            'is_abnormal' => false,
-            'is_active' => true,
-            'sort_order' => 1,
-        ]);
-        $abnormal = MedicalTestValue::query()->create([
-            'organization_id' => $organization->getKey(),
-            'medical_test_definition_id' => $test->getKey(),
-            'key' => 'abnormal',
-            'label' => 'Abnormal',
-            'is_abnormal' => true,
-            'is_active' => true,
-            'sort_order' => 2,
-        ]);
 
         $component = Livewire::actingAs($admin)
             ->test(CreateMedicalSession::class, ['parentRecord' => $client])
-            ->fillForm([
-                'occurred_at' => '2026-08-16 10:00',
-                'specialist_id' => $specialist->getKey(),
-                'pains' => [[
-                    'name' => 'CREATE DRAFT PAIN',
-                    'before_score' => 9,
-                    'after_score' => 1,
-                ]],
-                'subjective_feelings' => 'CREATE DRAFT SUBJECTIVE',
-                'visual_posture_diagnostics' => 'CREATE DRAFT POSTURE',
-                'test_results' => [[
-                    'test_id' => $test->getKey(),
-                    'before_value_id' => $abnormal->getKey(),
-                    'after_value_id' => $normal->getKey(),
-                ]],
-            ])
             ->assertFormComponentActionExists('result', 'fillResult')
-            ->callFormComponentAction('result', 'fillResult')
-            ->assertNotified('Результат заполнен')
-            ->assertSet('data.result', "Боли: CREATE DRAFT PAIN: было 9, стало 1 из 10\nСубъективные ощущения: CREATE DRAFT SUBJECTIVE\nВизуальная диагностика осанки: CREATE DRAFT POSTURE\nНарушения по тестам: было 1, стало 0.");
+            ->assertFormComponentActionDisabled('result', 'fillResult')
+            ->fillForm(['result' => 'Ручной результат без ИИ']);
 
+        $component->assertSet('data.result', 'Ручной результат без ИИ');
         self::assertSame(0, MedicalSession::query()->where('client_id', $client->getKey())->count());
 
-        $component
-            ->fillForm(['result' => 'CREATE MANUAL RESULT'])
-            ->mountFormComponentAction('result', 'fillResult')
-            ->assertFormComponentActionMounted('result', 'fillResult')
-            ->unmountFormComponentAction()
-            ->assertSet('data.result', 'CREATE MANUAL RESULT');
-
-        $component
-            ->mountFormComponentAction('result', 'fillResult')
-            ->callMountedFormComponentAction()
-            ->assertNotified('Результат заполнен')
-            ->assertSet('data.result', "Боли: CREATE DRAFT PAIN: было 9, стало 1 из 10\nСубъективные ощущения: CREATE DRAFT SUBJECTIVE\nВизуальная диагностика осанки: CREATE DRAFT POSTURE\nНарушения по тестам: было 1, стало 0.")
-            ->call('create')
-            ->assertHasNoErrors();
-
-        $session = MedicalSession::query()->where('client_id', $client->getKey())->sole();
-        self::assertSame(
-            "Боли: CREATE DRAFT PAIN: было 9, стало 1 из 10\nСубъективные ощущения: CREATE DRAFT SUBJECTIVE\nВизуальная диагностика осанки: CREATE DRAFT POSTURE\nНарушения по тестам: было 1, стало 0.",
-            app(GetSession::class)->handle($admin, $session, $client)?->result,
-        );
-
-        $reloaded = Livewire::actingAs($admin)
-            ->test(EditMedicalSession::class, ['parentRecord' => $client, 'record' => $session->getKey()]);
-        self::assertSame(
-            "Боли: CREATE DRAFT PAIN: было 9, стало 1 из 10\nСубъективные ощущения: CREATE DRAFT SUBJECTIVE\nВизуальная диагностика осанки: CREATE DRAFT POSTURE\nНарушения по тестам: было 1, стало 0.",
-            $reloaded->get('data.result'),
-        );
     }
 
     public function test_filament_edit_session_rejects_forged_same_organization_other_client_record(): void

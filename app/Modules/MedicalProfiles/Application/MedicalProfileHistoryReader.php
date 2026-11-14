@@ -21,7 +21,7 @@ final readonly class MedicalProfileHistoryReader
             id: (int) $entry->getKey(),
             lineageKey: (string) $entry->lineage_key,
             type: (string) $entry->entry_type,
-            year: (int) $entry->year,
+            year: $entry->year !== null ? (int) $entry->year : null,
             description: (string) $this->encryptor->decryptField($organizationId, $entry->description, (int) $entry->encryption_key_version),
         ))->all());
     }

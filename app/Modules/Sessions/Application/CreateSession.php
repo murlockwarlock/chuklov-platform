@@ -12,6 +12,7 @@ use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Security\Application\RecordAuditEvent;
 use App\Modules\Sessions\Application\DTOs\CreateSessionCommand;
 use App\Modules\Sessions\Application\DTOs\MedicalSessionData;
+use App\Modules\Sessions\Domain\Enums\MedicalSessionStatus;
 use App\Modules\Sessions\Domain\Models\MedicalSession;
 use App\Modules\Sessions\Domain\ValueObjects\EncryptedSessionPayload;
 use App\Modules\Specialists\Domain\Models\Specialist;
@@ -31,6 +32,8 @@ final readonly class CreateSession
         private MedicalSessionTestWriter $testWriter,
         private MedicalSessionTestReader $testReader,
         private MedicalSessionCauseWriter $causeWriter,
+        private MedicalSessionProtocolStepWriter $protocolStepWriter,
+        private MedicalSessionProtocolStepReader $protocolStepReader,
     ) {}
 
     public function handle(User $actor, Client $client, CreateSessionCommand $command): MedicalSessionData
@@ -86,10 +89,12 @@ final readonly class CreateSession
                 'patient_profile_id' => app(EnsureSelfPatientProfile::class)->handle($client)->getKey(),
                 'specialist_id' => $specialist->getKey(),
                 'booking_id' => $booking?->getKey(),
+                'status' => MedicalSessionStatus::Draft,
                 'pain' => $encrypted->encryptedPain,
                 'pain_vas' => $encrypted->encryptedPainVas,
                 'tests' => $encrypted->encryptedTests,
                 'observations' => $encrypted->encryptedObservations,
+                'therapist_notes' => $this->encryptor->encryptField($orgId, $command->therapistNotes, $keyVersion),
                 'subjective_feelings' => $encrypted->encryptedSubjectiveFeelings,
                 'visual_posture_diagnostics' => $encrypted->encryptedVisualPostureDiagnostics,
                 'root_cause_hypothesis' => $encrypted->encryptedRootCauseHypothesis,
@@ -105,6 +110,9 @@ final readonly class CreateSession
                 $this->painWriter->replace($session, $command->pains, $keyVersion, historicalPainValues: $historicalPainValues);
             } else {
                 $this->painInitializer->initialize($session, $keyVersion);
+            }
+            if ($command->protocolSteps !== null) {
+                $this->protocolStepWriter->replace($session, $command->protocolSteps, $keyVersion);
             }
             if ($command->testResults !== null || $command->rootCauses !== null) {
                 $this->testWriter->replace(
@@ -158,6 +166,11 @@ final readonly class CreateSession
                 rootCauses: $this->testReader->rootCauses($session),
                 causes: $this->testReader->causes($session),
                 causesManualOverride: (bool) $session->causes_manual_override,
+                therapistNotes: $command->therapistNotes,
+                protocolSteps: $this->protocolStepReader->forSession($session),
+                status: (string) $session->status->value,
+                completedAt: $session->completed_at,
+                editedAt: $session->edited_at,
             );
         });
     }
@@ -224,6 +237,7 @@ final readonly class CreateSession
             'root_cause_hypothesis' => $command->rootCauseHypothesis,
             'protocol' => $command->protocol,
             'result' => $command->result,
+            'therapist_notes' => $command->therapistNotes,
         ] as $field => $value) {
             if ($value !== null && mb_strlen($value) > MedicalSessionFieldLimits::MaxTextLength) {
                 throw ValidationException::withMessages([

@@ -55,6 +55,7 @@ final readonly class MedicalSessionPainInitializer
                 return [
                     'lineage_key' => (string) $pain->lineage_key,
                     'name' => $data instanceof MedicalPainData ? $data->name : '',
+                    'complaint_definition_id' => $data instanceof MedicalPainData ? $data->complaintDefinitionId : null,
                     'frequency_mode' => $pain->frequency_mode,
                     'frequency_count' => $pain->frequency_count,
                     'frequency_period_unit' => $pain->frequency_period_unit,
@@ -62,6 +63,10 @@ final readonly class MedicalSessionPainInitializer
                     'before_score' => null,
                     'after_score' => null,
                     'previous_after_score' => $data instanceof MedicalPainData ? $data->afterScore : null,
+                    'needs_confirmation' => false,
+                    'state' => $data instanceof MedicalPainData && $data->state === 'returned'
+                        ? 'active'
+                        : ($data instanceof MedicalPainData && $data->afterScore === 0 ? 'resolved' : 'active'),
                     'tag_ids' => $data instanceof MedicalPainData ? $data->tagIds : [],
                 ];
             })->all());
@@ -75,6 +80,7 @@ final readonly class MedicalSessionPainInitializer
         return array_values(collect($this->profilePains->forProfile($profile))->map(static fn (MedicalPainData $pain): array => [
             'lineage_key' => $pain->lineageKey ?: Str::uuid()->toString(),
             'name' => $pain->name,
+            'complaint_definition_id' => $pain->complaintDefinitionId,
             'frequency_mode' => 'unspecified',
             'frequency_count' => null,
             'frequency_period_unit' => null,
@@ -82,6 +88,8 @@ final readonly class MedicalSessionPainInitializer
             'before_score' => $pain->score,
             'after_score' => null,
             'previous_after_score' => null,
+            'needs_confirmation' => true,
+            'state' => 'active',
             'tag_ids' => $pain->tagIds,
         ])->all());
     }

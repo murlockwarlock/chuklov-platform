@@ -20,6 +20,7 @@ use App\Modules\Sessions\Application\GetSessionDynamics;
 use App\Modules\Sessions\Application\ListSessionAttachments;
 use App\Modules\Sessions\Application\MedicalSessionAuthorization;
 use App\Modules\Sessions\Domain\Enums\MedicalSessionAttachmentGallery;
+use App\Modules\Sessions\Domain\Enums\MedicalSessionStatus;
 use App\Modules\Sessions\Domain\Models\MedicalSession;
 use Filament\Infolists\Components\RepeatableEntry;
 use Filament\Infolists\Components\TextEntry;
@@ -64,6 +65,10 @@ final class SessionInfolist
 
                                 return $parts ? implode(' · ', $parts) : __('Дата не указана');
                             }),
+                        TextEntry::make('session_status')
+                            ->label(__('Состояние сеанса'))
+                            ->badge()
+                            ->state(fn (MedicalSession $record): string => self::sessionStatus($record)),
                     ])->columns(3),
                 Section::make(__('Карта здоровья клиента'))
                     ->description(__('Актуальные данные медицинского профиля'))
@@ -97,6 +102,7 @@ final class SessionInfolist
                                 TextEntry::make('before_score')->label(__('До сеанса'))->suffix('/10')->placeholder(__('Не указано')),
                                 TextEntry::make('after_score')->label(__('После сеанса'))->suffix('/10')->placeholder(__('Не указано')),
                                 TextEntry::make('previous_after_score')->label(__('После предыдущего сеанса'))->suffix('/10')->placeholder(__('Не указано')),
+                                TextEntry::make('state')->label(__('Состояние жалобы'))->placeholder(__('Активна')),
                             ])
                             ->columns(3)
                             ->state(fn (MedicalSession $record, RepeatableEntry $entry): array => self::pains($record, $entry))
@@ -149,6 +155,21 @@ final class SessionInfolist
                     ->visible(fn (MedicalSession $record, Section $section): bool => self::hasTestsOrCauses($record, $section)),
                 Section::make(__('Протокол и результат сеанса'))
                     ->schema([
+                        RepeatableEntry::make('protocol_steps')
+                            ->label(__('Шаги протокола'))
+                            ->schema([
+                                TextEntry::make('step')->label(__('Шаг')),
+                                TextEntry::make('text')->label(__('Текст'))->wrap()->columnSpanFull(),
+                            ])
+                            ->columns(2)
+                            ->state(fn (MedicalSession $record, RepeatableEntry $entry): array => array_map(
+                                static fn (array $step): array => [
+                                    ...$step,
+                                    'step' => ((int) ($step['step_order'] ?? 0)) + 1,
+                                ],
+                                self::sessionData($record, $entry)?->protocolSteps ?? [],
+                            ))
+                            ->columnSpanFull(),
                         TextEntry::make('root_cause_hypothesis')
                             ->label(__('Старая гипотеза первопричины (только для истории)'))
                             ->state(fn (MedicalSession $record, TextEntry $entry): ?string => self::sessionData($record, $entry)?->rootCauseHypothesis)
@@ -181,6 +202,16 @@ final class SessionInfolist
                             ->wrap(),
                     ])
                     ->visible(fn (MedicalSession $record, Section $section): bool => self::hasCurrentClinicalFields($record, $section)),
+                Section::make(__('Заметки терапевта'))
+                    ->schema([
+                        TextEntry::make('therapist_notes')
+                            ->hiddenLabel()
+                            ->state(fn (MedicalSession $record, TextEntry $entry): ?string => self::sessionData($record, $entry)?->therapistNotes)
+                            ->placeholder(__('Не заполнено'))
+                            ->columnSpanFull()
+                            ->wrap(),
+                    ])
+                    ->visible(fn (MedicalSession $record, Section $section): bool => filled(self::sessionData($record, $section)?->therapistNotes)),
                 Section::make(__('Динамика подтверждённых фактов'))
                     ->schema([
                         RepeatableEntry::make('comparison')
@@ -364,7 +395,22 @@ final class SessionInfolist
                 || $data->protocol !== null
                 || $data->subjectiveFeelings !== null
                 || $data->visualPostureDiagnostics !== null
-                || $data->result !== null);
+                || $data->result !== null
+                || $data->protocolSteps !== []);
+    }
+
+    private static function sessionStatus(MedicalSession $record): string
+    {
+        $status = $record->status === MedicalSessionStatus::Completed ? __('Завершён') : __('Черновик');
+
+        return $record->edited_at === null
+            ? $status
+            : __(':status · изменено :date', [
+                'status' => $status,
+                'date' => $record->edited_at->copy()
+                    ->setTimezone(app(OrganizationContext::class)->defaultTimezone())
+                    ->format('d.m.Y H:i'),
+            ]);
     }
 
     private static function testCounters(MedicalSession $record, Component $component): ?string
@@ -430,6 +476,11 @@ final class SessionInfolist
                 'before_score' => $pain->beforeScore,
                 'after_score' => $pain->afterScore,
                 'previous_after_score' => $pain->previousAfterScore,
+                'state' => match ($pain->state) {
+                    'resolved' => __('Снята'),
+                    'returned' => __('Вернулась'),
+                    default => $pain->needsConfirmation ? __('Из анкеты, уточнить') : __('Активна'),
+                },
             ];
         }, $data->pains);
     }

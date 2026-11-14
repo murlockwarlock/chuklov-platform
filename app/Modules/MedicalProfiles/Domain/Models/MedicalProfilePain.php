@@ -14,6 +14,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
     'client_id',
     'medical_profile_id',
     'patient_profile_id',
+    'medical_complaint_definition_id',
     'lineage_key',
     'name',
     'frequency_mode',
@@ -53,6 +54,12 @@ class MedicalProfilePain extends Model
             'medical_profile_pain_id',
             'medical_problem_tag_id',
         )->withPivot('organization_id');
+    }
+
+    /** @return BelongsTo<MedicalComplaintDefinition, $this> */
+    public function complaintDefinition(): BelongsTo
+    {
+        return $this->belongsTo(MedicalComplaintDefinition::class, 'medical_complaint_definition_id');
     }
 
     protected function casts(): array

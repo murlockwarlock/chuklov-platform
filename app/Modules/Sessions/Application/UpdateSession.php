@@ -28,6 +28,8 @@ final readonly class UpdateSession
         private MedicalSessionTestWriter $testWriter,
         private MedicalSessionTestReader $testReader,
         private MedicalSessionCauseWriter $causeWriter,
+        private MedicalSessionProtocolStepWriter $protocolStepWriter,
+        private MedicalSessionProtocolStepReader $protocolStepReader,
     ) {}
 
     public function handle(User $actor, MedicalSession $session, UpdateSessionCommand $command, ?Client $expectedClient = null): MedicalSessionData
@@ -77,6 +79,7 @@ final readonly class UpdateSession
             $existingPain = $this->encryptor->decryptField($orgId, $existing->pain, $previousKeyVersion);
             $existingTests = $this->encryptor->decryptField($orgId, $existing->tests, $previousKeyVersion);
             $existingObservations = $this->encryptor->decryptField($orgId, $existing->observations, $previousKeyVersion);
+            $existingTherapistNotes = $this->encryptor->decryptField($orgId, $existing->therapist_notes, $previousKeyVersion);
             $existingSubjectiveFeelings = $this->encryptor->decryptField($orgId, $existing->subjective_feelings, $previousKeyVersion);
             $existingVisualPostureDiagnostics = $this->encryptor->decryptField($orgId, $existing->visual_posture_diagnostics, $previousKeyVersion);
             $existingRootCauseHypothesis = $this->encryptor->decryptField($orgId, $existing->root_cause_hypothesis, $previousKeyVersion);
@@ -86,6 +89,7 @@ final readonly class UpdateSession
             $painVas = $command->shouldUpdatePainVas() ? $command->painVas : $existingPainVas;
             $subjectiveFeelings = $command->shouldUpdateSubjectiveFeelings() ? $command->subjectiveFeelings : $existingSubjectiveFeelings;
             $visualPostureDiagnostics = $command->shouldUpdateVisualPostureDiagnostics() ? $command->visualPostureDiagnostics : $existingVisualPostureDiagnostics;
+            $therapistNotes = $command->therapistNotesProvided ? $command->therapistNotes : $existingTherapistNotes;
             $encryptedPainVas = $this->encryptor->encryptField(
                 $orgId,
                 $painVas === null ? null : (string) $painVas,
@@ -97,6 +101,7 @@ final readonly class UpdateSession
                     'pain' => $existingPain,
                     'tests' => $existingTests,
                     'observations' => $existingObservations,
+                    'therapist_notes' => $existingTherapistNotes,
                     'subjective_feelings' => $existingSubjectiveFeelings,
                     'visual_posture_diagnostics' => $existingVisualPostureDiagnostics,
                     'root_cause_hypothesis' => $existingRootCauseHypothesis,
@@ -107,12 +112,19 @@ final readonly class UpdateSession
                 command: $command,
                 painVas: $painVas,
             );
+            if ($command->therapistNotesProvided && $existingTherapistNotes !== $therapistNotes) {
+                $updatedFields[] = 'therapist_notes';
+            }
+            if ($command->protocolStepsProvided) {
+                $updatedFields[] = 'protocol_steps';
+            }
 
             $existing->forceFill([
                 'pain' => $encrypted->encryptedPain,
                 'pain_vas' => $encryptedPainVas,
                 'tests' => $encrypted->encryptedTests,
                 'observations' => $encrypted->encryptedObservations,
+                'therapist_notes' => $this->encryptor->encryptField($orgId, $therapistNotes, $keyVersion),
                 'subjective_feelings' => $this->encryptor->encryptField($orgId, $subjectiveFeelings, $keyVersion),
                 'visual_posture_diagnostics' => $this->encryptor->encryptField($orgId, $visualPostureDiagnostics, $keyVersion),
                 'root_cause_hypothesis' => $encrypted->encryptedRootCauseHypothesis,
@@ -123,10 +135,16 @@ final readonly class UpdateSession
                     : (bool) $existing->causes_manual_override,
                 'encryption_key_version' => $keyVersion,
             ]);
+            if ($existing->status->value === 'completed' && $updatedFields !== []) {
+                $existing->edited_at = now();
+            }
             $existing->save();
 
             if ($command->painsProvided) {
                 $this->painWriter->replace($existing, $command->pains ?? [], $keyVersion);
+            }
+            if ($command->protocolStepsProvided) {
+                $this->protocolStepWriter->replace($existing, $command->protocolSteps ?? [], $keyVersion);
             }
             if ($command->testResultsProvided) {
                 $existingSessionCauseIds = $command->causesManualOverrideProvided
@@ -195,6 +213,11 @@ final readonly class UpdateSession
                 rootCauses: $this->testReader->rootCauses($existing),
                 causes: $this->testReader->causes($existing),
                 causesManualOverride: (bool) $existing->causes_manual_override,
+                therapistNotes: $therapistNotes,
+                protocolSteps: $this->protocolStepReader->forSession($existing),
+                status: (string) $existing->status->value,
+                completedAt: $existing->completed_at,
+                editedAt: $existing->edited_at,
             );
         });
 
@@ -209,6 +232,7 @@ final readonly class UpdateSession
             'pain' => $command->pain,
             'tests' => $command->tests,
             'observations' => $command->observations,
+            'therapist_notes' => $command->therapistNotes,
             'subjective_feelings' => $command->subjectiveFeelings,
             'visual_posture_diagnostics' => $command->visualPostureDiagnostics,
             'root_cause_hypothesis' => $command->rootCauseHypothesis,
@@ -275,6 +299,9 @@ final readonly class UpdateSession
         }
         if ($command->causesProvided || $command->causesManualOverrideProvided) {
             $fields[] = 'causes';
+        }
+        if ($command->protocolStepsProvided) {
+            $fields[] = 'protocol_steps';
         }
 
         return $fields;
