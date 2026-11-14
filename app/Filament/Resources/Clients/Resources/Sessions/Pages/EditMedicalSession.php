@@ -960,9 +960,12 @@ class EditMedicalSession extends LocalizedEditRecord
             $causeIds[] = $currentCauseId;
         }
 
-        $causeOptions = app(MedicalClinicalCatalog::class)->causeOptionsForSelection(app(OrganizationContext::class)->id(), $causeIds);
-
-        $options = array_intersect_key($causeOptions, array_flip(array_values(array_unique($causeIds))));
+        $catalog = app(MedicalClinicalCatalog::class);
+        $organizationId = app(OrganizationContext::class)->id();
+        $selectedIds = array_values(array_unique($causeIds));
+        $options = $catalog->causeOptions($organizationId);
+        $selectedOptions = $catalog->causeOptionsForSelection($organizationId, $selectedIds);
+        $options = array_replace($options, array_intersect_key($selectedOptions, array_flip($selectedIds)));
         foreach ($options as $causeId => $label) {
             $summaryItem = $summaryByCause->get((int) $causeId);
             if (is_array($summaryItem)) {

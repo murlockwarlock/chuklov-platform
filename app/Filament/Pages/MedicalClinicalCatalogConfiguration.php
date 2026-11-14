@@ -13,6 +13,7 @@ use App\Modules\Sessions\Application\ApplyMedicalCauseToTests;
 use App\Modules\Sessions\Application\ImportMedicalClinicalCatalogCsv;
 use App\Modules\Sessions\Application\MergeMedicalCauses;
 use App\Modules\Sessions\Application\MedicalClinicalCatalog;
+use App\Modules\Sessions\Application\MedicalStage1BCatalogPreset;
 use App\Modules\Sessions\Application\SaveMedicalClinicalCatalog;
 use App\Modules\Sessions\Domain\Models\MedicalCauseDefinition;
 use App\Modules\Sessions\Domain\Models\MedicalTestDefinition;
@@ -473,6 +474,43 @@ final class MedicalClinicalCatalogConfiguration extends LocalizedPage
     protected function getHeaderActions(): array
     {
         return [
+            Action::make('prepareStage1BCatalog')
+                ->label(__('Подготовить каталог Stage 1B'))
+                ->icon('heroicon-o-beaker')
+                ->color('gray')
+                ->authorize(fn (): bool => self::canAccess())
+                ->requiresConfirmation()
+                ->modalHeading(__('Подготовить 31 тест Stage 1B'))
+                ->modalDescription(__('Будет добавлен исходный безопасный набор из 31 настраиваемого теста. Существующие тесты, причины и история сохранятся. Списки причин останутся пустыми, пока их не настроят через CRM.'))
+                ->visible(fn (): bool => self::canAccess() && ! $this->hasStage1BTests())
+                ->action(function (): void {
+                    $actor = Auth::user();
+                    if (! $actor instanceof User) {
+                        abort(403);
+                    }
+
+                    $state = $this->form->getState();
+                    $currentTests = is_array($state['tests'] ?? null) ? $state['tests'] : [];
+                    $currentByKey = [];
+                    foreach ($currentTests as $test) {
+                        if (is_array($test) && filled($test['key'] ?? null)) {
+                            $currentByKey[(string) $test['key']] = $test;
+                        }
+                    }
+                    foreach (MedicalStage1BCatalogPreset::definitions() as $definition) {
+                        $currentByKey[(string) $definition['key']] = $definition;
+                    }
+
+                    app(SaveMedicalClinicalCatalog::class)->handle(
+                        $actor,
+                        array_values($currentByKey),
+                        is_array($state['causes'] ?? null) ? $state['causes'] : [],
+                        is_array($state['problem_tags'] ?? null) ? $state['problem_tags'] : [],
+                        is_array($state['complaints'] ?? null) ? $state['complaints'] : [],
+                    );
+                    $this->mount();
+                    Notification::make()->success()->title(__('Каталог Stage 1B подготовлен'))->send();
+                }),
             Action::make('applyCauseToTests')
                 ->label(__('Применить причину к…'))
                 ->icon('heroicon-o-link')
@@ -602,6 +640,13 @@ final class MedicalClinicalCatalogConfiguration extends LocalizedPage
             self::withOrder(is_array($state['complaints'] ?? null) ? $state['complaints'] : []),
         );
         Notification::make()->success()->title(__('Каталог сохранён'))->send();
+    }
+
+    private function hasStage1BTests(): bool
+    {
+        $tests = is_array($this->data['tests'] ?? null) ? $this->data['tests'] : [];
+
+        return collect($tests)->contains(static fn (mixed $test): bool => is_array($test) && filled($test['test_type'] ?? null));
     }
 
     /** @return list<\Filament\Schemas\Components\Component> */

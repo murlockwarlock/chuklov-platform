@@ -91,6 +91,21 @@ final class MedicalTest18SafetyMarkerTest extends TestCase
         self::assertNotSame('Проверка завершена.', $clientMarker->clear_reason);
     }
 
+    public function test_edited_marker_text_is_used_for_a_later_session_evidence(): void
+    {
+        [$organization, $admin, $client] = $this->organizationClientAndAdmin();
+        $session = $this->medicalSession($organization, $client);
+        app(MedicalTest18SafetyMarker::class)->handle($admin, $session, true);
+        app(UpdateMedicalTest18SafetyMarkerText::class)->handle($admin, $client, 'Текущий текст предупреждения.');
+
+        $laterSession = $this->medicalSession($organization, $client);
+        app(MedicalTest18SafetyMarker::class)->handleFromResult($admin, $laterSession, [
+            'after' => ['rows' => [['answer' => 'Да']]],
+        ]);
+
+        self::assertSame('Текущий текст предупреждения.', app(MedicalSafetyMarkerReader::class)->forSession($admin, $laterSession)[0]['marker_text']);
+    }
+
     /** @return array{0: Organization, 1: User, 2: Client} */
     private function organizationClientAndAdmin(): array
     {

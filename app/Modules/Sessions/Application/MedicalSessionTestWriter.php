@@ -56,6 +56,7 @@ final readonly class MedicalSessionTestWriter
         $availableRootCauseIds = array_values(array_unique([
             ...$testCauseIds,
             ...$existingRootCauseIds,
+            ...$this->activeCauseIds($organizationId),
             ...collect($sessionCauseIds)->map(static fn (mixed $id): int => (int) $id)->filter(static fn (int $id): bool => $id > 0)->all(),
         ]));
         $normalizedRoots = $this->normalizeRootCauses($rootCauses, $availableRootCauseIds);
@@ -120,6 +121,7 @@ final readonly class MedicalSessionTestWriter
         $availableCauseIds = array_values(array_unique([
             ...$testCauseIds,
             ...$existingRootCauseIds,
+            ...$this->activeCauseIds($organizationId),
             ...collect($sessionCauseIds)
                 ->map(static fn (mixed $id): int => (int) $id)
                 ->filter(static fn (int $id): bool => $id > 0)
@@ -198,19 +200,39 @@ final readonly class MedicalSessionTestWriter
                 'cause_ids' => $causeIds,
                 'structured_payload' => $structuredPayload,
                 'before_violation_count' => $structuredPayload === null
-                    ? (int) ($before?->is_abnormal ?? false)
+                    ? (int) ($before instanceof MedicalTestValue && $before->is_abnormal)
                     : (int) ($structuredPayload['evaluation']['before'] ?? 0),
                 'after_violation_count' => $structuredPayload === null
-                    ? (int) ($after?->is_abnormal ?? false)
+                    ? (int) ($after instanceof MedicalTestValue && $after->is_abnormal)
                     : (int) ($structuredPayload['evaluation']['after'] ?? 0),
-                'review_again' => (bool) ($raw['review_again'] ?? false),
+                'review_again' => $structuredPayload !== null
+                    ? (bool) ($structuredPayload['review_again'] ?? false)
+                    : ((bool) ($raw['review_again'] ?? false) && $after === null),
             ];
         }
 
         return $normalized;
     }
 
-    /** @param array<string, mixed> $raw */
+    /** @return list<int> */
+    private function activeCauseIds(int $organizationId): array
+    {
+        return MedicalCauseDefinition::query()
+            ->where('organization_id', $organizationId)
+            ->where('is_active', true)
+            ->where('moderation_status', MedicalCauseDefinition::MODERATION_ACTIVE)
+            ->whereNull('merged_into_id')
+            ->pluck('id')
+            ->map(static fn (mixed $id): int => (int) $id)
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @param array<string, mixed> $raw
+     * @param list<int> $preservedCauseIds
+     * @return array<string, mixed>|null
+     */
     private function structuredPayload(int $organizationId, MedicalTestDefinition $definition, array $raw, array $preservedCauseIds = []): ?array
     {
         $hasPayload = array_key_exists('structured', $raw) || array_key_exists('structured_payload', $raw);
@@ -257,7 +279,8 @@ final readonly class MedicalSessionTestWriter
             'primary_cause_id' => $primaryCauseId,
             'correction_point' => $this->optionalString($input['correction_point'] ?? $this->nestedString($input, 'correction_point')),
             'violation_type' => $this->optionalString($input['violation_type'] ?? $this->nestedString($input, 'violation_type')),
-            'review_again' => (bool) ($raw['review_again'] ?? $input['review_again'] ?? false),
+            'review_again' => (bool) ($raw['review_again'] ?? $input['review_again'] ?? false)
+                && ! $this->hasStructuredMeasurement($after),
             'evaluation' => [
                 'before' => $evaluation->beforeCount,
                 'after' => $evaluation->afterCount,
@@ -299,6 +322,48 @@ final readonly class MedicalSessionTestWriter
         return $phase;
     }
 
+    /** @param array<string, mixed>|null $phase */
+    private function hasStructuredMeasurement(?array $phase): bool
+    {
+        if ($phase === null) {
+            return false;
+        }
+
+        foreach (['index', 'tone', 'finding', 'answer', 'deviation', 'angle', 'pain_point', 'energy', 'tor_direction', 'method', 'movement', 'pain_intensity', 'tl_reduction_percent'] as $field) {
+            if (! array_key_exists($field, $phase)) {
+                continue;
+            }
+            $value = $phase[$field];
+            if ($value !== null && $value !== '') {
+                return true;
+            }
+        }
+        if (($phase['marked'] ?? false) === true) {
+            return true;
+        }
+        if (is_array($phase['sequence'] ?? null)) {
+            foreach ($phase['sequence'] as $item) {
+                $value = is_array($item) ? ($item['value'] ?? null) : $item;
+                if ($value !== null && $value !== '') {
+                    return true;
+                }
+            }
+        }
+
+        foreach (['rows', 'feelings', 'subtests', 'provoking_points'] as $field) {
+            if (! is_array($phase[$field] ?? null)) {
+                continue;
+            }
+            foreach ($phase[$field] as $child) {
+                if (is_array($child) && $this->hasStructuredMeasurement($child)) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
     /** @param array<string, mixed> $payload
      * @return list<int>
      */
@@ -328,6 +393,7 @@ final readonly class MedicalSessionTestWriter
 
     /** @param list<int> $causeIds
      * @param array<string, mixed> $input
+     * @param list<int> $preservedCauseIds
      */
     private function validateAllowedCauses(int $organizationId, MedicalTestDefinition $definition, array $causeIds, array $input, array $preservedCauseIds = []): void
     {
@@ -431,7 +497,7 @@ final readonly class MedicalSessionTestWriter
 
     /**
      * @param  list<int>  $availableCauseIds
-     * @return array{cause_id:int|null,free_text:string|null,sort_order:int}
+     * @return array{cause_id:int|null,free_text:string|null,influences:list<int>,sort_order:int,is_primary:bool}
      */
     private function normalizeRootCause(mixed $raw, int $sortOrder, array $availableCauseIds): array
     {

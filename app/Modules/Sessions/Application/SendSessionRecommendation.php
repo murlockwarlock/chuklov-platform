@@ -90,8 +90,10 @@ final readonly class SendSessionRecommendation
 
             if ($delivery instanceof MedicalSessionRecommendationDelivery) {
                 if ((string) $delivery->status === 'claimed'
-                    && $delivery->claimed_at !== null
-                    && $delivery->claimed_at->lessThan(now()->subMinutes(self::CLAIM_TIMEOUT_MINUTES))) {
+                    && $delivery->getRawOriginal('claimed_at') !== null
+                    && now()->subMinutes(self::CLAIM_TIMEOUT_MINUTES)->greaterThan(
+                        \Illuminate\Support\Carbon::parse((string) $delivery->getRawOriginal('claimed_at')),
+                    )) {
                     $delivery->forceFill([
                         'status' => 'unknown',
                         'error_code' => 'delivery_claim_expired',
@@ -210,7 +212,6 @@ final readonly class SendSessionRecommendation
                 NotificationDeliveryOutcome::Unavailable => 'unavailable',
                 NotificationDeliveryOutcome::Suppressed => 'suppressed',
                 NotificationDeliveryOutcome::Retryable, NotificationDeliveryOutcome::PermanentFailure => 'failed',
-                NotificationDeliveryOutcome::InFlight => 'unknown',
             };
             $errorCode = $outcome === NotificationDeliveryOutcome::Unknown
                 ? 'delivery_outcome_unknown'

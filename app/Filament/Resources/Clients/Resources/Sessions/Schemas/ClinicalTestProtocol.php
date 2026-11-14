@@ -2,15 +2,20 @@
 
 namespace App\Filament\Resources\Clients\Resources\Sessions\Schemas;
 
+use App\Filament\Pages\MedicalClinicalCatalogConfiguration;
+use App\Models\User;
 use App\Modules\Organizations\Application\OrganizationContext;
+use App\Modules\Sessions\Application\ApplyMedicalCauseToTests;
 use App\Modules\Sessions\Application\MedicalClinicalCatalog;
+use App\Modules\Sessions\Application\MedicalCauseDirectory;
+use App\Modules\Sessions\Application\SaveMedicalCauseDefinition;
 use App\Modules\Sessions\Domain\Enums\MedicalTestType;
+use App\Modules\Sessions\Domain\Models\MedicalCauseDefinition;
 use App\Modules\Sessions\Domain\Models\MedicalTestDefinition;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\Select;
-use Filament\Forms\Components\TagsInput;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\Toggle;
@@ -21,11 +26,16 @@ use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Components\Utilities\Set;
 use Filament\Notifications\Notification;
+use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Validation\ValidationException;
 
 final class ClinicalTestProtocol
 {
-    /** @return list<array<string, mixed>> */
-    /** @param array<int, mixed> $previousResults */
+    /**
+     * @param array<int, mixed> $previousResults
+     * @return list<array<string, mixed>>
+     */
     public static function defaultState(array $previousResults = []): array
     {
         $testIds = app(MedicalClinicalCatalog::class)->defaultSessionTestIds(app(OrganizationContext::class)->id());
@@ -303,7 +313,7 @@ final class ClinicalTestProtocol
                 ToggleButtons::make('tor_direction')->label(__('Тор-поле'))->options(['R' => __('Вправо'), 'L' => __('Влево')])->inline()->visible(fn (): bool => $test->type() === MedicalTestType::T12 && ! $hasSubtests),
                 self::subtestsField($test),
                 self::rowsField($test),
-                self::feelingsField($configuration),
+                self::feelingsField($configuration, (int) $test->getKey()),
                 Select::make('movement')->label(__('Движение провокации'))->options(self::movementOptions($configuration['movement_options'] ?? null))->nullable()->visible(fn (): bool => $test->type() === MedicalTestType::T6),
                 TextInput::make('pain_intensity')->label(__('Интенсивность боли'))->numeric()->minValue(0)->maxValue(10)->visible(fn (): bool => $test->type() === MedicalTestType::T6),
                 TextInput::make('tl_reduction_percent')->label(__('Снижение боли TL, %'))->numeric()->minValue(-100)->maxValue(100)->visible(fn (): bool => $test->type() === MedicalTestType::T6),
@@ -383,9 +393,9 @@ final class ClinicalTestProtocol
                     ->visible(fn (Get $get): bool => $get('type') === MedicalTestType::T2->value && (bool) ($get('index_enabled') ?? true) && (int) ($get('index') ?? 0) > 0 && (array) $get('cause_ids') !== []),
                 TextInput::make('energy')->label(__('Энергетический потенциал'))->numeric()->minValue(0)->maxValue(1000)->visible(fn (Get $get): bool => (bool) $get('enabled') && (bool) $get('energy_enabled')),
                 ToggleButtons::make('tor_direction')->label(__('Тор-поле'))->options(['R' => __('Вправо'), 'L' => __('Влево')])->inline()->visible(fn (Get $get): bool => (bool) $get('enabled') && (bool) $get('tor_enabled')),
-                self::subtestRowsField()->visible(fn (Get $get): bool => (bool) $get('enabled')),
-                self::subtestRowsField('provoking_points', __('Провоцирующие точки'))->visible(fn (Get $get): bool => (bool) $get('enabled') && $get('type') === MedicalTestType::T6->value),
-                Repeater::make('feelings')->label(__('Чувства'))->schema(self::rowSchema())->addable(false)->deletable(false)->reorderable(false)->visible(fn (Get $get): bool => (bool) $get('enabled')),
+                self::subtestRowsField('rows', 'Позиции', (int) $test->getKey())->visible(fn (Get $get): bool => (bool) $get('enabled')),
+                self::subtestRowsField('provoking_points', __('Провоцирующие точки'), (int) $test->getKey())->visible(fn (Get $get): bool => (bool) $get('enabled') && $get('type') === MedicalTestType::T6->value),
+                Repeater::make('feelings')->label(__('Чувства'))->schema(self::rowSchema())->addable(false)->deletable(false)->reorderable(false)->extraItemActions([self::addCauseAction((int) $test->getKey()), self::copyCausesAction()])->visible(fn (Get $get): bool => (bool) $get('enabled')),
                 Select::make('method')
                     ->label(__('Метод'))
                     ->options(fn (Get $get): array => self::simpleOptions($get('method_options')))
@@ -402,7 +412,7 @@ final class ClinicalTestProtocol
             ->columnSpanFull();
     }
 
-    private static function subtestRowsField(string $name = 'rows', string $label = 'Позиции'): Repeater
+    private static function subtestRowsField(string $name = 'rows', string $label = 'Позиции', ?int $testId = null): Repeater
     {
         return Repeater::make($name)
             ->label(__($label))
@@ -410,7 +420,7 @@ final class ClinicalTestProtocol
             ->addable(false)
             ->deletable(false)
             ->reorderable(false)
-            ->extraItemActions([self::copyCausesAction()])
+            ->extraItemActions([self::addCauseAction($testId), self::copyCausesAction()])
             ->columnSpanFull();
     }
 
@@ -424,13 +434,13 @@ final class ClinicalTestProtocol
             ->addable(false)
             ->deletable(false)
             ->reorderable(false)
-            ->extraItemActions([self::copyCausesAction()])
+            ->extraItemActions([self::addCauseAction((int) $test->getKey()), self::copyCausesAction()])
             ->visible(fn (): bool => is_array($configuration['rows'] ?? null) && $configuration['rows'] !== [])
             ->columnSpanFull();
     }
 
     /** @param array<string, mixed> $configuration */
-    private static function feelingsField(array $configuration): Repeater
+    private static function feelingsField(array $configuration, ?int $testId = null): Repeater
     {
         return Repeater::make('feelings')
             ->label(__('Непроработанные чувства'))
@@ -439,7 +449,148 @@ final class ClinicalTestProtocol
             ->deletable(false)
             ->reorderable(false)
             ->visible(is_array($configuration['feelings'] ?? null) && $configuration['feelings'] !== [])
+            ->extraItemActions([self::addCauseAction($testId), self::copyCausesAction()])
             ->columnSpanFull();
+    }
+
+    private static function addCauseAction(?int $testId = null): Action
+    {
+        return Action::make('addCause')
+            ->label(__('+ Причина'))
+            ->icon('heroicon-o-plus')
+            ->color('gray')
+            ->schema([
+                Select::make('cause_id')
+                    ->label(__('Причина из общего справочника'))
+                    ->options(fn (): array => self::globalCauseOptions())
+                    ->getSearchResultsUsing(fn (string $search): array => self::globalCauseOptions($search))
+                    ->searchable()
+                    ->required()
+                    ->helperText(__('Поиск проверяет название, группу и синонимы до создания новой причины.'))
+                    ->createOptionForm([
+                        TextInput::make('name')
+                            ->label(__('Название причины'))
+                            ->required()
+                            ->maxLength(255),
+                        Textarea::make('synonyms')
+                            ->label(__('Синонимы'))
+                            ->rows(3)
+                            ->helperText(__('По одному синониму в строке')),
+                        TextInput::make('group_name')
+                            ->label(__('Группа'))
+                            ->maxLength(255),
+                        Textarea::make('tooltip')
+                            ->label(__('Подсказка'))
+                            ->rows(2)
+                            ->maxLength(4000),
+                    ])
+                    ->createOptionUsing(static function (array $data): int {
+                        $actor = Auth::user();
+                        if (! $actor instanceof User) {
+                            abort(403);
+                        }
+
+                        return (int) app(SaveMedicalCauseDefinition::class)->handle($actor, $data)->getKey();
+                    }),
+                Select::make('apply_test_ids')
+                    ->label(__('Применить к…'))
+                    ->options(fn (): array => app(MedicalClinicalCatalog::class)->testOptions(app(OrganizationContext::class)->id()))
+                    ->multiple()
+                    ->searchable()
+                    ->helperText(__('Необязательно. Связь добавится к выбранным тестам в каталоге.')),
+            ])
+            ->modalSubmitActionLabel(__('Добавить причину'))
+            ->action(function (array $arguments, array $data, Repeater $component) use ($testId): void {
+                $causeId = (int) ($data['cause_id'] ?? 0);
+                if ($causeId < 1) {
+                    return;
+                }
+
+                $applyTestIds = is_array($data['apply_test_ids'] ?? null) ? $data['apply_test_ids'] : [];
+                $actor = Auth::user();
+                if ($applyTestIds !== []) {
+                    if (! $actor instanceof User) {
+                        abort(403);
+                    }
+
+                    try {
+                        app(ApplyMedicalCauseToTests::class)->handle($actor, $causeId, $applyTestIds);
+                    } catch (AuthorizationException) {
+                        Notification::make()
+                            ->danger()
+                            ->title(__('Недостаточно прав для изменения каталога'))
+                            ->body(__('Выберите причину из уже разрешённых для строки или попросите администратора применить её к тесту в CRM.'))
+                            ->send();
+
+                        return;
+                    } catch (ValidationException $exception) {
+                        $message = collect($exception->errors())->flatten()->first();
+                        Notification::make()
+                            ->danger()
+                            ->title(__('Причину не удалось применить'))
+                            ->body(is_string($message) ? $message : __('Проверьте выбранные тесты.'))
+                            ->send();
+
+                        return;
+                    }
+                }
+
+                $state = $component->getState();
+                if (! is_array($state)) {
+                    return;
+                }
+                $itemKey = (string) ($arguments['item'] ?? '');
+                $item = $state[$itemKey] ?? null;
+                if (! is_array($item)) {
+                    return;
+                }
+
+                $allowed = is_array($item['allowed_cause_ids'] ?? null)
+                    ? array_values(array_unique(array_map('intval', $item['allowed_cause_ids'])))
+                    : [];
+                $currentTestWasSelected = $testId !== null && in_array($testId, array_map('intval', $applyTestIds), true);
+                if (! in_array($causeId, $allowed, true) && $currentTestWasSelected) {
+                    $allowed[] = $causeId;
+                    $item['allowed_cause_ids'] = array_values(array_unique($allowed));
+                }
+
+                if (! in_array($causeId, $allowed, true)) {
+                    Notification::make()
+                        ->warning()
+                        ->title(__('Причина найдена в общем справочнике'))
+                        ->body(__('Чтобы выбрать её в этой строке, укажите текущий тест в поле «Применить к…» или настройте связь в CRM.'))
+                        ->actions([
+                            Action::make('configureCause')
+                                ->label(__('Открыть CRM'))
+                                ->url(MedicalClinicalCatalogConfiguration::getUrl())
+                                ->button(),
+                        ])
+                        ->send();
+
+                    return;
+                }
+
+                $selected = is_array($item['cause_ids'] ?? null) ? array_map('intval', $item['cause_ids']) : [];
+                $item['cause_ids'] = array_values(array_unique([...$selected, $causeId]));
+                $state[$itemKey] = $item;
+                $component->state($state);
+                Notification::make()->success()->title(__('Причина добавлена к строке'))->send();
+            });
+    }
+
+    /** @return array<int, string> */
+    private static function globalCauseOptions(string $term = ''): array
+    {
+        return app(MedicalCauseDirectory::class)
+            ->search(app(OrganizationContext::class)->id(), $term)
+            ->mapWithKeys(static function (MedicalCauseDefinition $cause): array {
+                $label = filled($cause->group_name)
+                    ? $cause->group_name.': '.MedicalClinicalCatalog::causeDisplayName((string) $cause->name)
+                    : MedicalClinicalCatalog::causeDisplayName((string) $cause->name);
+
+                return [(int) $cause->getKey() => $label];
+            })
+            ->all();
     }
 
     private static function copyCausesAction(): Action
@@ -494,7 +645,7 @@ final class ClinicalTestProtocol
                 }
             })->visible(fn (Get $get): bool => (bool) $get('index_enabled')),
             Select::make('tone')->label(__('Тонус'))->options(fn (Get $get): array => self::toneOptions($get('tone_options')))->visible(fn (Get $get): bool => in_array($get('input_mode'), ['tone', 'traction'], true) && (int) ($get('index') ?? 0) > 0)->live(),
-            Placeholder::make('traction_warning')->hiddenLabel()->content(__('вытяжение в этом отделе не делать'))->extraAttributes(['class' => 'text-amber-700 font-semibold'])->visible(fn (Get $get): bool => in_array($get('input_mode'), ['tone', 'traction'], true) && in_array(strtolower(trim((string) $get('tone'))), ['hypotone', 'гипотонус'], true))->columnSpanFull(),
+            Placeholder::make('traction_warning')->hiddenLabel()->content(__('вытяжение в этом отделе не делать'))->extraAttributes(['class' => 'text-amber-700 font-semibold'])->visible(fn (Get $get): bool => in_array($get('input_mode'), ['tone', 'traction'], true) && in_array(mb_strtolower(trim((string) $get('tone')), 'UTF-8'), ['hypotone', 'гипотонус'], true))->columnSpanFull(),
             Select::make('finding')->label(__('Находка'))->options(fn (Get $get): array => self::findingOptions($get('finding_options')))->visible(fn (Get $get): bool => in_array($get('input_mode'), ['finding', 'finding_list'], true))->live()->afterStateUpdated(static function (Set $set, mixed $state): void {
                 if (! filled($state)) {
                     self::clearCauses($set);
@@ -526,7 +677,7 @@ final class ClinicalTestProtocol
 
     private static function rowNeedsCauses(Get $get): bool
     {
-        $finding = strtolower(trim((string) $get('finding')));
+        $finding = mb_strtolower(trim((string) $get('finding')), 'UTF-8');
 
         return (int) ($get('index') ?? 0) > 0
             || (bool) $get('marked')
@@ -557,8 +708,9 @@ final class ClinicalTestProtocol
             $links[$scope] = array_values(array_unique($causeIds));
         }
 
-        $configuration['cause_ids'] = $links['__root'] ?? [];
-        $attachRowCauses = static function (mixed $rows) use ($links): array {
+        $rootCauseIds = $links['__root'] ?? [];
+        $configuration['cause_ids'] = $rootCauseIds;
+        $attachRowCauses = static function (mixed $rows) use ($links, $rootCauseIds): array {
             if (! is_array($rows)) {
                 return [];
             }
@@ -567,7 +719,9 @@ final class ClinicalTestProtocol
                     continue;
                 }
                 $key = trim((string) ($row['key'] ?? ''));
-                $row['cause_ids'] = $key === '' ? [] : ($links[$key] ?? []);
+                $row['cause_ids'] = $key === ''
+                    ? $rootCauseIds
+                    : array_values(array_unique([...$rootCauseIds, ...($links[$key] ?? [])]));
             }
             unset($row);
 
@@ -580,7 +734,9 @@ final class ClinicalTestProtocol
                 continue;
             }
             $key = trim((string) ($subtest['key'] ?? ''));
-            $subtest['cause_ids'] = $key === '' ? [] : ($links[$key] ?? []);
+            $subtest['cause_ids'] = $key === ''
+                ? $rootCauseIds
+                : array_values(array_unique([...$rootCauseIds, ...($links[$key] ?? [])]));
             $subtest['rows'] = $attachRowCauses($subtest['rows'] ?? []);
             $subtest['provoking_points'] = $attachRowCauses($subtest['provoking_points'] ?? []);
             $subtest['feelings'] = $attachRowCauses($subtest['feelings'] ?? []);

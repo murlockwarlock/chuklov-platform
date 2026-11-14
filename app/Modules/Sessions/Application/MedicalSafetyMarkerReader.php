@@ -8,6 +8,7 @@ use App\Modules\MedicalProfiles\Domain\Contracts\MedicalEncryptorInterface;
 use App\Modules\Sessions\Domain\Models\MedicalClientSafetyMarker;
 use App\Modules\Sessions\Domain\Models\MedicalSession;
 use App\Modules\Sessions\Domain\Models\MedicalSessionSafetyMarker;
+use DateTimeInterface;
 
 final readonly class MedicalSafetyMarkerReader
 {
@@ -105,11 +106,16 @@ final readonly class MedicalSafetyMarkerReader
             ),
             'is_active' => (bool) $marker->is_active,
             'source_session_id' => $marker->source_session_id === null ? null : (int) $marker->source_session_id,
-            'activated_at' => $marker->activated_at?->toIso8601String(),
+            'activated_at' => $this->isoDate($marker->getAttribute('activated_at')),
             'activated_by' => $marker->activated_by === null ? null : (int) $marker->activated_by,
-            'cleared_at' => $marker->cleared_at?->toIso8601String(),
+            'cleared_at' => $this->isoDate($marker->getAttribute('cleared_at')),
             'cleared_by' => $marker->cleared_by === null ? null : (int) $marker->cleared_by,
             'clear_reason' => $clearReason,
         ];
+    }
+
+    private function isoDate(mixed $value): ?string
+    {
+        return $value instanceof DateTimeInterface ? $value->format(DateTimeInterface::ATOM) : null;
     }
 }

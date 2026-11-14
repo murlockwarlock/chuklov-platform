@@ -22,7 +22,10 @@ final readonly class SaveMedicalTestCauseLinks
         private RecordAuditEvent $audit,
     ) {}
 
-    /** @param array<int, mixed> $causeIds */
+    /**
+     * @param array<int, mixed> $causeIds
+     * @return Collection<int, MedicalTestCauseLink>
+     */
     public function handle(User $actor, MedicalTestDefinition|int $test, array $causeIds, ?string $scopeKey = null): Collection
     {
         $organization = $this->context->organization();

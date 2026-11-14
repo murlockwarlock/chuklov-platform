@@ -202,7 +202,9 @@ final class MedicalStage1BCatalogPreset
         ];
     }
 
-    /** @param array<string, mixed> $configuration */
+    /** @param array<string, mixed> $configuration
+     * @return array<string, mixed>
+     */
     private static function definition(int $number, string $name, MedicalTestType $type, string $set, array $configuration): array
     {
         $configuration = [
@@ -254,6 +256,7 @@ final class MedicalStage1BCatalogPreset
     }
 
     /** @param list<string> $labels
+     * @param array<string, mixed> $extra
      * @return list<array<string, mixed>>
      */
     private static function sideRowsForLabels(array $labels, string $key, array $extra = []): array
@@ -274,11 +277,12 @@ final class MedicalStage1BCatalogPreset
     }
 
     /** @param list<string> $labels
+     * @param array<string, mixed> $extra
      * @return list<array<string, mixed>>
      */
     private static function rows(array $labels, string $prefix, array $extra = []): array
     {
-        return array_values(array_map(
+        return array_map(
             static fn (string $label, int $index): array => [
                 'key' => $prefix.'_'.$index,
                 'label' => $label,
@@ -286,6 +290,6 @@ final class MedicalStage1BCatalogPreset
             ],
             $labels,
             array_keys($labels),
-        ));
+        );
     }
 }

@@ -116,6 +116,37 @@ final class MedicalStage1BResultRecommendationTest extends TestCase
         self::assertNotSame('Ручной текст специалиста', $confirmed->summary);
     }
 
+    public function test_root_cause_can_be_selected_from_the_active_global_cause_directory(): void
+    {
+        [, $admin, $client, $specialist] = $this->fixture();
+        $cause = MedicalCauseDefinition::query()->create([
+            'organization_id' => $client->organization_id,
+            'name' => 'Глобальная первопричина',
+            'is_active' => true,
+            'moderation_status' => MedicalCauseDefinition::MODERATION_ACTIVE,
+            'sort_order' => 1,
+        ]);
+
+        $session = app(CreateSession::class)->handle($admin, $client, new CreateSessionCommand(
+            specialistId: (int) $specialist->getKey(),
+            occurredAt: CarbonImmutable::parse('2026-11-15 10:30:00', 'UTC'),
+            rootCauses: [[
+                'cause_id' => $cause->getKey(),
+                'is_primary' => true,
+            ]],
+        ));
+
+        $reloaded = app(GetSession::class)->handle(
+            $admin,
+            MedicalSession::findOrFail($session->id),
+            $client,
+        );
+
+        self::assertNotNull($reloaded);
+        self::assertSame((int) $cause->getKey(), $reloaded->rootCauses[0]->causeId);
+        self::assertTrue($reloaded->rootCauses[0]->isPrimary);
+    }
+
     public function test_effectiveness_counts_pain_change_test_deterioration_resolved_rows_and_unique_causes(): void
     {
         [$organization, $admin, $client, $specialist] = $this->fixture();

@@ -30,6 +30,7 @@ final class MedicalClinicalTypeEngine
      * @param array<string, mixed> $configuration
      * @param array<string, mixed>|null $before
      * @param array<string, mixed>|null $after
+     * @param array<string, mixed>|null $payload
      */
     public function validate(
         MedicalTestType $type,
@@ -100,7 +101,7 @@ final class MedicalClinicalTypeEngine
             $this->methodRows($after),
             fn (array $row): bool => in_array((int) ($row['index'] ?? 0), [1, 2, 3], true)
                 || ($row['marked'] ?? false) === true
-                || in_array(strtolower(trim((string) ($row['answer'] ?? ''))), ['yes', 'да', 'true', '1'], true)
+                || in_array(mb_strtolower(trim((string) ($row['answer'] ?? '')), 'UTF-8'), ['yes', 'да', 'true', '1'], true)
                 || $this->hasFinding($row),
         );
     }
@@ -116,7 +117,7 @@ final class MedicalClinicalTypeEngine
         $after = $this->findingRows($after);
 
         return $this->evaluationFromRows($before, $after, static function (array $row): bool {
-            $finding = strtolower(trim((string) ($row['finding'] ?? '')));
+            $finding = mb_strtolower(trim((string) ($row['finding'] ?? '')), 'UTF-8');
 
             return ($finding !== '' && ! in_array($finding, ['normal', 'none', 'нет', 'норма'], true))
                 || ($row['marked'] ?? false) === true
@@ -132,14 +133,16 @@ final class MedicalClinicalTypeEngine
     private function formula(array $configuration, ?array $before, ?array $after): MedicalClinicalEvaluation
     {
         $rules = is_array($configuration['rules'] ?? null) ? $configuration['rules'] : [];
-        $allowed = is_array($rules['allowed_sequences'] ?? null) ? $rules['allowed_sequences'] : [];
-        $allowed = array_map(
-            static fn (mixed $sequence): array => array_map(
+        $allowed = [];
+        foreach (is_array($rules['allowed_sequences'] ?? null) ? $rules['allowed_sequences'] : [] as $sequence) {
+            if (! is_array($sequence)) {
+                continue;
+            }
+            $allowed[] = array_values(array_map(
                 static fn (mixed $value): string => strtoupper(trim((string) $value)),
-                is_array($sequence) ? $sequence : [],
-            ),
-            $allowed,
-        );
+                $sequence,
+            ));
+        }
         $countTransitions = (bool) ($rules['broken_transition_count'] ?? false);
         $hasSequence = $this->hasSequence($before) || $this->hasSequence($after);
         if ($hasSequence && ($allowed === [] || ! array_key_exists('broken_transition_count', $rules))) {
@@ -172,7 +175,7 @@ final class MedicalClinicalTypeEngine
             $this->findingRows($before),
             $this->findingRows($after),
             fn (array $row): bool => ($row['marked'] ?? false) === true
-                || in_array(strtolower(trim((string) ($row['answer'] ?? ''))), ['yes', 'да', 'true', '1'], true),
+                || in_array(mb_strtolower(trim((string) ($row['answer'] ?? '')), 'UTF-8'), ['yes', 'да', 'true', '1'], true),
         );
     }
 
@@ -217,7 +220,7 @@ final class MedicalClinicalTypeEngine
         $warning = false;
         foreach ([$before, $after] as $phase) {
             foreach ($this->findingRows($phase) as $row) {
-                if (in_array(strtolower(trim((string) ($row['tone'] ?? ''))), ['hypotone', 'гипотонус'], true)) {
+                if (in_array(mb_strtolower(trim((string) ($row['tone'] ?? '')), 'UTF-8'), ['hypotone', 'гипотонус'], true)) {
                     $warning = true;
                     break 2;
                 }
@@ -261,7 +264,7 @@ final class MedicalClinicalTypeEngine
             }
 
             return ($row['marked'] ?? false) === true
-                || in_array(strtolower(trim((string) ($row['deviation'] ?? ''))), ['yes', 'да', 'true', '1', 'deviation', 'abnormal'], true);
+                || in_array(mb_strtolower(trim((string) ($row['deviation'] ?? '')), 'UTF-8'), ['yes', 'да', 'true', '1', 'deviation', 'abnormal'], true);
         };
 
         return $this->evaluationFromRows($rowsBefore, $rowsAfter, $isViolation);
@@ -281,7 +284,7 @@ final class MedicalClinicalTypeEngine
             $beforeRows,
             $afterRows,
             fn (array $row): bool => ($row['marked'] ?? false) === true
-                || in_array(strtolower(trim((string) ($row['answer'] ?? ''))), ['yes', 'да', 'true', '1'], true)
+                || in_array(mb_strtolower(trim((string) ($row['answer'] ?? '')), 'UTF-8'), ['yes', 'да', 'true', '1'], true)
                 || $this->hasFinding($row),
         );
     }
@@ -334,7 +337,7 @@ final class MedicalClinicalTypeEngine
             if ($index !== null) {
                 return in_array((int) $index, array_map('intval', $violationIndexes), true);
             }
-            if ($allowTone && in_array(strtolower(trim((string) ($row['tone'] ?? ''))), $toneValues, true)) {
+            if ($allowTone && in_array(mb_strtolower(trim((string) ($row['tone'] ?? '')), 'UTF-8'), $toneValues, true)) {
                 return true;
             }
 
@@ -576,6 +579,7 @@ final class MedicalClinicalTypeEngine
         return array_values(array_unique($keys));
     }
 
+    /** @param array<string, mixed>|null $phase */
     private function phaseContainsKey(?array $phase, string $key): bool
     {
         if ($phase === null) {
@@ -597,7 +601,18 @@ final class MedicalClinicalTypeEngine
     /** @param array<string, mixed>|null $phase */
     private function hasSequence(?array $phase): bool
     {
-        return $phase !== null && is_array($phase['sequence'] ?? null) && $phase['sequence'] !== [];
+        if ($phase === null || ! is_array($phase['sequence'] ?? null)) {
+            return false;
+        }
+
+        foreach ($phase['sequence'] as $item) {
+            $value = is_array($item) ? ($item['value'] ?? null) : $item;
+            if ($value !== null && trim((string) $value) !== '') {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /** @param array<string, mixed> $configuration
@@ -685,32 +700,37 @@ final class MedicalClinicalTypeEngine
         $this->validateNumber($phase['pain_intensity'] ?? null, 0, 10, $name.'.pain_intensity');
         $this->validateNumber($phase['tl_reduction_percent'] ?? null, -100, 100, $name.'.tl_reduction_percent');
         $this->validateNumber($phase['energy'] ?? null, 0, 1000, $name.'.energy');
-        if (($phase['tor_direction'] ?? null) !== null && ($phase['tor_direction'] ?? '') !== '') {
-            if (! in_array((string) $phase['tor_direction'], ['R', 'L'], true)) {
+        $torDirection = $phase['tor_direction'] ?? null;
+        if ($torDirection !== null && $torDirection !== '') {
+            if (! in_array((string) $torDirection, ['R', 'L'], true)) {
                 $this->invalid($name.'.tor_direction', 'Направление тор-поля должно быть R или L.');
             }
         }
-        if (($phase['method'] ?? null) !== null && ($phase['method'] ?? '') !== '') {
+        $method = $phase['method'] ?? null;
+        if ($method !== null && $method !== '') {
             $options = $this->optionValues($configuration['method_options'] ?? []);
-            if ($options !== [] && ! in_array((string) $phase['method'], $options, true)) {
+            if ($options !== [] && ! in_array((string) $method, $options, true)) {
                 $this->invalid($name.'.method', 'Выбранный метод отсутствует в настройке каталога.');
             }
         }
-        if (($phase['movement'] ?? null) !== null && ($phase['movement'] ?? '') !== '') {
+        $movement = $phase['movement'] ?? null;
+        if ($movement !== null && $movement !== '') {
             $options = $this->optionValues($configuration['movement_options'] ?? []);
-            if ($options !== [] && ! in_array((string) $phase['movement'], $options, true)) {
+            if ($options !== [] && ! in_array((string) $movement, $options, true)) {
                 $this->invalid($name.'.movement', 'Выбранное движение отсутствует в настройке каталога.');
             }
         }
-        if (($phase['priority_chain'] ?? null) !== null && ($phase['priority_chain'] ?? '') !== '') {
+        $priorityChain = $phase['priority_chain'] ?? null;
+        if ($priorityChain !== null && $priorityChain !== '') {
             $options = $this->optionValues($configuration['priority_options'] ?? []);
-            if ($options !== [] && ! in_array((string) $phase['priority_chain'], $options, true)) {
+            if ($options !== [] && ! in_array((string) $priorityChain, $options, true)) {
                 $this->invalid($name.'.priority_chain', 'Выбранная цепь отсутствует в настройке каталога.');
             }
         }
-        if (($phase['violation_type'] ?? null) !== null && ($phase['violation_type'] ?? '') !== '') {
+        $violationType = $phase['violation_type'] ?? null;
+        if ($violationType !== null && $violationType !== '') {
             $options = $this->optionValues($configuration['violation_types'] ?? []);
-            if ($options !== [] && ! in_array((string) $phase['violation_type'], $options, true)) {
+            if ($options !== [] && ! in_array((string) $violationType, $options, true)) {
                 $this->invalid($name.'.violation_type', 'Выбранный тип нарушения отсутствует в настройке каталога.');
             }
         }
@@ -778,8 +798,9 @@ final class MedicalClinicalTypeEngine
             ? (bool) $configuration['index_enabled']
             : ! in_array($type, [MedicalTestType::T5, MedicalTestType::T11, MedicalTestType::T12], true);
         $this->validateIndex($row['index'] ?? null, $indexEnabled, $name.'.index');
-        $this->validateNumber($row['angle'] ?? null, 0, 180, $name.'.angle');
-        if (($row['angle'] ?? null) !== null && ($row['angle'] ?? '') !== '' && ! (bool) ($configuration['angle_enabled'] ?? true)) {
+        $angle = $row['angle'] ?? null;
+        $this->validateNumber($angle, 0, 180, $name.'.angle');
+        if ($angle !== null && $angle !== '' && ! (bool) ($configuration['angle_enabled'] ?? true)) {
             $this->invalid($name.'.angle', 'Угол отключён для этой строки в каталоге.');
         }
         $this->validateChoice($row['tone'] ?? null, $configuration['tone_options'] ?? ['normal', 'hypotone', 'hypertone', 'гипотонус', 'гипертонус'], $name.'.tone');
@@ -844,7 +865,7 @@ final class MedicalClinicalTypeEngine
         foreach ($options as $key => $option) {
             if (is_array($option)) {
                 $value = $option['value'] ?? $option['key'] ?? null;
-            } elseif (is_string($key) && ! is_int($key)) {
+            } elseif (is_string($key)) {
                 $value = $key;
             } else {
                 $value = $option;
@@ -865,7 +886,7 @@ final class MedicalClinicalTypeEngine
     /** @param array<string, mixed> $row */
     private function hasFinding(array $row): bool
     {
-        $finding = strtolower(trim((string) ($row['finding'] ?? '')));
+        $finding = mb_strtolower(trim((string) ($row['finding'] ?? '')), 'UTF-8');
 
         return $finding !== '' && ! in_array($finding, ['normal', 'none', 'нет', 'норма'], true);
     }

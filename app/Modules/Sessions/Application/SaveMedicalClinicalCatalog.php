@@ -20,9 +20,6 @@ use Illuminate\Validation\ValidationException;
 
 final readonly class SaveMedicalClinicalCatalog
 {
-    /** @var list<string> */
-    private const array ValueTypes = ['normal', 'choice', 'boolean', 'integer', 'decimal', 'text'];
-
     public function __construct(
         private OrganizationContext $context,
         private OrganizationAuthorizer $authorizer,
@@ -692,7 +689,7 @@ final readonly class SaveMedicalClinicalCatalog
         return $this->normalizeConfigValue($rules);
     }
 
-    /** @return array<string,mixed> */
+    /** @return mixed */
     private function normalizeConfigValue(mixed $value, int $depth = 0): mixed
     {
         if ($depth > 8) {

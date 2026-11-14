@@ -96,6 +96,36 @@ final class MedicalStage1BEngineTest extends TestCase
         self::assertNotEmpty($evaluation->warnings);
     }
 
+    public function test_t4_accepts_an_unstarted_blank_formula_without_classifying_it(): void
+    {
+        $engine = new MedicalClinicalTypeEngine;
+        $configuration = [
+            'rows' => [
+                ['key' => 'zone_1', 'choices' => ['L', 'R']],
+                ['key' => 'zone_2', 'choices' => ['L', 'R']],
+                ['key' => 'zone_3', 'choices' => ['L', 'R']],
+                ['key' => 'zone_4', 'choices' => ['L', 'R']],
+            ],
+            'rules' => [
+                'allowed_sequences' => [['L', 'R', 'L', 'R']],
+                'broken_transition_count' => true,
+            ],
+        ];
+        $blank = ['sequence' => [
+            ['value' => null],
+            ['value' => null],
+            ['value' => null],
+            ['value' => null],
+        ]];
+
+        $engine->validate(MedicalTestType::T4, $configuration, $blank, null);
+        $evaluation = $engine->evaluate(MedicalTestType::T4, $configuration, $blank, null);
+
+        self::assertSame(0, $evaluation->beforeCount);
+        self::assertFalse($evaluation->failClosed);
+        self::assertSame([], $evaluation->warnings);
+    }
+
     public function test_typed_validation_rejects_an_angle_outside_the_configured_range(): void
     {
         $this->expectException(ValidationException::class);

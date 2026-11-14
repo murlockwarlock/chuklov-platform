@@ -81,6 +81,39 @@ final class MedicalClinicalCatalogConfigurationTest extends TestCase
         self::assertSame('Синтетическая категория', $problemTags[0]['name'] ?? null);
     }
 
+    public function test_manager_can_prepare_the_stage_1b_preset_without_removing_existing_tests(): void
+    {
+        [$organization, $admin] = $this->fixture();
+        $legacy = MedicalTestDefinition::query()->create([
+            'organization_id' => $organization->getKey(),
+            'key' => 'legacy_test',
+            'name' => 'Существующий тест',
+            'is_active' => true,
+            'sort_order' => 1,
+        ]);
+        MedicalTestValue::query()->create([
+            'organization_id' => $organization->getKey(),
+            'medical_test_definition_id' => $legacy->getKey(),
+            'key' => 'normal',
+            'label' => 'Норма',
+            'is_abnormal' => false,
+            'is_active' => true,
+            'sort_order' => 1,
+        ]);
+        $this->resolveFilamentContext($admin, $organization);
+
+        Livewire::actingAs($admin)
+            ->test(MedicalClinicalCatalogConfiguration::class)
+            ->assertActionExists('prepareStage1BCatalog')
+            ->callAction('prepareStage1BCatalog');
+
+        self::assertCount(31, MedicalTestDefinition::query()->where('organization_id', $organization->getKey())->whereNotNull('test_type')->get());
+        self::assertTrue(MedicalTestDefinition::query()->where('organization_id', $organization->getKey())->where('key', 'legacy_test')->where('is_active', true)->exists());
+        self::assertSame([
+            '1', '2', '3', '4', '5', '6', '7', '9', '25', '31.1',
+        ], app(MedicalClinicalCatalog::class)->defaultSessionSelection((int) $organization->getKey()));
+    }
+
     public function test_manager_can_import_tests_causes_and_problem_tags_from_human_labelled_csv(): void
     {
         [$organization, $admin] = $this->fixture();

@@ -62,6 +62,12 @@ final readonly class MedicalTest18SafetyMarker
                     'activated_at' => now(),
                     'activated_by' => $actor->getKey(),
                 ])->save();
+            } else {
+                $markerText = (string) $this->encryptor->decryptField(
+                    $organizationId,
+                    $clientMarker->marker_text,
+                    (int) $clientMarker->encryption_key_version,
+                );
             }
 
             $sessionMarker = MedicalSessionSafetyMarker::query()

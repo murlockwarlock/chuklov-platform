@@ -145,16 +145,16 @@ final class MedicalClinicalCatalog
     /** @return list<int> */
     public function defaultSessionTestIds(int $organizationId): array
     {
-        $tests = MedicalTestDefinition::query()
+        $tests = [];
+        foreach (MedicalTestDefinition::query()
             ->where('organization_id', $organizationId)
             ->where('is_active', true)
             ->where('default_in_session', true)
             ->orderBy('sort_order')
             ->orderBy('id')
-            ->pluck('id')
-            ->map(static fn (mixed $id): int => (int) $id)
-            ->values()
-            ->all();
+            ->pluck('id') as $id) {
+            $tests[] = (int) $id;
+        }
 
         if ($tests !== []) {
             return $tests;
@@ -162,16 +162,18 @@ final class MedicalClinicalCatalog
 
         $keys = MedicalStage1BCatalogPreset::defaultSelection();
 
-        return MedicalTestDefinition::query()
+        $fallback = [];
+        foreach (MedicalTestDefinition::query()
             ->where('organization_id', $organizationId)
             ->where('is_active', true)
             ->whereIn('key', $keys)
             ->orderBy('sort_order')
             ->orderBy('id')
-            ->pluck('id')
-            ->map(static fn (mixed $id): int => (int) $id)
-            ->values()
-            ->all();
+            ->pluck('id') as $id) {
+            $fallback[] = (int) $id;
+        }
+
+        return $fallback;
     }
 
     /** @return array<int, string> */

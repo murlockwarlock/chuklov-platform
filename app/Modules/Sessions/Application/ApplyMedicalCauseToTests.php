@@ -22,7 +22,10 @@ final readonly class ApplyMedicalCauseToTests
         private RecordAuditEvent $audit,
     ) {}
 
-    /** @param array<int, mixed> $testIds */
+    /**
+     * @param array<int, mixed> $testIds
+     * @return Collection<int, MedicalTestCauseLink>
+     */
     public function handle(User $actor, int $causeId, array $testIds, ?string $scopeKey = null): Collection
     {
         $organization = $this->context->organization();

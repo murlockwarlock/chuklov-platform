@@ -20,6 +20,7 @@ final readonly class SaveMedicalCauseDefinition
         private RecordAuditEvent $audit,
     ) {}
 
+    /** @param array<string, mixed> $attributes */
     public function handle(User $actor, array $attributes, ?int $causeId = null): MedicalCauseDefinition
     {
         $organization = $this->context->organization();
@@ -88,7 +89,10 @@ final readonly class SaveMedicalCauseDefinition
         });
     }
 
-    /** @return array{name:string,synonyms:list<string>,group_name:?string,tooltip:?string,moderation_status:string,is_active:bool,sort_order:int} */
+    /**
+     * @param array<string, mixed> $attributes
+     * @return array{name:string,synonyms:list<string>,group_name:?string,tooltip:?string,moderation_status:string,is_active:bool,sort_order:int}
+     */
     private function normalize(array $attributes): array
     {
         $name = trim((string) ($attributes['name'] ?? ''));
@@ -128,7 +132,10 @@ final readonly class SaveMedicalCauseDefinition
         ];
     }
 
-    /** @return list<string> */
+    /**
+     * @param list<string> $synonyms
+     * @return list<string>
+     */
     private function identityValues(string $name, array $synonyms): array
     {
         return array_values(array_unique(array_filter([
