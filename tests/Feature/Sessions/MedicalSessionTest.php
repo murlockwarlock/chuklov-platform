@@ -27,6 +27,7 @@ use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Monolog\Level;
 use Monolog\LogRecord;
@@ -95,6 +96,31 @@ final class MedicalSessionTest extends TestCase
         self::assertSame('Острая боль в пояснице, иррадиирующая в левую ногу.', $retrieved->pain);
         self::assertSame('МРТ пояснично-крестцового отдела, тест на прямую ногу.', $retrieved->tests);
         self::assertSame('Дисфункция крестцово-подвздошного сочленения.', $retrieved->rootCauseHypothesis);
+    }
+
+    public function test_replayed_session_creation_token_updates_one_draft_instead_of_creating_a_duplicate(): void
+    {
+        [$organization, $admin, $client, $specialist] = $this->setupOrganizationWithClientAndSpecialist();
+        $creationToken = (string) Str::uuid();
+
+        $first = app(CreateSession::class)->handle($admin, $client, new CreateSessionCommand(
+            specialistId: (int) $specialist->getKey(),
+            occurredAt: Carbon::parse('2026-01-15 10:30:00', 'Europe/Moscow'),
+            result: 'Первый черновик.',
+            creationToken: $creationToken,
+        ));
+
+        $replayed = app(CreateSession::class)->handle($admin, $client, new CreateSessionCommand(
+            specialistId: (int) $specialist->getKey(),
+            occurredAt: Carbon::parse('2026-01-15 10:30:00', 'Europe/Moscow'),
+            result: 'Обновлённый черновик.',
+            creationToken: $creationToken,
+        ));
+
+        self::assertSame($first->id, $replayed->id);
+        self::assertSame(1, MedicalSession::query()->where('client_id', $client->getKey())->count());
+        self::assertSame('Обновлённый черновик.', app(GetSession::class)->handle($admin, MedicalSession::findOrFail($first->id), $client)?->result);
+        self::assertSame(1, DB::table('audit_events')->where('organization_id', $organization->getKey())->where('action', 'medical.session.created')->where('target_id', (string) $first->id)->count());
     }
 
     public function test_pain_vas_is_saved_as_a_protected_numeric_value_and_can_be_updated(): void

@@ -12,10 +12,12 @@ use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Security\Application\RecordAuditEvent;
 use App\Modules\Sessions\Application\DTOs\CreateSessionCommand;
 use App\Modules\Sessions\Application\DTOs\MedicalSessionData;
+use App\Modules\Sessions\Application\DTOs\UpdateSessionCommand;
 use App\Modules\Sessions\Domain\Enums\MedicalSessionStatus;
 use App\Modules\Sessions\Domain\Models\MedicalSession;
 use App\Modules\Sessions\Domain\ValueObjects\EncryptedSessionPayload;
 use App\Modules\Specialists\Domain\Models\Specialist;
+use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -34,6 +36,7 @@ final readonly class CreateSession
         private MedicalSessionCauseWriter $causeWriter,
         private MedicalSessionProtocolStepWriter $protocolStepWriter,
         private MedicalSessionProtocolStepReader $protocolStepReader,
+        private UpdateSession $updateSession,
     ) {}
 
     public function handle(User $actor, Client $client, CreateSessionCommand $command): MedicalSessionData
@@ -55,6 +58,29 @@ final readonly class CreateSession
         }
 
         $booking = $this->resolveBooking($orgId, $command, $client, $specialist);
+
+        if ($command->creationToken !== null) {
+            $existing = MedicalSession::query()
+                ->where('organization_id', $orgId)
+                ->where('creation_token', $command->creationToken)
+                ->first();
+
+            if ($existing !== null) {
+                if ((int) $existing->client_id !== (int) $client->getKey()) {
+                    throw ValidationException::withMessages([
+                        'creation_token' => 'The session creation token is already used for another client.',
+                    ]);
+                }
+
+                return $this->updateSession->handle(
+                    $actor,
+                    $existing,
+                    $this->asUpdateCommand($command),
+                    $client,
+                );
+            }
+        }
+
         $specialComplaints = $this->initialSpecialComplaints($actor, $client, $command->pain);
 
         $keyVersion = $this->keyResolver->getCurrentKeyVersion($orgId);
@@ -81,7 +107,8 @@ final readonly class CreateSession
 
         $occurredAtUtc = $command->occurredAtUtc();
 
-        return DB::transaction(function () use ($actor, $organization, $client, $specialist, $booking, $command, $specialComplaints, $encrypted, $keyVersion, $occurredAtUtc, $orgId, $historicalPainValues): MedicalSessionData {
+        try {
+            return DB::transaction(function () use ($actor, $organization, $client, $specialist, $booking, $command, $specialComplaints, $encrypted, $keyVersion, $occurredAtUtc, $orgId, $historicalPainValues): MedicalSessionData {
             $session = new MedicalSession;
             $session->forceFill([
                 'organization_id' => $orgId,
@@ -89,6 +116,7 @@ final readonly class CreateSession
                 'patient_profile_id' => app(EnsureSelfPatientProfile::class)->handle($client)->getKey(),
                 'specialist_id' => $specialist->getKey(),
                 'booking_id' => $booking?->getKey(),
+                'creation_token' => $command->creationToken,
                 'status' => MedicalSessionStatus::Draft,
                 'pain' => $encrypted->encryptedPain,
                 'pain_vas' => $encrypted->encryptedPainVas,
@@ -172,7 +200,64 @@ final readonly class CreateSession
                 completedAt: $session->completed_at,
                 editedAt: $session->edited_at,
             );
-        });
+            });
+        } catch (QueryException $exception) {
+            if ($command->creationToken === null
+                || $exception->getCode() !== '23505'
+                || ! str_contains($exception->getMessage(), 'medical_sessions_organization_creation_token_unique')) {
+                throw $exception;
+            }
+
+            $existing = MedicalSession::query()
+                ->where('organization_id', $orgId)
+                ->where('creation_token', $command->creationToken)
+                ->firstOrFail();
+
+            if ((int) $existing->client_id !== (int) $client->getKey()) {
+                throw ValidationException::withMessages([
+                    'creation_token' => 'The session creation token is already used for another client.',
+                ]);
+            }
+
+            return $this->updateSession->handle(
+                $actor,
+                $existing,
+                $this->asUpdateCommand($command),
+                $client,
+            );
+        }
+    }
+
+    private function asUpdateCommand(CreateSessionCommand $command): UpdateSessionCommand
+    {
+        return new UpdateSessionCommand(
+            pain: $command->pain,
+            tests: $command->tests,
+            observations: $command->observations,
+            rootCauseHypothesis: $command->rootCauseHypothesis,
+            protocol: $command->protocol,
+            result: $command->result,
+            painVas: $command->painVas,
+            painVasProvided: true,
+            pains: $command->pains,
+            painsProvided: $command->pains !== null,
+            subjectiveFeelings: $command->subjectiveFeelings,
+            visualPostureDiagnostics: $command->visualPostureDiagnostics,
+            subjectiveFeelingsProvided: true,
+            visualPostureDiagnosticsProvided: true,
+            testResults: $command->testResults,
+            testResultsProvided: $command->testResults !== null,
+            rootCauses: $command->rootCauses,
+            rootCausesProvided: $command->rootCauses !== null,
+            causeIds: $command->causeIds,
+            causesProvided: $command->causeIds !== null,
+            causesManualOverride: $command->causesManualOverride,
+            causesManualOverrideProvided: true,
+            therapistNotes: $command->therapistNotes,
+            therapistNotesProvided: true,
+            protocolSteps: $command->protocolSteps,
+            protocolStepsProvided: $command->protocolSteps !== null,
+        );
     }
 
     private function initialSpecialComplaints(User $actor, Client $client, ?string $pain): ?string

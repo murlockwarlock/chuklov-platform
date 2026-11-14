@@ -18,6 +18,7 @@ use App\Modules\Sessions\Application\MedicalSessionPainInitializer;
 use App\Modules\Sessions\Domain\Models\MedicalSession;
 use Filament\Notifications\Notification;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Livewire\Attributes\Locked;
 use Throwable;
@@ -34,6 +35,16 @@ class CreateMedicalSession extends LocalizedCreateRecord
 
     #[Locked]
     public bool $autosaveReady = false;
+
+    #[Locked]
+    public string $creationToken = '';
+
+    public function mount(): void
+    {
+        $this->creationToken = (string) Str::uuid();
+
+        parent::mount();
+    }
 
     protected function fillForm(): void
     {
@@ -122,6 +133,7 @@ class CreateMedicalSession extends LocalizedCreateRecord
         $formState = $data;
 
         $data = SessionForm::withStableLineageKeys($data);
+        $data['creation_token'] = $this->creationToken;
         $this->data = $data;
 
         unset($data['pain_not_measured'], $data['pain_vas']);

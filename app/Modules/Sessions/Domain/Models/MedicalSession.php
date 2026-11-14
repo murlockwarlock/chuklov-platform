@@ -22,6 +22,7 @@ use Illuminate\Support\Carbon;
  * @property int|null $patient_profile_id
  * @property int $specialist_id
  * @property int|null $booking_id
+ * @property string|null $creation_token
  * @property string|null $pain
  * @property string|null $pain_vas
  * @property string|null $tests

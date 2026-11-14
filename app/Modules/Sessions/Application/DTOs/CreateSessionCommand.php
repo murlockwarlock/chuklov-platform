@@ -6,6 +6,7 @@ use Carbon\Exceptions\InvalidFormatException;
 use DateTimeImmutable;
 use DateTimeInterface;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
 final readonly class CreateSessionCommand
@@ -35,6 +36,7 @@ final readonly class CreateSessionCommand
         public ?string $therapistNotes = null,
         /** @var array<int, mixed>|null */
         public ?array $protocolSteps = null,
+        public ?string $creationToken = null,
     ) {}
 
     /**
@@ -50,6 +52,13 @@ final readonly class CreateSessionCommand
                 'occurred_at' => 'The "occurred_at" field is required and must be a valid date or date-time value.',
             ]),
         };
+
+        $creationToken = $data['creation_token'] ?? null;
+        if ($creationToken !== null && (! is_string($creationToken) || ! Str::isUuid($creationToken))) {
+            throw ValidationException::withMessages([
+                'creation_token' => 'The session creation token must be a valid UUID.',
+            ]);
+        }
 
         return new self(
             specialistId: isset($data['specialist_id']) && is_numeric($data['specialist_id']) ? (int) $data['specialist_id'] : 0,
@@ -71,6 +80,7 @@ final readonly class CreateSessionCommand
             causesManualOverride: filter_var($data['causes_manual_override'] ?? false, FILTER_VALIDATE_BOOLEAN),
             therapistNotes: self::optionalTrimmedString($data, 'therapist_notes'),
             protocolSteps: array_key_exists('protocol_steps', $data) && is_array($data['protocol_steps']) ? array_values($data['protocol_steps']) : null,
+            creationToken: $creationToken,
         );
     }
 
