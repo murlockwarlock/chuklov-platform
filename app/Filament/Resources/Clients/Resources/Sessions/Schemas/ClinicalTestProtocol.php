@@ -116,6 +116,8 @@ final class ClinicalTestProtocol
                 return [
                     'test_id' => $testId,
                     'test_label' => $label,
+                    'before_value_id' => $result['before_value_id'] ?? null,
+                    'after_value_id' => $result['after_value_id'] ?? null,
                     'structured' => $structured,
                     'review_again' => (bool) ($structured['review_again'] ?? false),
                     'previous_after' => $result['previous_after'] ?? null,
@@ -199,7 +201,7 @@ final class ClinicalTestProtocol
         }
 
         return [
-            Hidden::make('test_id')->dehydrated(),
+            Hidden::make('test_id')->dehydrated()->live(),
             Hidden::make('test_label')->dehydrated(),
             Hidden::make('review_again')->dehydrated(),
             Hidden::make('previous_after')->dehydrated(),
@@ -244,7 +246,7 @@ final class ClinicalTestProtocol
     private static function legacySchema(): array
     {
         return [
-            Hidden::make('test_id')->dehydrated(),
+            Hidden::make('test_id')->dehydrated()->live(),
             Hidden::make('test_label')->dehydrated(),
             Select::make('before_value_id')
                 ->label(__('До сеанса'))
