@@ -150,9 +150,9 @@ final class MedicalStage1BResultRecommendationTest extends TestCase
     public function test_effectiveness_counts_pain_change_test_deterioration_resolved_rows_and_unique_causes(): void
     {
         [$organization, $admin, $client, $specialist] = $this->fixture();
-        $resolved = $this->testDefinition($organization, 'resolved', 'Тест восстановленного движения');
-        $new = $this->testDefinition($organization, 'new', 'Тест нового отклонения');
-        $unchanged = $this->testDefinition($organization, 'unchanged', 'Тест сохраняющегося отклонения');
+        $resolved = $this->test_definition($organization, 'resolved', 'Тест восстановленного движения');
+        $new = $this->test_definition($organization, 'new', 'Тест нового отклонения');
+        $unchanged = $this->test_definition($organization, 'unchanged', 'Тест сохраняющегося отклонения');
         $causeOne = MedicalCauseDefinition::query()->create([
             'organization_id' => $organization->getKey(),
             'name' => 'Причина один',
