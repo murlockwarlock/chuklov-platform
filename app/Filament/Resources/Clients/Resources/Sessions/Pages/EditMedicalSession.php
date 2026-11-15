@@ -753,6 +753,15 @@ class EditMedicalSession extends LocalizedEditRecord
             return;
         }
 
+        $this->persistClinicalTestResults();
+    }
+
+    public function persistClinicalTestResults(): void
+    {
+        if (! $this->autosaveReady || $this->autosaveInProgress) {
+            return;
+        }
+
         $this->data = SessionForm::withStableLineageKeys($this->data);
         $this->autosaveInProgress = true;
         try {

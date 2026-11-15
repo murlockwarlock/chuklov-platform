@@ -160,7 +160,7 @@ final class ClinicalTestProtocol
                         ->required(),
                 ])
                 ->modalSubmitActionLabel(__('Добавить тест'))
-                ->action(function (array $data, Get $get, Set $set): void {
+                ->action(function (array $data, Get $get, Set $set, \Livewire\Component $livewire): void {
                     $testId = (int) ($data['test_id'] ?? 0);
                     if ($testId < 1) {
                         return;
@@ -171,6 +171,9 @@ final class ClinicalTestProtocol
                         return;
                     }
                     $set('test_results', self::stateFor([...$current, ['test_id' => $testId]]));
+                    if (method_exists($livewire, 'persistClinicalTestResults')) {
+                        $livewire->persistClinicalTestResults();
+                    }
                 }),
         ])->columnSpanFull();
     }
@@ -194,7 +197,7 @@ final class ClinicalTestProtocol
             ->modalHeading(__('Заполнить клинический тест'))
             ->modalSubmitActionLabel(__('Сохранить тест'))
             ->modalWidth('7xl')
-            ->action(function (array $data, array $arguments, Repeater $component): void {
+            ->action(function (array $data, array $arguments, Repeater $component, \Livewire\Component $livewire): void {
                 $itemKey = (string) ($arguments['item'] ?? '');
                 $state = $component->getRawState();
                 if (! is_array($state) || ! is_array($state[$itemKey] ?? null)) {
@@ -204,6 +207,9 @@ final class ClinicalTestProtocol
                 $state[$itemKey] = array_replace($state[$itemKey], $data);
                 $component->rawState($state);
                 $component->callAfterStateUpdated();
+                if (method_exists($livewire, 'persistClinicalTestResults')) {
+                    $livewire->persistClinicalTestResults();
+                }
                 Notification::make()->success()->title(__('Тест сохранён в сеансе'))->send();
             });
     }
