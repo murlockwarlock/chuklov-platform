@@ -219,9 +219,7 @@ final class MedicalClinicalCatalog
         return MedicalTestDefinition::query()
             ->where('organization_id', $organizationId)
             ->when($selectedTestIds === [], fn ($query) => $query->where('is_active', true))
-            ->when($selectedTestIds !== [], fn ($query) => $query->where(fn ($query) => $query
-                ->where('is_active', true)
-                ->orWhereIn('id', $selectedTestIds)))
+            ->when($selectedTestIds !== [], fn ($query) => $query->whereIn('id', $selectedTestIds))
             ->orderBy('section')
             ->orderBy('sort_order')
             ->orderBy('name')

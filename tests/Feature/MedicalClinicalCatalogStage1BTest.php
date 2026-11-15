@@ -2,10 +2,11 @@
 
 namespace Tests\Feature;
 
+use App\Models\User;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationRole;
 use App\Modules\Organizations\Domain\Models\Organization;
-use App\Models\User;
+use App\Filament\Resources\Clients\Resources\Sessions\Schemas\ClinicalTestProtocol;
 use App\Modules\Sessions\Application\MedicalClinicalCatalog;
 use App\Modules\Sessions\Application\MedicalStage1BCatalogPreset;
 use App\Modules\Sessions\Application\SaveMedicalClinicalCatalog;
@@ -39,6 +40,18 @@ final class MedicalClinicalCatalogStage1BTest extends TestCase
         self::assertSame([
             '1', '2', '3', '4', '5', '6', '7', '9', '25', '31.1',
         ], $catalog->defaultSessionSelection((int) $organization->getKey()));
+        self::assertSame([
+            'medical_test_001',
+            'medical_test_002',
+            'medical_test_003',
+            'medical_test_004',
+            'medical_test_005',
+            'medical_test_006',
+            'medical_test_007',
+            'medical_test_009',
+            'medical_test_025',
+            'medical_test_031',
+        ], collect(ClinicalTestProtocol::defaultState())->pluck('test_id')->map(static fn (mixed $id): string => MedicalTestDefinition::query()->findOrFail((int) $id)->key)->all());
         self::assertArrayHasKey(
             (int) MedicalTestDefinition::query()->where('organization_id', $organization->getKey())->where('key', 'medical_test_012')->value('id'),
             $catalog->specializedTestOptions((int) $organization->getKey(), 'lumbar'),

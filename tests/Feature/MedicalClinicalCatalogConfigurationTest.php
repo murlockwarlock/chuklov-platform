@@ -258,6 +258,16 @@ final class MedicalClinicalCatalogConfigurationTest extends TestCase
         self::assertCount(60, $rows);
         self::assertSame('Синтетический тест 1', $rows->first()->name);
 
+        $selectedRows = app(MedicalClinicalCatalog::class)->testProtocolRows((int) $organization->getKey(), [
+            (int) $tests[0][0]->getKey(),
+            (int) $tests[1][0]->getKey(),
+        ]);
+        self::assertCount(2, $selectedRows);
+        self::assertSame([
+            'Синтетический тест 1',
+            'Синтетический тест 2',
+        ], $selectedRows->pluck('name')->all());
+
         $counts = app(MedicalClinicalCatalog::class)->abnormalCounts((int) $organization->getKey(), [
             ['test_id' => $tests[0][0]->getKey(), 'before_value_id' => $tests[0][2]->getKey(), 'after_value_id' => $tests[0][1]->getKey()],
             ['test_id' => $tests[1][0]->getKey(), 'before_value_id' => $tests[1][1]->getKey(), 'after_value_id' => $tests[1][2]->getKey()],
