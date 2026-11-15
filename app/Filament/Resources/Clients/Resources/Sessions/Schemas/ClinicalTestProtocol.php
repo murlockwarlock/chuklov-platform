@@ -22,6 +22,7 @@ use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\Toggle;
 use Filament\Forms\Components\ToggleButtons;
 use Filament\Schemas\Components\Actions;
+use Filament\Schemas\Components\Group;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Components\Utilities\Set;
@@ -132,7 +133,7 @@ final class ClinicalTestProtocol
     {
         return Repeater::make('test_results')
             ->label(__('Клинические тесты'))
-            ->schema(fn (Get $get): array => self::testSchema($get))
+            ->schema(self::testSchema())
             ->default(self::defaultState())
             ->itemLabel(fn (array $state): string => self::itemLabel($state))
             ->addable(false)
@@ -193,7 +194,18 @@ final class ClinicalTestProtocol
     }
 
     /** @return list<\Filament\Schemas\Components\Component> */
-    private static function testSchema(Get $get): array
+    private static function testSchema(): array
+    {
+        return [
+            Hidden::make('test_id')->dehydrated()->live(),
+            Hidden::make('test_label')->dehydrated(),
+            Group::make(fn (Get $get): array => self::schemaForItem($get))
+                ->columnSpanFull(),
+        ];
+    }
+
+    /** @return list<\Filament\Schemas\Components\Component> */
+    private static function schemaForItem(Get $get): array
     {
         $test = self::definition((int) $get('test_id'));
         if (! $test instanceof MedicalTestDefinition || ! $test->type() instanceof MedicalTestType) {
@@ -246,8 +258,6 @@ final class ClinicalTestProtocol
     private static function legacySchema(): array
     {
         return [
-            Hidden::make('test_id')->dehydrated()->live(),
-            Hidden::make('test_label')->dehydrated(),
             Select::make('before_value_id')
                 ->label(__('До сеанса'))
                 ->options(fn (Get $get): array => app(MedicalClinicalCatalog::class)->valueOptionsForSelection(app(OrganizationContext::class)->id(), (int) $get('test_id'), [$get('before_value_id')]))
