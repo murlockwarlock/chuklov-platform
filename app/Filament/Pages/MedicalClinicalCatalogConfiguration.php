@@ -196,24 +196,7 @@ final class MedicalClinicalCatalogConfiguration extends LocalizedPage
                             ->default(false),
                         Toggle::make('is_active')->label(__('Активен'))->default(true),
                         Hidden::make('sort_order')->dehydrated(true),
-                        Repeater::make('values')
-                            ->label(__('Допустимые значения старого теста'))
-                            ->visible(fn (Get $get): bool => blank($get('test_type')))
-                            ->schema([
-                                Hidden::make('key')->default(fn (): string => 'value_'.Str::lower(Str::random(12))),
-                                TextInput::make('label')->label(__('Название значения'))->maxLength(255),
-                                Toggle::make('is_abnormal')->label(__('Считать нарушением')),
-                                Toggle::make('is_active')->label(__('Активно'))->default(true),
-                                Hidden::make('sort_order')->dehydrated(true),
-                            ])
-                            ->columns(2)
-                            ->defaultItems(0)
-                            ->reorderable()
-                            ->reorderableWithButtons()
-                            ->collapsible()
-                            ->collapsed()
-                            ->addActionLabel(__('Добавить значение'))
-                            ->columnSpanFull(),
+                        Hidden::make('values')->dehydrated(true),
                     ])
                     ->columns(2)
                     ->defaultItems(0)
@@ -558,12 +541,37 @@ final class MedicalClinicalCatalogConfiguration extends LocalizedPage
                 $storedByKey[(string) $storedTest['key']] = $storedTest;
             }
         }
+        $submittedKeys = collect($submitted)
+            ->filter(static fn (mixed $test): bool => is_array($test) && filled($test['key'] ?? null))
+            ->map(static fn (array $test): string => (string) $test['key'])
+            ->merge(array_keys($storedByKey))
+            ->unique()
+            ->values();
+        $persistedDefinitions = MedicalTestDefinition::query()
+            ->where('organization_id', app(OrganizationContext::class)->id())
+            ->whereIn('key', $submittedKeys->all())
+            ->with('values')
+            ->get()
+            ->keyBy('key');
         $byKey = [];
         foreach ($submitted as $test) {
             if (! is_array($test) || ! filled($test['key'] ?? null)) {
                 continue;
             }
             $key = (string) $test['key'];
+            if (blank($test['test_type'] ?? null) && (! is_array($test['values'] ?? null) || $test['values'] === [])) {
+                $persisted = $persistedDefinitions->get($key);
+                if ($persisted instanceof MedicalTestDefinition) {
+                    $test['values'] = $persisted->values->map(static fn (MedicalTestValue $value): array => [
+                        'key' => $value->key,
+                        'label' => $value->label,
+                        'value_type' => $value->value_type,
+                        'is_abnormal' => (bool) $value->is_abnormal,
+                        'is_active' => (bool) $value->is_active,
+                        'sort_order' => $value->sort_order,
+                    ])->all();
+                }
+            }
             $byKey[$key] = array_replace_recursive(
                 $storedByKey[$key] ?? [],
                 $test,
