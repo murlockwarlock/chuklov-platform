@@ -112,10 +112,13 @@ final class ClinicalTestProtocol
                     ? $result['structured']
                     : self::blankStructured($test);
                 $structured['review_again'] = (bool) ($result['review_again'] ?? $structured['review_again'] ?? false);
+                $configuration = self::sessionConfiguration($test);
 
                 return [
                     'test_id' => $testId,
                     'test_label' => $label,
+                    'test_type' => $type->value,
+                    'catalog_configuration' => $configuration,
                     'before_value_id' => $result['before_value_id'] ?? null,
                     'after_value_id' => $result['after_value_id'] ?? null,
                     'structured' => $structured,
@@ -132,7 +135,7 @@ final class ClinicalTestProtocol
     {
         return Repeater::make('test_results')
             ->label(__('Клинические тесты'))
-            ->schema(fn (Get $get): array => self::testSchema($get))
+            ->schema(self::testSchema())
             ->default(self::defaultState())
             ->itemLabel(fn (array $state): string => self::itemLabel($state))
             ->addable(false)
@@ -193,21 +196,19 @@ final class ClinicalTestProtocol
     }
 
     /** @return list<\Filament\Schemas\Components\Component> */
-    private static function testSchema(Get $get): array
+    private static function testSchema(): array
     {
-        $test = self::definition((int) $get('test_id'));
-        if (! $test instanceof MedicalTestDefinition || ! $test->type() instanceof MedicalTestType) {
-            return self::legacySchema();
-        }
-
         return [
             Hidden::make('test_id')->dehydrated()->live(),
             Hidden::make('test_label')->dehydrated(),
+            Hidden::make('test_type')->dehydrated(false),
+            Hidden::make('catalog_configuration')->dehydrated(false),
             Hidden::make('review_again')->dehydrated(),
             Hidden::make('previous_after')->dehydrated(),
             Placeholder::make('test_type_hint')
                 ->label(__('Тип ввода'))
-                ->content(fn (): string => self::typeLabel($test->type()))
+                ->content(fn (Get $get): string => self::typeLabel(self::typeFromString($get('test_type'))))
+                ->visible(fn (Get $get): bool => self::typeFromString($get('test_type')) instanceof MedicalTestType)
                 ->columnSpanFull(),
             Placeholder::make('review_again_hint')
                 ->hiddenLabel()
@@ -221,8 +222,9 @@ final class ClinicalTestProtocol
                 ->extraAttributes(['class' => 'text-gray-500'])
                 ->visible(fn (Get $get): bool => filled($get('previous_after')))
                 ->columnSpanFull(),
-            self::phaseGroup('before', __('До сеанса'), $test),
-            self::phaseGroup('after', __('После сеанса'), $test),
+            ...self::legacySchema(),
+            self::phaseGroup('before', __('До сеанса')),
+            self::phaseGroup('after', __('После сеанса')),
             Placeholder::make('typed_warnings')
                 ->label(__('Предупреждения'))
                 ->content(fn (Get $get): string => self::warnings($get))
@@ -233,12 +235,12 @@ final class ClinicalTestProtocol
                 ->label(__('Точка коррекции'))
                 ->rows(2)
                 ->maxLength(1000)
-                ->visible(fn (): bool => $test->type() === MedicalTestType::T4),
+                ->visible(fn (Get $get): bool => self::typeFromString($get('test_type')) === MedicalTestType::T4),
             ToggleButtons::make('violation_type')
                 ->label(__('Тип нарушения'))
-                ->options(fn (): array => self::simpleOptions(self::sessionConfiguration($test)['violation_types'] ?? []))
+                ->options(fn (Get $get): array => self::simpleOptions(self::catalogConfiguration($get)['violation_types'] ?? []))
                 ->inline()
-                ->visible(fn (): bool => is_array(self::sessionConfiguration($test)['violation_types'] ?? null) && self::sessionConfiguration($test)['violation_types'] !== []),
+                ->visible(fn (Get $get): bool => (self::catalogConfiguration($get)['violation_types'] ?? []) !== []),
         ];
     }
 
@@ -246,45 +248,43 @@ final class ClinicalTestProtocol
     private static function legacySchema(): array
     {
         return [
-            Hidden::make('test_id')->dehydrated()->live(),
-            Hidden::make('test_label')->dehydrated(),
             Select::make('before_value_id')
                 ->label(__('До сеанса'))
                 ->options(fn (Get $get): array => app(MedicalClinicalCatalog::class)->valueOptionsForSelection(app(OrganizationContext::class)->id(), (int) $get('test_id'), [$get('before_value_id')]))
                 ->placeholder(__('Не заполнено'))
                 ->nullable()
                 ->searchable()
-                ->live(),
+                ->live()
+                ->visible(fn (Get $get): bool => self::typeFromString($get('test_type')) === null),
             Select::make('after_value_id')
                 ->label(__('После сеанса'))
                 ->options(fn (Get $get): array => app(MedicalClinicalCatalog::class)->valueOptionsForSelection(app(OrganizationContext::class)->id(), (int) $get('test_id'), [$get('after_value_id')]))
                 ->placeholder(__('Не заполнено'))
                 ->nullable()
                 ->searchable()
-                ->live(),
+                ->live()
+                ->visible(fn (Get $get): bool => self::typeFromString($get('test_type')) === null),
             Select::make('cause_ids')
                 ->label(__('Причины нарушений'))
                 ->options(fn (Get $get): array => app(MedicalClinicalCatalog::class)->causeOptionsForSelection(app(OrganizationContext::class)->id(), (array) $get('cause_ids')))
                 ->multiple()
                 ->searchable()
-                ->live(),
+                ->live()
+                ->visible(fn (Get $get): bool => self::typeFromString($get('test_type')) === null),
         ];
     }
 
-    private static function phaseGroup(string $phase, string $label, MedicalTestDefinition $test): Section
+    private static function phaseGroup(string $phase, string $label): Section
     {
-        $configuration = self::sessionConfiguration($test);
-        $hasSubtests = is_array($configuration['subtests'] ?? null) && $configuration['subtests'] !== [];
-
         return Section::make($label)
             ->schema([
                 Hidden::make('allowed_cause_ids')->dehydrated(),
                 Hidden::make('priority_options')->dehydrated(),
-                self::sequenceField($configuration),
+                self::sequenceField(),
                 Placeholder::make('formula_preview')
                     ->label(__('Формула и нарушенные переходы'))
                     ->content(fn (Get $get): string => self::formulaDisplay($get('sequence')))
-                    ->visible(fn (): bool => $test->type() === MedicalTestType::T4)
+                    ->visible(fn (Get $get): bool => self::phaseType($get) === MedicalTestType::T4)
                     ->extraAttributes(['class' => 'font-semibold'])
                     ->columnSpanFull(),
                 ToggleButtons::make('index')
@@ -297,28 +297,28 @@ final class ClinicalTestProtocol
                             self::clearCauses($set);
                         }
                     })
-                    ->visible(fn (): bool => $test->type() === MedicalTestType::T2 && ($configuration['index_enabled'] ?? true)),
+                    ->visible(fn (Get $get): bool => self::phaseType($get) === MedicalTestType::T2 && (bool) (self::catalogConfiguration($get)['index_enabled'] ?? true)),
                 Select::make('cause_ids')
                     ->label(__('Причины метода'))
                     ->options(fn (Get $get): array => self::allowedCauseOptions($get))
                     ->multiple()
                     ->searchable()
                     ->live()
-                    ->visible(fn (Get $get): bool => $test->type() === MedicalTestType::T2 && ($configuration['index_enabled'] ?? true) && (int) ($get('index') ?? 0) > 0),
+                    ->visible(fn (Get $get): bool => self::phaseType($get) === MedicalTestType::T2 && (bool) (self::catalogConfiguration($get)['index_enabled'] ?? true) && (int) ($get('index') ?? 0) > 0),
                 Select::make('primary_cause_id')
                     ->label(__('Основная причина'))
                     ->options(fn (Get $get): array => self::allowedCauseOptions($get))
                     ->searchable()
                     ->nullable()
-                    ->visible(fn (Get $get): bool => $test->type() === MedicalTestType::T2 && ($configuration['index_enabled'] ?? true) && (int) ($get('index') ?? 0) > 0 && (array) $get('cause_ids') !== []),
-                TextInput::make('energy')->label(__('Энергетический потенциал'))->numeric()->minValue(0)->maxValue(1000)->visible(fn (): bool => $test->type() === MedicalTestType::T12 && ! $hasSubtests),
-                ToggleButtons::make('tor_direction')->label(__('Тор-поле'))->options(['R' => __('Вправо'), 'L' => __('Влево')])->inline()->visible(fn (): bool => $test->type() === MedicalTestType::T12 && ! $hasSubtests),
-                self::subtestsField($test),
-                self::rowsField($test),
-                self::feelingsField($configuration, (int) $test->getKey()),
-                Select::make('movement')->label(__('Движение провокации'))->options(self::movementOptions($configuration['movement_options'] ?? null))->nullable()->visible(fn (): bool => $test->type() === MedicalTestType::T6),
-                TextInput::make('pain_intensity')->label(__('Интенсивность боли'))->numeric()->minValue(0)->maxValue(10)->visible(fn (): bool => $test->type() === MedicalTestType::T6),
-                TextInput::make('tl_reduction_percent')->label(__('Снижение боли TL, %'))->numeric()->minValue(-100)->maxValue(100)->visible(fn (): bool => $test->type() === MedicalTestType::T6),
+                    ->visible(fn (Get $get): bool => self::phaseType($get) === MedicalTestType::T2 && (bool) (self::catalogConfiguration($get)['index_enabled'] ?? true) && (int) ($get('index') ?? 0) > 0 && (array) $get('cause_ids') !== []),
+                TextInput::make('energy')->label(__('Энергетический потенциал'))->numeric()->minValue(0)->maxValue(1000)->visible(fn (Get $get): bool => self::phaseType($get) === MedicalTestType::T12 && ! self::phaseHasSubtests($get)),
+                ToggleButtons::make('tor_direction')->label(__('Тор-поле'))->options(['R' => __('Вправо'), 'L' => __('Влево')])->inline()->visible(fn (Get $get): bool => self::phaseType($get) === MedicalTestType::T12 && ! self::phaseHasSubtests($get)),
+                self::subtestsField(),
+                self::rowsField(),
+                self::feelingsField(),
+                Select::make('movement')->label(__('Движение провокации'))->options(fn (Get $get): array => self::movementOptions(self::catalogConfiguration($get)['movement_options'] ?? null))->nullable()->visible(fn (Get $get): bool => self::phaseType($get) === MedicalTestType::T6),
+                TextInput::make('pain_intensity')->label(__('Интенсивность боли'))->numeric()->minValue(0)->maxValue(10)->visible(fn (Get $get): bool => self::phaseType($get) === MedicalTestType::T6),
+                TextInput::make('tl_reduction_percent')->label(__('Снижение боли TL, %'))->numeric()->minValue(-100)->maxValue(100)->visible(fn (Get $get): bool => self::phaseType($get) === MedicalTestType::T6),
                 Select::make('priority_chain')
                     ->label(__('Приоритетная цепь'))
                     ->options(fn (Get $get): array => self::priorityOptions($get('priority_options')))
@@ -328,33 +328,29 @@ final class ClinicalTestProtocol
             ])
             ->statePath('structured.'.$phase)
             ->collapsible()
+            ->visible(fn (Get $get): bool => self::typeFromGet($get) instanceof MedicalTestType)
             ->columnSpanFull();
     }
 
-    private static function sequenceField(array $configuration): Repeater
+    private static function sequenceField(): Repeater
     {
-        $hasSequence = collect(is_array($configuration['rows'] ?? null) ? $configuration['rows'] : [])
-            ->contains(static fn (mixed $row): bool => is_array($row) && is_array($row['choices'] ?? null));
-
         return Repeater::make('sequence')
             ->label(__('Формула по зонам'))
             ->schema([
-                ToggleButtons::make('value')->label(__('Вариант'))->options(self::sequenceOptions($configuration))->inline()->required(),
+                ToggleButtons::make('value')->label(__('Вариант'))->options(fn (Get $get): array => self::sequenceOptions(self::catalogConfiguration($get)))->inline()->required(),
             ])
             ->minItems(4)
             ->maxItems(4)
-            ->defaultItems($hasSequence ? 4 : 0)
-            ->addable($hasSequence)
-            ->deletable($hasSequence)
+            ->defaultItems(0)
+            ->addable(fn (Get $get): bool => self::phaseHasSequence($get))
+            ->deletable(fn (Get $get): bool => self::phaseHasSequence($get))
             ->reorderable(false)
-            ->visible($hasSequence)
+            ->visible(fn (Get $get): bool => self::phaseHasSequence($get))
             ->columnSpanFull();
     }
 
-    private static function subtestsField(MedicalTestDefinition $test): Repeater
+    private static function subtestsField(): Repeater
     {
-        $subtests = self::sessionConfiguration($test)['subtests'] ?? [];
-
         return Repeater::make('subtests')
             ->label(__('Подтесты'))
             ->schema([
@@ -395,9 +391,9 @@ final class ClinicalTestProtocol
                     ->visible(fn (Get $get): bool => $get('type') === MedicalTestType::T2->value && (bool) ($get('index_enabled') ?? true) && (int) ($get('index') ?? 0) > 0 && (array) $get('cause_ids') !== []),
                 TextInput::make('energy')->label(__('Энергетический потенциал'))->numeric()->minValue(0)->maxValue(1000)->visible(fn (Get $get): bool => (bool) $get('enabled') && (bool) $get('energy_enabled')),
                 ToggleButtons::make('tor_direction')->label(__('Тор-поле'))->options(['R' => __('Вправо'), 'L' => __('Влево')])->inline()->visible(fn (Get $get): bool => (bool) $get('enabled') && (bool) $get('tor_enabled')),
-                self::subtestRowsField('rows', 'Позиции', (int) $test->getKey())->visible(fn (Get $get): bool => (bool) $get('enabled')),
-                self::subtestRowsField('provoking_points', __('Провоцирующие точки'), (int) $test->getKey())->visible(fn (Get $get): bool => (bool) $get('enabled') && $get('type') === MedicalTestType::T6->value),
-                Repeater::make('feelings')->label(__('Чувства'))->schema(self::rowSchema())->addable(false)->deletable(false)->reorderable(false)->extraItemActions([self::addCauseAction((int) $test->getKey()), self::copyCausesAction()])->visible(fn (Get $get): bool => (bool) $get('enabled')),
+                self::subtestRowsField('rows')->visible(fn (Get $get): bool => (bool) $get('enabled')),
+                self::subtestRowsField('provoking_points', __('Провоцирующие точки'))->visible(fn (Get $get): bool => (bool) $get('enabled') && $get('type') === MedicalTestType::T6->value),
+                Repeater::make('feelings')->label(__('Чувства'))->schema(self::rowSchema())->addable(false)->deletable(false)->reorderable(false)->extraItemActions([self::addCauseAction(), self::copyCausesAction()])->visible(fn (Get $get): bool => (bool) $get('enabled')),
                 Select::make('method')
                     ->label(__('Метод'))
                     ->options(fn (Get $get): array => self::simpleOptions($get('method_options')))
@@ -410,7 +406,7 @@ final class ClinicalTestProtocol
             ->addable(false)
             ->deletable(false)
             ->reorderable(false)
-            ->visible($subtests !== [])
+            ->visible(fn (Get $get): bool => self::catalogConfiguration($get)['subtests'] !== [])
             ->columnSpanFull();
     }
 
@@ -426,23 +422,21 @@ final class ClinicalTestProtocol
             ->columnSpanFull();
     }
 
-    private static function rowsField(MedicalTestDefinition $test): Repeater
+    private static function rowsField(): Repeater
     {
-        $configuration = self::sessionConfiguration($test);
-
         return Repeater::make('rows')
             ->label(__('Позиции и стороны'))
             ->schema(self::rowSchema())
             ->addable(false)
             ->deletable(false)
             ->reorderable(false)
-            ->extraItemActions([self::addCauseAction((int) $test->getKey()), self::copyCausesAction()])
-            ->visible(fn (): bool => is_array($configuration['rows'] ?? null) && $configuration['rows'] !== [])
+            ->extraItemActions([self::addCauseAction(), self::copyCausesAction()])
+            ->visible(fn (Get $get): bool => self::catalogConfiguration($get)['rows'] !== [])
             ->columnSpanFull();
     }
 
     /** @param array<string, mixed> $configuration */
-    private static function feelingsField(array $configuration, ?int $testId = null): Repeater
+    private static function feelingsField(?int $testId = null): Repeater
     {
         return Repeater::make('feelings')
             ->label(__('Непроработанные чувства'))
@@ -450,7 +444,7 @@ final class ClinicalTestProtocol
             ->addable(false)
             ->deletable(false)
             ->reorderable(false)
-            ->visible(is_array($configuration['feelings'] ?? null) && $configuration['feelings'] !== [])
+            ->visible(fn (Get $get): bool => self::catalogConfiguration($get)['feelings'] !== [])
             ->extraItemActions([self::addCauseAction($testId), self::copyCausesAction()])
             ->columnSpanFull();
     }
@@ -748,6 +742,67 @@ final class ClinicalTestProtocol
         $configuration['feelings'] = $attachRowCauses($configuration['feelings'] ?? []);
 
         return $configuration;
+    }
+
+    /** @return array<string, mixed> */
+    private static function catalogConfiguration(Get $get): array
+    {
+        foreach ([
+            'catalog_configuration',
+            '../catalog_configuration',
+            '../../catalog_configuration',
+            '../../../catalog_configuration',
+            '../../../../catalog_configuration',
+            '../../../../../catalog_configuration',
+            '../../../../../../catalog_configuration',
+        ] as $path) {
+            $configuration = $get($path);
+            if (is_array($configuration) && ($configuration !== [])) {
+                return $configuration;
+            }
+        }
+
+        return [];
+    }
+
+    private static function typeFromGet(Get $get): ?MedicalTestType
+    {
+        foreach ([
+            'test_type',
+            '../test_type',
+            '../../test_type',
+            '../../../test_type',
+            '../../../../test_type',
+            '../../../../../test_type',
+            '../../../../../../test_type',
+        ] as $path) {
+            $type = self::typeFromString($get($path));
+            if ($type instanceof MedicalTestType) {
+                return $type;
+            }
+        }
+
+        return null;
+    }
+
+    private static function phaseType(Get $get): ?MedicalTestType
+    {
+        return self::typeFromGet($get);
+    }
+
+    private static function phaseHasSubtests(Get $get): bool
+    {
+        $subtests = self::catalogConfiguration($get)['subtests'] ?? [];
+
+        return is_array($subtests) && $subtests !== [];
+    }
+
+    private static function phaseHasSequence(Get $get): bool
+    {
+        $rows = self::catalogConfiguration($get)['rows'] ?? [];
+
+        return collect(is_array($rows) ? $rows : [])
+            ->contains(static fn (mixed $row): bool => is_array($row) && is_array($row['choices'] ?? null));
     }
 
     /** @return array<string, mixed> */
