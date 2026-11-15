@@ -166,9 +166,9 @@ final class MedicalStage1BResultRecommendationTest extends TestCase
             'sort_order' => 2,
         ]);
 
-        [$resolvedAbnormal, $resolvedNormal] = $this->testValues($organization, $resolved, 'abnormal', 'Отклонение', 'normal', 'Норма');
-        [$newNormal, $newAbnormal] = $this->testValues($organization, $new, 'normal', 'Норма', 'abnormal', 'Отклонение');
-        [$unchangedAbnormal, $unchangedAfter] = $this->testValues($organization, $unchanged, 'abnormal', 'Отклонение', 'still_abnormal', 'Отклонение сохраняется');
+        [$resolvedAbnormal, $resolvedNormal] = $this->test_values($organization, $resolved, 'abnormal', 'Отклонение', 'normal', 'Норма');
+        [$newNormal, $newAbnormal] = $this->test_values($organization, $new, 'normal', 'Норма', 'abnormal', 'Отклонение');
+        [$unchangedAbnormal, $unchangedAfter] = $this->test_values($organization, $unchanged, 'abnormal', 'Отклонение', 'still_abnormal', 'Отклонение сохраняется');
 
         $session = app(CreateSession::class)->handle($admin, $client, new CreateSessionCommand(
             specialistId: (int) $specialist->getKey(),
