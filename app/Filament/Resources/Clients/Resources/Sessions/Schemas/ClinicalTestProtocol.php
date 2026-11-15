@@ -22,7 +22,6 @@ use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\Toggle;
 use Filament\Forms\Components\ToggleButtons;
 use Filament\Schemas\Components\Actions;
-use Filament\Schemas\Components\Group;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Components\Utilities\Set;
@@ -142,6 +141,7 @@ final class ClinicalTestProtocol
             ->reorderableWithButtons()
             ->collapsible()
             ->collapsed()
+            ->extraItemActions([self::editTestAction()])
             ->columnSpanFull();
     }
 
@@ -175,6 +175,50 @@ final class ClinicalTestProtocol
         ])->columnSpanFull();
     }
 
+    private static function editTestAction(): Action
+    {
+        return Action::make('editMedicalTest')
+            ->label(__('Заполнить тест'))
+            ->tooltip(__('Открыть структурированные поля теста'))
+            ->icon('heroicon-o-pencil-square')
+            ->schema(function (array $arguments, Repeater $component): array {
+                $item = self::itemState($component, $arguments);
+                $test = self::definition((int) ($item['test_id'] ?? 0));
+                if (! $test instanceof MedicalTestDefinition || ! $test->type() instanceof MedicalTestType) {
+                    return self::legacySchema();
+                }
+
+                return self::typedSchema($test);
+            })
+            ->fillForm(fn (array $arguments, Repeater $component): array => self::itemState($component, $arguments))
+            ->modalHeading(__('Заполнить клинический тест'))
+            ->modalSubmitActionLabel(__('Сохранить тест'))
+            ->modalWidth('7xl')
+            ->action(function (array $data, array $arguments, Repeater $component): void {
+                $itemKey = (string) ($arguments['item'] ?? '');
+                $state = $component->getRawState();
+                if (! is_array($state) || ! is_array($state[$itemKey] ?? null)) {
+                    return;
+                }
+
+                $state[$itemKey] = array_replace($state[$itemKey], $data);
+                $component->rawState($state);
+                $component->callAfterStateUpdated();
+                Notification::make()->success()->title(__('Тест сохранён в сеансе'))->send();
+            });
+    }
+
+    /** @return array<string, mixed> */
+    private static function itemState(Repeater $component, array $arguments): array
+    {
+        $itemKey = (string) ($arguments['item'] ?? '');
+        if ($itemKey === '') {
+            return [];
+        }
+
+        return $component->getRawItemState($itemKey);
+    }
+
     public static function counters(): Placeholder
     {
         return Placeholder::make('test_counters')
@@ -199,22 +243,29 @@ final class ClinicalTestProtocol
         return [
             Hidden::make('test_id')->dehydrated()->live(),
             Hidden::make('test_label')->dehydrated(),
-            Group::make(fn (Get $get): array => self::schemaForItem($get))
+            Hidden::make('before_value_id')->dehydrated()->nullable(),
+            Hidden::make('after_value_id')->dehydrated()->nullable(),
+            Hidden::make('cause_ids')->dehydrated()->default([]),
+            Hidden::make('structured')->dehydrated()->nullable(),
+            Hidden::make('review_again')->dehydrated(),
+            Hidden::make('previous_after')->dehydrated(),
+            Placeholder::make('test_status')
+                ->label(__('Состояние теста'))
+                ->content(fn (Get $get): string => self::measurementSummary($get('structured'), (bool) $get('review_again')))
+                ->columnSpanFull(),
+            Placeholder::make('previous_after_hint')
+                ->label(__('После предыдущего сеанса'))
+                ->content(fn (Get $get): string => self::previousAfterLabel($get('previous_after')))
+                ->extraAttributes(['class' => 'text-gray-500'])
+                ->visible(fn (Get $get): bool => filled($get('previous_after')))
                 ->columnSpanFull(),
         ];
     }
 
     /** @return list<\Filament\Schemas\Components\Component> */
-    private static function schemaForItem(Get $get): array
+    private static function typedSchema(MedicalTestDefinition $test): array
     {
-        $test = self::definition((int) $get('test_id'));
-        if (! $test instanceof MedicalTestDefinition || ! $test->type() instanceof MedicalTestType) {
-            return self::legacySchema();
-        }
-
         return [
-            Hidden::make('test_id')->dehydrated()->live(),
-            Hidden::make('test_label')->dehydrated(),
             Hidden::make('review_again')->dehydrated(),
             Hidden::make('previous_after')->dehydrated(),
             Placeholder::make('test_type_hint')
@@ -258,6 +309,7 @@ final class ClinicalTestProtocol
     private static function legacySchema(): array
     {
         return [
+            Hidden::make('test_id')->dehydrated(false),
             Select::make('before_value_id')
                 ->label(__('До сеанса'))
                 ->options(fn (Get $get): array => app(MedicalClinicalCatalog::class)->valueOptionsForSelection(app(OrganizationContext::class)->id(), (int) $get('test_id'), [$get('before_value_id')]))
@@ -960,6 +1012,48 @@ final class ClinicalTestProtocol
         $label = trim((string) ($state['test_label'] ?? __('Тест')));
 
         return (bool) ($state['review_again'] ?? false) ? $label.' · '.__('перепроверить') : $label;
+    }
+
+    private static function measurementSummary(mixed $structured, bool $reviewAgain): string
+    {
+        if ($reviewAgain) {
+            return __('Перепроверить');
+        }
+        if (! is_array($structured)) {
+            return __('Не заполнено');
+        }
+
+        $phases = [];
+        foreach (['before' => 'До', 'after' => 'После'] as $phase => $label) {
+            if (self::containsMeasurement($structured[$phase] ?? null)) {
+                $phases[] = __($label.' заполнено');
+            }
+        }
+
+        return $phases === [] ? __('Не заполнено') : implode(' · ', $phases);
+    }
+
+    private static function containsMeasurement(mixed $value): bool
+    {
+        if (! is_array($value)) {
+            return false;
+        }
+
+        foreach (['index', 'tone', 'finding', 'answer', 'deviation', 'angle', 'pain_point', 'energy', 'tor_direction', 'method', 'movement', 'pain_intensity', 'tl_reduction_percent'] as $field) {
+            if (array_key_exists($field, $value) && $value[$field] !== null && $value[$field] !== '') {
+                return true;
+            }
+        }
+        if (($value['marked'] ?? false) === true) {
+            return true;
+        }
+        foreach (['sequence', 'rows', 'feelings', 'subtests', 'provoking_points'] as $field) {
+            if (is_array($value[$field] ?? null) && collect($value[$field])->contains(static fn (mixed $child): bool => self::containsMeasurement($child))) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static function previousAfterLabel(mixed $value): string
