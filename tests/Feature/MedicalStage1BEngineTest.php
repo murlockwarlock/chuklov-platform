@@ -61,6 +61,29 @@ final class MedicalStage1BEngineTest extends TestCase
         self::assertFalse($evaluation->failClosed);
     }
 
+    public function test_t2_and_t10_use_the_configured_index_rule(): void
+    {
+        $engine = new MedicalClinicalTypeEngine;
+
+        $methodComputer = $engine->evaluate(
+            MedicalTestType::T2,
+            ['rules' => ['index_violation' => [2]]],
+            ['index' => 1],
+            ['index' => 2],
+        );
+        $visualMap = $engine->evaluate(
+            MedicalTestType::T10,
+            ['rules' => ['index_violation' => [3]]],
+            ['rows' => [['key' => 'head', 'index' => 1]]],
+            ['rows' => [['key' => 'head', 'index' => 3]]],
+        );
+
+        self::assertSame(0, $methodComputer->beforeCount);
+        self::assertSame(1, $methodComputer->afterCount);
+        self::assertSame(0, $visualMap->beforeCount);
+        self::assertSame(1, $visualMap->afterCount);
+    }
+
     public function test_t4_counts_broken_transitions_using_the_catalog_rule(): void
     {
         $engine = new MedicalClinicalTypeEngine;

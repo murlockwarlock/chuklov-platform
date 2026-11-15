@@ -12,6 +12,7 @@ final class MedicalStage1BCatalogPreset
         return [
             self::definition(1, 'Myotatic reflex, shoulder flexor', MedicalTestType::T1, 'main', [
                 'rows' => self::testOneRows(),
+                'rules' => ['index_violation' => [1, 2, 3], 'zero_is_normal' => true],
                 'source_cause_slots' => 21,
             ]),
             self::definition(2, 'Visual body and posture diagnosis', MedicalTestType::T10, 'main', [
@@ -20,23 +21,28 @@ final class MedicalStage1BCatalogPreset
                     ...self::visualSideRows(),
                     ...self::rows(['Голова', 'Плечи', 'Лопатки', 'Позвоночник', 'Таз', 'Колени', 'Ахилловы сухожилия', 'Голень и стопа'], 'back'),
                 ],
+                'rules' => ['index_violation' => [1, 2, 3], 'zero_is_normal' => true],
                 'source_cause_slots' => 0,
             ]),
             self::definition(3, 'Shoulder standing test', MedicalTestType::T1, 'main', [
                 'rows' => self::sideRows('Плечо, рука в сторону', 'shoulder'),
+                'rules' => ['index_violation' => [1, 2, 3], 'zero_is_normal' => true],
                 'source_cause_slots' => 23,
             ]),
             self::definition(4, 'Scapula standing test', MedicalTestType::T1, 'main', [
                 'rows' => self::sideRows('Лопатка, руки под 90 градусов', 'scapula'),
+                'rules' => ['index_violation' => [1, 2, 3], 'zero_is_normal' => true],
                 'source_cause_slots' => 23,
             ]),
             self::definition(5, 'Gait pattern', MedicalTestType::T1, 'main', [
                 'rows' => self::rows(['Правая нога + правая рука', 'Правая нога + левая рука', 'Левая нога + левая рука', 'Левая нога + правая рука'], 'gait'),
+                'rules' => ['index_violation' => [1, 2, 3], 'zero_is_normal' => true],
                 'source_cause_slots' => 23,
             ]),
             self::definition(6, 'Push provocation tests', MedicalTestType::T1, 'main', [
                 'rows' => self::sideRowsForLabels(['Основание черепа', 'Плечи', 'Лопатки', 'Диафрагма', 'Таз', 'Тазобедренный сустав'], 'push'),
                 'tone_options' => ['normal', 'hypotone', 'hypertone'],
+                'rules' => ['index_violation' => [1, 2, 3], 'zero_is_normal' => true],
                 'source_cause_slots' => 0,
             ]),
             self::definition(7, 'Body palpation', MedicalTestType::T3, 'main', [
@@ -68,7 +74,7 @@ final class MedicalStage1BCatalogPreset
             ]),
             self::definition(10, 'Sitting traction test', MedicalTestType::T8, 'specialized', [
                 'rows' => self::rows(['ШОП', 'ГОП', 'ПОП'], 'department'),
-                'rules' => ['tone_violation' => ['hypotone', 'гипотонус'], 'warning_on_hypotone' => true],
+                'rules' => ['index_violation' => [1, 2, 3], 'zero_is_normal' => true, 'tone_violation' => ['hypotone', 'гипотонус'], 'warning_on_hypotone' => true],
                 'source_cause_slots' => 0,
             ]),
             self::definition(11, 'Neck method computer', MedicalTestType::T2, 'specialized', ['source_cause_slots' => 25]),
@@ -148,7 +154,7 @@ final class MedicalStage1BCatalogPreset
                     ['key' => '25.6', 'label' => 'Наклон поясницы', 'type' => MedicalTestType::T9->value, 'rows' => self::rows(['Наклон поясницы'], 'lumbar_bend', ['angle_enabled' => true])],
                     ['key' => '25.7', 'label' => 'Голеностоп', 'type' => MedicalTestType::T9->value, 'rows' => array_map(static fn (array $row): array => [...$row, 'angle_enabled' => false], self::sideRows('Голеностоп', 'ankle'))],
                 ],
-                'rules' => ['angle_min' => 0, 'angle_max' => 180, 'ankle_sides' => true, 'forward_bend_without_side' => true],
+                'rules' => ['index_violation' => [1, 2, 3], 'zero_is_normal' => true, 'angle_min' => 0, 'angle_max' => 180, 'ankle_sides' => true, 'forward_bend_without_side' => true],
                 'source_cause_slots' => 0,
             ]),
             self::definition(26, 'Vagus nerve', MedicalTestType::T11, 'specialized', [

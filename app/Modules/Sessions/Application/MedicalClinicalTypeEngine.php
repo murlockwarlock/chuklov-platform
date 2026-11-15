@@ -96,10 +96,12 @@ final class MedicalClinicalTypeEngine
      */
     private function methodComputer(array $configuration, ?array $before, ?array $after): MedicalClinicalEvaluation
     {
+        $rules = is_array($configuration['rules'] ?? null) ? $configuration['rules'] : [];
+        $violationIndexes = is_array($rules['index_violation'] ?? null) ? $rules['index_violation'] : [1, 2, 3];
         return $this->evaluationFromRows(
             $this->methodRows($before),
             $this->methodRows($after),
-            fn (array $row): bool => in_array((int) ($row['index'] ?? 0), [1, 2, 3], true)
+            fn (array $row): bool => in_array((int) ($row['index'] ?? 0), array_map('intval', $violationIndexes), true)
                 || ($row['marked'] ?? false) === true
                 || in_array(mb_strtolower(trim((string) ($row['answer'] ?? '')), 'UTF-8'), ['yes', 'да', 'true', '1'], true)
                 || $this->hasFinding($row),
@@ -256,11 +258,13 @@ final class MedicalClinicalTypeEngine
      */
     private function visualMap(array $configuration, ?array $before, ?array $after): MedicalClinicalEvaluation
     {
+        $rules = is_array($configuration['rules'] ?? null) ? $configuration['rules'] : [];
+        $violationIndexes = is_array($rules['index_violation'] ?? null) ? $rules['index_violation'] : [1, 2, 3];
         $rowsBefore = $this->findingRows($before);
         $rowsAfter = $this->findingRows($after);
-        $isViolation = static function (array $row): bool {
+        $isViolation = static function (array $row) use ($violationIndexes): bool {
             if (($row['index'] ?? null) !== null) {
-                return (int) $row['index'] > 0;
+                return in_array((int) $row['index'], array_map('intval', $violationIndexes), true);
             }
 
             return ($row['marked'] ?? false) === true

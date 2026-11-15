@@ -136,6 +136,29 @@ final class MedicalClinicalCatalogConfigurationTest extends TestCase
         self::assertTrue((bool) ($t1['rows'][0]['angle_enabled'] ?? false));
     }
 
+    public function test_catalog_save_preserves_stage1b_index_rules_without_detail_changes(): void
+    {
+        [$organization, $admin] = $this->fixture();
+        app(SaveMedicalClinicalCatalog::class)->handle(
+            $admin,
+            MedicalStage1BCatalogPreset::definitions(),
+            [],
+        );
+        $this->resolveFilamentContext($admin, $organization);
+
+        Livewire::actingAs($admin)
+            ->test(MedicalClinicalCatalogConfiguration::class)
+            ->call('save')
+            ->assertNotified('Каталог сохранён');
+
+        $test = MedicalTestDefinition::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('key', 'medical_test_001')
+            ->sole();
+
+        self::assertSame([1, 2, 3], $test->catalogConfiguration()['rules']['index_violation'] ?? null);
+    }
+
     public function test_manager_can_import_tests_causes_and_problem_tags_from_human_labelled_csv(): void
     {
         [$organization, $admin] = $this->fixture();
