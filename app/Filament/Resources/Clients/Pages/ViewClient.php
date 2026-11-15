@@ -43,6 +43,9 @@ use App\Modules\Referrals\Application\ReplaceReferralRelationship;
 use App\Modules\Referrals\Application\SearchActivePartnersForReferralAssignment;
 use App\Modules\Referrals\Domain\Enums\ReferralEstablishmentMethod;
 use App\Modules\Referrals\Domain\Models\ReferralRelationship;
+use App\Modules\Sessions\Application\ClearMedicalTest18SafetyMarker;
+use App\Modules\Sessions\Application\MedicalSafetyMarkerReader;
+use App\Modules\Sessions\Application\UpdateMedicalTest18SafetyMarkerText;
 use App\Modules\Tracker\Application\AssignTrackerTask;
 use App\Modules\Tracker\Application\EndTrackerAccess;
 use App\Modules\Tracker\Application\ExtendTrackerAccess;
@@ -171,6 +174,8 @@ class ViewClient extends LocalizedViewRecord
                         MedicalProfileForm::command($data),
                     );
                 }),
+            $this->editMedicalSafetyMarkerAction(),
+            $this->clearMedicalSafetyMarkerAction(),
             $this->recordFeedbackAction(),
             $this->activatePartnerAction(),
             $this->openPartnerWorkspaceAction(),
@@ -234,6 +239,76 @@ class ViewClient extends LocalizedViewRecord
                 ->button()
                 ->color('gray'),
         ];
+    }
+
+    private function editMedicalSafetyMarkerAction(): Action
+    {
+        return Action::make('editMedicalSafetyMarker')
+            ->label(__('Изменить текст маркера безопасности'))
+            ->icon('heroicon-o-exclamation-triangle')
+            ->color('danger')
+            ->schema([
+                Textarea::make('marker_text')
+                    ->label(__('Текст красного маркера'))
+                    ->rows(4)
+                    ->required()
+                    ->maxLength(2000),
+            ])
+            ->fillForm(fn (): array => ['marker_text' => $this->activeMedicalSafetyMarker()['marker_text'] ?? ''])
+            ->modalHeading(__('Текст маркера безопасности'))
+            ->modalSubmitActionLabel(__('Сохранить текст'))
+            ->authorize(fn (): bool => ClientResource::canEdit($this->clientRecord()))
+            ->visible(fn (): bool => ClientResource::canEdit($this->clientRecord()) && $this->activeMedicalSafetyMarker() !== null)
+            ->action(function (array $data): void {
+                app(UpdateMedicalTest18SafetyMarkerText::class)->handle(
+                    $this->actor(),
+                    $this->clientRecord(),
+                    (string) ($data['marker_text'] ?? ''),
+                );
+                Notification::make()->success()->title(__('Текст маркера обновлён'))->send();
+            });
+    }
+
+    private function clearMedicalSafetyMarkerAction(): Action
+    {
+        return Action::make('clearMedicalSafetyMarker')
+            ->label(__('Снять маркер безопасности'))
+            ->icon('heroicon-o-shield-check')
+            ->color('danger')
+            ->requiresConfirmation()
+            ->schema([
+                DateTimePicker::make('cleared_at')
+                    ->label(__('Дата и время снятия'))
+                    ->timezone(fn (): string => app(OrganizationContext::class)->defaultTimezone())
+                    ->seconds(false)
+                    ->required(),
+                Textarea::make('reason')
+                    ->label(__('Причина снятия'))
+                    ->rows(3)
+                    ->required()
+                    ->maxLength(2000),
+            ])
+            ->modalHeading(__('Снять маркер безопасности'))
+            ->modalSubmitActionLabel(__('Снять маркер'))
+            ->authorize(fn (): bool => ClientResource::canEdit($this->clientRecord()))
+            ->visible(fn (): bool => ClientResource::canEdit($this->clientRecord()) && $this->activeMedicalSafetyMarker() !== null)
+            ->action(function (array $data): void {
+                app(ClearMedicalTest18SafetyMarker::class)->handle(
+                    $this->actor(),
+                    $this->clientRecord(),
+                    (string) ($data['cleared_at'] ?? ''),
+                    (string) ($data['reason'] ?? ''),
+                );
+                Notification::make()->success()->title(__('Маркер безопасности снят'))->send();
+            });
+    }
+
+    /** @return array<string, mixed>|null */
+    private function activeMedicalSafetyMarker(): ?array
+    {
+        $marker = app(MedicalSafetyMarkerReader::class)->forClient($this->actor(), $this->clientRecord())[0] ?? null;
+
+        return is_array($marker) ? $marker : null;
     }
 
     private function marketingConsentActionGroup(): ActionGroup

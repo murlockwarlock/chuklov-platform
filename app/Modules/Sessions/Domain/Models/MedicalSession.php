@@ -48,6 +48,7 @@ use Illuminate\Support\Carbon;
  * @property-read Collection<int, MedicalSessionAttachment> $attachmentLinks
  * @property-read Collection<int, MedicalSessionTestResult> $testResults
  * @property-read Collection<int, MedicalSessionRootCause> $rootCauses
+ * @property-read Collection<int, MedicalSessionSafetyMarker> $safetyMarkers
  * @property-read Collection<int, MedicalCauseDefinition> $causes
  */
 #[Fillable(['pain', 'pain_vas', 'tests', 'observations', 'therapist_notes', 'subjective_feelings', 'visual_posture_diagnostics', 'root_cause_hypothesis', 'protocol', 'result', 'causes_manual_override', 'encryption_key_version', 'status', 'completed_at', 'edited_at'])]
@@ -111,6 +112,12 @@ class MedicalSession extends Model
         return $this->hasMany(MedicalSessionRootCause::class, 'medical_session_id')
             ->orderBy('sort_order')
             ->orderBy('id');
+    }
+
+    /** @return HasMany<MedicalSessionSafetyMarker, $this> */
+    public function safetyMarkers(): HasMany
+    {
+        return $this->hasMany(MedicalSessionSafetyMarker::class, 'medical_session_id');
     }
 
     /** @return BelongsToMany<MedicalCauseDefinition, $this> */

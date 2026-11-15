@@ -15,6 +15,7 @@ use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Sessions\Application\CreateSession;
 use App\Modules\Sessions\Application\DTOs\CreateSessionCommand;
 use App\Modules\Sessions\Application\MedicalSessionPainInitializer;
+use App\Modules\Sessions\Application\MedicalSessionTestHistoryReader;
 use App\Modules\Sessions\Domain\Models\MedicalSession;
 use Filament\Notifications\Notification;
 use Illuminate\Database\Eloquent\Model;
@@ -51,7 +52,7 @@ class CreateMedicalSession extends LocalizedCreateRecord
         $this->callHook('beforeFill');
 
         $data = [
-            'test_results' => ClinicalTestProtocol::stateFor([]),
+            'test_results' => ClinicalTestProtocol::defaultState(app(MedicalSessionTestHistoryReader::class)->previousForClient($this->parentClient())),
             'pains' => array_map(
                 static fn (array $pain): array => [
                     ...$pain,

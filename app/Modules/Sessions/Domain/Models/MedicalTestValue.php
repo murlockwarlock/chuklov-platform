@@ -6,7 +6,7 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-#[Fillable(['organization_id', 'medical_test_definition_id', 'key', 'label', 'is_abnormal', 'is_active', 'sort_order'])]
+#[Fillable(['organization_id', 'medical_test_definition_id', 'key', 'label', 'value_type', 'is_abnormal', 'is_active', 'sort_order'])]
 class MedicalTestValue extends Model
 {
     /** @return BelongsTo<MedicalTestDefinition, $this> */

@@ -8,7 +8,7 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-#[Fillable(['organization_id', 'client_id', 'medical_session_id', 'medical_cause_definition_id', 'free_text', 'encryption_key_version', 'sort_order'])]
+#[Fillable(['organization_id', 'client_id', 'medical_session_id', 'medical_cause_definition_id', 'free_text', 'is_primary', 'influences', 'encryption_key_version', 'sort_order'])]
 class MedicalSessionRootCause extends Model
 {
     /** @return BelongsTo<Organization, $this> */
@@ -37,6 +37,6 @@ class MedicalSessionRootCause extends Model
 
     protected function casts(): array
     {
-        return ['encryption_key_version' => 'integer', 'sort_order' => 'integer'];
+        return ['encryption_key_version' => 'integer', 'is_primary' => 'boolean', 'sort_order' => 'integer'];
     }
 }

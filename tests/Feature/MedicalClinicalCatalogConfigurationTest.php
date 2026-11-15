@@ -11,6 +11,8 @@ use App\Modules\Organizations\Domain\Enums\OrganizationRole;
 use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Sessions\Application\ImportMedicalClinicalCatalogCsv;
 use App\Modules\Sessions\Application\MedicalClinicalCatalog;
+use App\Modules\Sessions\Application\MedicalStage1BCatalogPreset;
+use App\Modules\Sessions\Application\SaveMedicalClinicalCatalog;
 use App\Modules\Sessions\Domain\Models\MedicalCauseDefinition;
 use App\Modules\Sessions\Domain\Models\MedicalTestDefinition;
 use App\Modules\Sessions\Domain\Models\MedicalTestValue;
@@ -79,6 +81,82 @@ final class MedicalClinicalCatalogConfigurationTest extends TestCase
         self::assertTrue((bool) ($abnormal['is_abnormal'] ?? false));
         self::assertSame('Синтетическая причина', $causes[0]['name'] ?? null);
         self::assertSame('Синтетическая категория', $problemTags[0]['name'] ?? null);
+    }
+
+    public function test_manager_can_prepare_the_stage_1b_preset_without_removing_existing_tests(): void
+    {
+        [$organization, $admin] = $this->fixture();
+        $legacy = MedicalTestDefinition::query()->create([
+            'organization_id' => $organization->getKey(),
+            'key' => 'legacy_test',
+            'name' => 'Существующий тест',
+            'is_active' => true,
+            'sort_order' => 1,
+        ]);
+        MedicalTestValue::query()->create([
+            'organization_id' => $organization->getKey(),
+            'medical_test_definition_id' => $legacy->getKey(),
+            'key' => 'normal',
+            'label' => 'Норма',
+            'is_abnormal' => false,
+            'is_active' => true,
+            'sort_order' => 1,
+        ]);
+        $this->resolveFilamentContext($admin, $organization);
+
+        Livewire::actingAs($admin)
+            ->test(MedicalClinicalCatalogConfiguration::class)
+            ->assertActionExists('prepareStage1BCatalog')
+            ->callAction('prepareStage1BCatalog');
+
+        self::assertCount(31, MedicalTestDefinition::query()->where('organization_id', $organization->getKey())->whereNotNull('test_type')->get());
+        self::assertTrue(MedicalTestDefinition::query()->where('organization_id', $organization->getKey())->where('key', 'legacy_test')->where('is_active', true)->exists());
+        self::assertSame([
+            '1', '2', '3', '4', '5', '6', '7', '9', '25', '31.1',
+        ], app(MedicalClinicalCatalog::class)->defaultSessionSelection((int) $organization->getKey()));
+    }
+
+    public function test_catalog_form_does_not_turn_omitted_row_defaults_off(): void
+    {
+        [$organization, $admin] = $this->fixture();
+        app(SaveMedicalClinicalCatalog::class)->handle(
+            $admin,
+            MedicalStage1BCatalogPreset::definitions(),
+            [],
+        );
+        $this->resolveFilamentContext($admin, $organization);
+
+        $component = Livewire::actingAs($admin)->test(MedicalClinicalCatalogConfiguration::class);
+        $tests = array_values($component->instance()->data['tests'] ?? []);
+        $t1 = collect($tests)->firstWhere('key', 'medical_test_001');
+        $t5 = collect($tests)->firstWhere('key', 'medical_test_009');
+
+        self::assertTrue((bool) ($t1['rows'][0]['index_enabled'] ?? false));
+        self::assertFalse((bool) ($t5['subtests'][0]['rows'][0]['index_enabled'] ?? true));
+        self::assertTrue((bool) ($t1['rows'][0]['angle_enabled'] ?? false));
+    }
+
+    public function test_catalog_save_preserves_stage1b_index_rules_without_detail_changes(): void
+    {
+        [$organization, $admin] = $this->fixture();
+        app(SaveMedicalClinicalCatalog::class)->handle(
+            $admin,
+            MedicalStage1BCatalogPreset::definitions(),
+            [],
+        );
+        $this->resolveFilamentContext($admin, $organization);
+
+        Livewire::actingAs($admin)
+            ->test(MedicalClinicalCatalogConfiguration::class)
+            ->call('save')
+            ->assertNotified('Каталог сохранён');
+
+        $test = MedicalTestDefinition::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('key', 'medical_test_001')
+            ->sole();
+
+        self::assertSame([1, 2, 3], $test->catalogConfiguration()['rules']['index_violation'] ?? null);
     }
 
     public function test_manager_can_import_tests_causes_and_problem_tags_from_human_labelled_csv(): void
@@ -156,6 +234,35 @@ final class MedicalClinicalCatalogConfigurationTest extends TestCase
         self::assertFalse(collect($data['problem_tags'] ?? [])->contains('name', 'Архивная категория'));
     }
 
+    public function test_manager_can_show_and_reactivate_archived_causes_from_the_catalog(): void
+    {
+        [$organization, $admin] = $this->fixture();
+        MedicalCauseDefinition::query()->create([
+            'organization_id' => $organization->getKey(),
+            'name' => 'Архивная причина для восстановления',
+            'is_active' => false,
+            'sort_order' => 1,
+        ]);
+        $this->resolveFilamentContext($admin, $organization);
+
+        $component = Livewire::actingAs($admin)->test(MedicalClinicalCatalogConfiguration::class);
+        self::assertFalse(collect($component->instance()->data['causes'] ?? [])->contains('name', 'Архивная причина для восстановления'));
+
+        $component->callAction('toggleArchivedCauses');
+        self::assertTrue(collect($component->instance()->data['causes'] ?? [])->contains('name', 'Архивная причина для восстановления'));
+
+        $component->fillForm([
+            'causes' => [[
+                'id' => MedicalCauseDefinition::query()->where('organization_id', $organization->getKey())->value('id'),
+                'name' => 'Архивная причина для восстановления',
+                'is_active' => true,
+                'sort_order' => 1,
+            ]],
+        ])->call('save')->assertNotified('Каталог сохранён');
+
+        self::assertTrue(MedicalCauseDefinition::query()->where('organization_id', $organization->getKey())->where('name', 'Архивная причина для восстановления')->value('is_active'));
+    }
+
     public function test_manager_can_import_the_same_catalog_contract_from_xlsx(): void
     {
         [$organization, $admin] = $this->fixture();
@@ -224,6 +331,16 @@ final class MedicalClinicalCatalogConfigurationTest extends TestCase
         $rows = app(MedicalClinicalCatalog::class)->testProtocolRows((int) $organization->getKey());
         self::assertCount(60, $rows);
         self::assertSame('Синтетический тест 1', $rows->first()->name);
+
+        $selectedRows = app(MedicalClinicalCatalog::class)->testProtocolRows((int) $organization->getKey(), [
+            (int) $tests[0][0]->getKey(),
+            (int) $tests[1][0]->getKey(),
+        ]);
+        self::assertCount(2, $selectedRows);
+        self::assertSame([
+            'Синтетический тест 1',
+            'Синтетический тест 2',
+        ], $selectedRows->pluck('name')->all());
 
         $counts = app(MedicalClinicalCatalog::class)->abnormalCounts((int) $organization->getKey(), [
             ['test_id' => $tests[0][0]->getKey(), 'before_value_id' => $tests[0][2]->getKey(), 'after_value_id' => $tests[0][1]->getKey()],

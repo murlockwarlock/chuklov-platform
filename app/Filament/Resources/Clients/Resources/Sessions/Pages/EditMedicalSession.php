@@ -23,13 +23,22 @@ use App\Modules\MedicalProfiles\Application\MedicalFrequencyPeriodCatalog;
 use App\Modules\MedicalProfiles\Application\MedicalProblemTagCatalog;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Scheduling\Domain\Models\Booking;
+use App\Modules\Sessions\Application\AggregateMedicalSessionCauses;
+use App\Modules\Sessions\Application\CalculateSessionEffectiveness;
+use App\Modules\Sessions\Application\CompleteSession;
 use App\Modules\Sessions\Application\DTOs\MedicalSessionData;
 use App\Modules\Sessions\Application\DTOs\UpdateSessionCommand;
-use App\Modules\Sessions\Application\CompleteSession;
+use App\Modules\Sessions\Application\GenerateSessionResult;
 use App\Modules\Sessions\Application\GetSession;
 use App\Modules\Sessions\Application\LinkMedicalSessionBooking;
+use App\Modules\Sessions\Application\ListClientSessionRecommendations;
 use App\Modules\Sessions\Application\MedicalClinicalCatalog;
+use App\Modules\Sessions\Application\MedicalSafetyMarkerReader;
+use App\Modules\Sessions\Application\MedicalSessionFieldLimits;
 use App\Modules\Sessions\Application\MedicalSessionSnapshotHasher;
+use App\Modules\Sessions\Application\MedicalSessionTestHistoryReader;
+use App\Modules\Sessions\Application\SaveSessionRecommendationDraft;
+use App\Modules\Sessions\Application\SendSessionRecommendation;
 use App\Modules\Sessions\Application\UpdateSession;
 use App\Modules\Sessions\Application\UploadSessionPhoto;
 use App\Modules\Sessions\Domain\Enums\MedicalSessionAttachmentGallery;
@@ -46,6 +55,7 @@ use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Slider;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
+use Filament\Forms\Components\Toggle;
 use Filament\Notifications\Notification;
 use Filament\Schemas\Components\Actions;
 use Filament\Schemas\Components\Section;
@@ -147,11 +157,9 @@ class EditMedicalSession extends LocalizedEditRecord
                     }
                 })
                 ->visible(fn (): bool => MedicalSessionResource::canEdit($this->getRecord()) && $this->session()->booking_id !== null),
-            Action::make('fillResult')
-                ->label(__('Заполнить с ИИ'))
-                ->icon('heroicon-o-sparkles')
-                ->disabled()
-                ->tooltip(__('ИИ подключается на этапе 2.')),
+            $this->collectResultAction(),
+            $this->editRecommendationAction(),
+            $this->sendRecommendationAction(),
             Action::make('completeSession')
                 ->label(__('Завершить сеанс'))
                 ->icon('heroicon-o-check-circle')
@@ -179,6 +187,197 @@ class EditMedicalSession extends LocalizedEditRecord
         ];
     }
 
+    private function collectResultAction(bool $inline = false): Action
+    {
+        return Action::make($inline ? 'collectResultInline' : 'collectResult')
+            ->label(__('Собрать результат'))
+            ->icon('heroicon-o-arrow-path')
+            ->color('primary')
+            ->requiresConfirmation()
+            ->modalHeading(__('Собрать результат из данных сеанса'))
+            ->modalDescription(__('Будет сохранён детерминированный текст из жалоб, ощущений, осанки и результатов тестов.'))
+            ->authorize(fn (): bool => MedicalSessionResource::canEdit($this->getRecord()))
+            ->visible(fn (): bool => MedicalSessionResource::canEdit($this->getRecord()))
+            ->action(function (Action $action): void {
+                try {
+                    $this->save(false, false);
+                    $result = app(GenerateSessionResult::class)->collect(
+                        $this->actor(),
+                        $this->session(),
+                        $this->parentClient(),
+                        confirmOverwrite: true,
+                    );
+                    $this->data['result'] = $result->summary;
+                    Notification::make()->success()->title(__('Результат собран'))->send();
+                } catch (ValidationException $exception) {
+                    $mapped = FormValidationFeedback::forAction($exception, $action);
+                    FormValidationFeedback::notifyValidation($mapped, __('Результат не собран.'));
+                    throw $mapped;
+                } catch (Throwable $exception) {
+                    $mapped = FormValidationFeedback::unexpectedForAction($exception, $action);
+                    FormValidationFeedback::notifyValidation($mapped);
+                    throw $mapped;
+                }
+            });
+    }
+
+    private function collectResultFormAction(): Action
+    {
+        return $this->collectResultAction(true);
+    }
+
+    private function editRecommendationAction(bool $inline = false): Action
+    {
+        return Action::make($inline ? 'editRecommendationInline' : 'editRecommendation')
+            ->label(__('Подготовить рекомендацию'))
+            ->icon('heroicon-o-pencil-square')
+            ->schema([
+                Textarea::make('draft')
+                    ->label(__('Текст для клиента'))
+                    ->rows(8)
+                    ->required()
+                    ->maxLength(MedicalSessionFieldLimits::MaxTextLength),
+            ])
+            ->fillForm(fn (): array => ['draft' => $this->currentRecommendationDraft()])
+            ->modalHeading(__('Рекомендация специалиста'))
+            ->modalSubmitActionLabel(__('Сохранить рекомендацию'))
+            ->authorize(fn (): bool => MedicalSessionResource::canEdit($this->getRecord()))
+            ->visible(fn (): bool => MedicalSessionResource::canEdit($this->getRecord()))
+            ->action(function (Action $action, array $data): void {
+                try {
+                    app(SaveSessionRecommendationDraft::class)->handle(
+                        $this->actor(),
+                        $this->session(),
+                        $this->parentClient(),
+                        (string) ($data['draft'] ?? ''),
+                    );
+                    Notification::make()->success()->title(__('Рекомендация сохранена'))->send();
+                } catch (ValidationException $exception) {
+                    $mapped = FormValidationFeedback::forAction($exception, $action);
+                    FormValidationFeedback::notifyValidation($mapped, __('Рекомендация не сохранена.'));
+                    throw $mapped;
+                } catch (Throwable $exception) {
+                    $mapped = FormValidationFeedback::unexpectedForAction($exception, $action);
+                    FormValidationFeedback::notifyValidation($mapped);
+                    throw $mapped;
+                }
+            });
+    }
+
+    private function sendRecommendationAction(bool $inline = false): Action
+    {
+        return Action::make($inline ? 'sendRecommendationInline' : 'sendRecommendation')
+            ->label(__('Одобрить и отправить'))
+            ->icon('heroicon-o-paper-airplane')
+            ->color('success')
+            ->requiresConfirmation()
+            ->modalHeading(__('Одобрить и отправить рекомендацию'))
+            ->modalDescription(__('Сообщение будет отправлено один раз для текущей версии текста.'))
+            ->authorize(fn (): bool => MedicalSessionResource::canEdit($this->getRecord()))
+            ->visible(fn (): bool => MedicalSessionResource::canEdit($this->getRecord()) && $this->currentRecommendationDraft() !== null)
+            ->action(function (Action $action): void {
+                try {
+                    $delivery = app(SendSessionRecommendation::class)->handle(
+                        $this->actor(),
+                        $this->session(),
+                        $this->parentClient(),
+                    );
+                    if ($delivery->isDelivered()) {
+                        Notification::make()->success()->title(__('Рекомендация отправлена'))->send();
+                    } else {
+                        Notification::make()
+                            ->warning()
+                            ->title(__('Рекомендация не подтверждена как доставленная'))
+                            ->body($this->recommendationDeliveryLabel($delivery->status))
+                            ->send();
+                    }
+                } catch (ValidationException $exception) {
+                    $mapped = FormValidationFeedback::forAction($exception, $action);
+                    FormValidationFeedback::notifyValidation($mapped, __('Рекомендация не отправлена.'));
+                    throw $mapped;
+                } catch (Throwable $exception) {
+                    $mapped = FormValidationFeedback::unexpectedForAction($exception, $action);
+                    FormValidationFeedback::notifyValidation($mapped);
+                    throw $mapped;
+                }
+            });
+    }
+
+    private function currentRecommendationDraft(): ?string
+    {
+        foreach (app(ListClientSessionRecommendations::class)->handle($this->actor(), $this->parentClient()) as $recommendation) {
+            if ($recommendation->sessionId === (int) $this->session()->getKey()) {
+                return $recommendation->draft;
+            }
+        }
+
+        return null;
+    }
+
+    private function recommendationStatus(): string
+    {
+        $current = collect(app(ListClientSessionRecommendations::class)->handle($this->actor(), $this->parentClient()))
+            ->first(fn ($recommendation): bool => $recommendation->sessionId === (int) $this->session()->getKey());
+        if ($current === null) {
+            return __('Текст рекомендации ещё не сохранён.');
+        }
+        $delivery = collect($current->deliveries)->last();
+        if ($delivery === null) {
+            return __('Текст сохранён, но ещё не одобрен и не отправлен.');
+        }
+
+        $date = $delivery->deliveredAt ?? $delivery->failedAt ?? $delivery->claimedAt;
+
+        return $this->recommendationDeliveryLabel($delivery->status, $date?->setTimezone(app(OrganizationContext::class)->defaultTimezone())->format('d.m.Y H:i'));
+    }
+
+    private function recommendationDeliveryLabel(string $status, ?string $date = null): string
+    {
+        $label = match ($status) {
+            'delivered' => __('Доставлено'),
+            'unknown' => __('Исход доставки неизвестен'),
+            'unavailable' => __('Канал доставки недоступен'),
+            'suppressed' => __('Отправка подавлена'),
+            'failed' => __('Ошибка доставки'),
+            'claimed' => __('Отправка выполняется'),
+            default => __('Отправка не подтверждена'),
+        };
+
+        return $date === null ? $label : $label.' · '.__('дата: :date', ['date' => $date]);
+    }
+
+    private function effectivenessSummary(): string
+    {
+        $data = app(GetSession::class)->handle($this->actor(), $this->session(), $this->parentClient());
+        if ($data === null) {
+            return __('Данные эффективности недоступны.');
+        }
+        $effectiveness = app(CalculateSessionEffectiveness::class)->handle($data);
+        $pain = $effectiveness->averagePainReductionPercentage === null
+            ? __('нет данных')
+            : number_format($effectiveness->averagePainReductionPercentage, 2, ',', ' ').'%';
+
+        return implode(' · ', [
+            __('Изменение боли: :value', ['value' => $pain]),
+            __('Полностью снятых жалоб: :count', ['count' => $effectiveness->fullyResolvedComplaints]),
+            __('До: :count', ['count' => $effectiveness->violationsBefore]),
+            __('После: :count', ['count' => $effectiveness->violationsAfter]),
+            __('Устранено: :count', ['count' => $effectiveness->resolvedTests]),
+            __('Новых: :count', ['count' => $effectiveness->newViolations]),
+            __('Уникальных причин: :count', ['count' => $effectiveness->uniqueCauseCount]),
+        ]);
+    }
+
+    private function sessionSafetyMarkerText(): ?string
+    {
+        $marker = app(MedicalSafetyMarkerReader::class)
+            ->forSession($this->actor(), $this->session(), $this->parentClient())[0] ?? null;
+
+        return is_array($marker) && is_string($marker['marker_text'] ?? null)
+            ? $marker['marker_text']
+            : null;
+    }
+
     public function form(Schema $schema): Schema
     {
         return $schema
@@ -199,6 +398,16 @@ class EditMedicalSession extends LocalizedEditRecord
                 Placeholder::make('session_lifecycle')
                     ->hiddenLabel()
                     ->content(fn (): string => $this->lifecycleSummary())
+                    ->columnSpanFull(),
+                Section::make(__('Маркер безопасности'))
+                    ->schema([
+                        Placeholder::make('medical_safety_marker')
+                            ->hiddenLabel()
+                            ->content(fn (): string => (string) ($this->sessionSafetyMarkerText() ?? ''))
+                            ->extraAttributes(['class' => 'rounded-lg border border-danger-300 bg-danger-50 p-4 font-semibold text-danger-700'])
+                            ->columnSpanFull(),
+                    ])
+                    ->visible(fn (): bool => $this->sessionSafetyMarkerText() !== null)
                     ->columnSpanFull(),
                 Section::make(__('1. Жалобы (боли)'))
                     ->schema([
@@ -238,7 +447,7 @@ class EditMedicalSession extends LocalizedEditRecord
                                             : 'text-amber-700',
                                     ])
                                     ->visible(fn (Get $get): bool => $get('state') === 'resolved' || $get('state') === 'returned' || (bool) $get('needs_confirmation')),
-                                \Filament\Forms\Components\Toggle::make('needs_confirmation')
+                                Toggle::make('needs_confirmation')
                                     ->label(__('Из анкеты, уточнить'))
                                     ->helperText(__('Снимите отметку после подтверждения или исправления жалобы.'))
                                     ->default(false)
@@ -360,6 +569,7 @@ class EditMedicalSession extends LocalizedEditRecord
                                 ->visible(fn (): bool => app(MedicalClinicalCatalog::class)->testOptions(app(OrganizationContext::class)->id()) === [] && MedicalClinicalCatalogConfiguration::canAccess()),
                         ])->columnSpanFull(),
                         ClinicalTestProtocol::counters(),
+                        ClinicalTestProtocol::addTest(),
                         ClinicalTestProtocol::field(),
                         Hidden::make('causes_manual_override')->default(false)->dehydrated(),
                         Placeholder::make('derived_causes')
@@ -404,11 +614,19 @@ class EditMedicalSession extends LocalizedEditRecord
                             ->label(__('Первопричина нарушений'))
                             ->schema([
                                 Select::make('cause_id')->label(__('Причина из сеанса'))->options(fn (Get $get): array => $this->rootCauseOptions($get))->searchable()->nullable()->live(),
-                                Textarea::make('free_text')->label(__('Дополнительное описание'))->rows(2)->maxLength(10000)->live(onBlur: true),
+                                Toggle::make('is_primary')->label(__('Главная причина'))->default(false)->live(),
+                                Select::make('influences')
+                                    ->label(__('На это влияет'))
+                                    ->options(fn (Get $get): array => $this->rootCauseOptions($get))
+                                    ->multiple()
+                                    ->searchable()
+                                    ->nullable()
+                                    ->live(),
+                                Textarea::make('free_text')->label(__('Дополнительное описание'))->rows(2)->maxLength(MedicalSessionFieldLimits::MaxTextLength)->live(onBlur: true),
                             ])
                             ->columns(2)
                             ->defaultItems(0)
-                            ->maxItems(2)
+                            ->maxItems(20)
                             ->reorderable()
                             ->addActionLabel(__('Добавить первопричину'))
                             ->columnSpanFull(),
@@ -478,14 +696,10 @@ class EditMedicalSession extends LocalizedEditRecord
                             ->rows(4)
                             ->placeholder(__('Итог, который специалист вводит вручную'))
                             ->live(onBlur: true)
-                            ->hintAction(Action::make('fillResult')
-                                ->label(__('Заполнить с ИИ'))
-                                ->icon('heroicon-o-sparkles')
-                                ->disabled()
-                                ->tooltip(__('ИИ подключается на этапе 2.'))),
+                            ->hintAction($this->collectResultFormAction()),
                         Placeholder::make('result_ai_version')
-                            ->label(__('Версия ИИ'))
-                            ->content(__('Не подключена. ИИ будет доступен на этапе 2.'))
+                            ->label(__('Сбор результата'))
+                            ->content(__('Собирается только из сохранённых данных сеанса, без ИИ. Ручной текст заменяется только после явного подтверждения.'))
                             ->columnSpanFull(),
                     ])->collapsible()->columnSpanFull(),
                 Section::make(__('8. Заметки терапевта'))
@@ -494,17 +708,19 @@ class EditMedicalSession extends LocalizedEditRecord
                     ])->collapsible()->columnSpanFull(),
                 Section::make(__('9. Эффективность проведённого сеанса'))
                     ->schema([
-                        Placeholder::make('effectiveness_stage1b')->hiddenLabel()->content(__('Расчёты эффективности подключаются в этапе 1B. Данные для них сохраняются в жалобах и результатах выше.')),
+                        Placeholder::make('effectiveness_stage1b')
+                            ->hiddenLabel()
+                            ->content(fn (): string => $this->effectivenessSummary())
+                            ->columnSpanFull(),
                     ])->collapsible()->columnSpanFull(),
                 Section::make(__('10. Рекомендации эксперта'))
                     ->schema([
-                        Placeholder::make('recommendations_stage1b')->label(__('Версия ИИ'))->content(__('Рекомендации и отправка клиенту подключаются в этапе 1B; ИИ — на этапе 2.')),
+                        Placeholder::make('recommendations_stage1b')
+                            ->label(__('Состояние отправки'))
+                            ->content(fn (): string => $this->recommendationStatus()),
                         Actions::make([
-                            Action::make('fillRecommendations')
-                                ->label(__('Заполнить с ИИ'))
-                                ->icon('heroicon-o-sparkles')
-                                ->disabled()
-                                ->tooltip(__('ИИ подключается на этапе 2.')),
+                            $this->editRecommendationAction(true),
+                            $this->sendRecommendationAction(true),
                         ]),
                     ])->collapsible()->columnSpanFull(),
                 Section::make(__('Фото до / после'))
@@ -533,7 +749,16 @@ class EditMedicalSession extends LocalizedEditRecord
 
     public function updatedData(mixed $value, string $key): void
     {
-        if (! $this->autosaveReady || $this->autosaveInProgress || $key === 'expected_snapshot') {
+        if (! $this->autosaveReady || $this->autosaveInProgress || $key === 'expected_snapshot' || str_starts_with($key, 'test_results')) {
+            return;
+        }
+
+        $this->persistClinicalTestResults();
+    }
+
+    public function persistClinicalTestResults(): void
+    {
+        if (! $this->autosaveReady || $this->autosaveInProgress) {
             return;
         }
 
@@ -647,10 +872,14 @@ class EditMedicalSession extends LocalizedEditRecord
                 'before_value_id' => $test->beforeValueId,
                 'after_value_id' => $test->afterValueId,
                 'cause_ids' => array_map(static fn (array $cause): int => $cause['id'], $test->causes),
-            ], $decrypted->testResults)),
+                'structured' => $test->structuredPayload,
+                'review_again' => $test->reviewAgain,
+            ], $decrypted->testResults), app(MedicalSessionTestHistoryReader::class)->previousForClient($parent, $record->occurred_at, (int) $record->getKey())),
             'root_causes' => array_map(static fn ($cause): array => [
                 'cause_id' => $cause->causeId,
                 'free_text' => $cause->freeText,
+                'is_primary' => $cause->isPrimary,
+                'influences' => $cause->influences,
             ], $decrypted->rootCauses),
             'cause_ids' => array_map(static fn (array $cause): int => $cause['id'], $decrypted->causes),
             'causes_manual_override' => $decrypted->causesManualOverride,
@@ -729,13 +958,9 @@ class EditMedicalSession extends LocalizedEditRecord
     private function rootCauseOptions(Get $get): array
     {
         $testResults = $get('../../test_results');
-        $causeIds = collect(is_array($testResults) ? $testResults : [])
-            ->flatMap(static fn (mixed $test): array => is_array($test) && is_array($test['cause_ids'] ?? null)
-                ? array_map(static fn (mixed $id): int => (int) $id, $test['cause_ids'])
-                : [])
-            ->filter(static fn (int $id): bool => $id > 0)
-            ->unique()
-            ->all();
+        $summary = app(AggregateMedicalSessionCauses::class)->handle(is_array($testResults) ? $testResults : []);
+        $causeIds = array_column($summary, 'cause_id');
+        $summaryByCause = collect($summary)->keyBy('cause_id');
         $selectedCauseIds = $get('../../cause_ids');
         if (is_array($selectedCauseIds)) {
             $causeIds = array_values(array_unique([...$causeIds, ...array_map(static fn (mixed $id): int => (int) $id, $selectedCauseIds)]));
@@ -745,9 +970,24 @@ class EditMedicalSession extends LocalizedEditRecord
             $causeIds[] = $currentCauseId;
         }
 
-        $causeOptions = app(MedicalClinicalCatalog::class)->causeOptionsForSelection(app(OrganizationContext::class)->id(), $causeIds);
+        $catalog = app(MedicalClinicalCatalog::class);
+        $organizationId = app(OrganizationContext::class)->id();
+        $selectedIds = array_values(array_unique($causeIds));
+        $options = $catalog->causeOptions($organizationId);
+        $selectedOptions = $catalog->causeOptionsForSelection($organizationId, $selectedIds);
+        $options = array_replace($options, array_intersect_key($selectedOptions, array_flip($selectedIds)));
+        foreach ($options as $causeId => $label) {
+            $summaryItem = $summaryByCause->get((int) $causeId);
+            if (is_array($summaryItem)) {
+                $label .= __(' · в тестах: :count', ['count' => (int) ($summaryItem['test_count'] ?? 0)]);
+                if (($summaryItem['is_primary'] ?? false) === true) {
+                    $label .= __(' · главная в тесте');
+                }
+                $options[$causeId] = $label;
+            }
+        }
 
-        return array_intersect_key($causeOptions, array_flip($causeIds));
+        return $options;
     }
 
     private function parentClient(): Client
@@ -1062,20 +1302,11 @@ class EditMedicalSession extends LocalizedEditRecord
     private static function derivedCauseIds(Get $get): array
     {
         $testResults = $get('test_results');
-        $ids = [];
-        foreach (is_array($testResults) ? $testResults : [] as $test) {
-            if (! is_array($test) || ! is_array($test['cause_ids'] ?? null)) {
-                continue;
-            }
-            foreach ($test['cause_ids'] as $id) {
-                $id = (int) $id;
-                if ($id > 0 && ! in_array($id, $ids, true)) {
-                    $ids[] = $id;
-                }
-            }
-        }
 
-        return $ids;
+        return array_column(
+            app(AggregateMedicalSessionCauses::class)->handle(is_array($testResults) ? $testResults : []),
+            'cause_id',
+        );
     }
 
     /** @param list<int> $causeIds */
