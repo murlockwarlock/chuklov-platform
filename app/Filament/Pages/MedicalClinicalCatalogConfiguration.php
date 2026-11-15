@@ -93,6 +93,7 @@ final class MedicalClinicalCatalogConfiguration extends LocalizedPage
             ->all();
         $causes = MedicalCauseDefinition::query()
             ->where('organization_id', $organizationId)
+            ->where('is_active', true)
             ->whereNull('merged_into_id')
             ->orderBy('sort_order')
             ->orderBy('id')
@@ -193,6 +194,24 @@ final class MedicalClinicalCatalogConfiguration extends LocalizedPage
                             ->default(false),
                         Toggle::make('is_active')->label(__('Активен'))->default(true),
                         Hidden::make('sort_order')->dehydrated(true),
+                        Repeater::make('values')
+                            ->label(__('Допустимые значения старого теста'))
+                            ->visible(fn (Get $get): bool => blank($get('test_type')))
+                            ->schema([
+                                Hidden::make('key')->default(fn (): string => 'value_'.Str::lower(Str::random(12))),
+                                TextInput::make('label')->label(__('Название значения'))->required()->maxLength(255),
+                                Toggle::make('is_abnormal')->label(__('Считать нарушением')),
+                                Toggle::make('is_active')->label(__('Активно'))->default(true),
+                                Hidden::make('sort_order')->dehydrated(true),
+                            ])
+                            ->columns(2)
+                            ->defaultItems(0)
+                            ->reorderable()
+                            ->reorderableWithButtons()
+                            ->collapsible()
+                            ->collapsed()
+                            ->addActionLabel(__('Добавить значение'))
+                            ->columnSpanFull(),
                     ])
                     ->columns(2)
                     ->defaultItems(0)
