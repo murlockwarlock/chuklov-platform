@@ -234,6 +234,35 @@ final class MedicalClinicalCatalogConfigurationTest extends TestCase
         self::assertFalse(collect($data['problem_tags'] ?? [])->contains('name', 'Архивная категория'));
     }
 
+    public function test_manager_can_show_and_reactivate_archived_causes_from_the_catalog(): void
+    {
+        [$organization, $admin] = $this->fixture();
+        MedicalCauseDefinition::query()->create([
+            'organization_id' => $organization->getKey(),
+            'name' => 'Архивная причина для восстановления',
+            'is_active' => false,
+            'sort_order' => 1,
+        ]);
+        $this->resolveFilamentContext($admin, $organization);
+
+        $component = Livewire::actingAs($admin)->test(MedicalClinicalCatalogConfiguration::class);
+        self::assertFalse(collect($component->instance()->data['causes'] ?? [])->contains('name', 'Архивная причина для восстановления'));
+
+        $component->callAction('toggleArchivedCauses');
+        self::assertTrue(collect($component->instance()->data['causes'] ?? [])->contains('name', 'Архивная причина для восстановления'));
+
+        $component->fillForm([
+            'causes' => [[
+                'id' => MedicalCauseDefinition::query()->where('organization_id', $organization->getKey())->value('id'),
+                'name' => 'Архивная причина для восстановления',
+                'is_active' => true,
+                'sort_order' => 1,
+            ]],
+        ])->call('save')->assertNotified('Каталог сохранён');
+
+        self::assertTrue(MedicalCauseDefinition::query()->where('organization_id', $organization->getKey())->where('name', 'Архивная причина для восстановления')->value('is_active'));
+    }
+
     public function test_manager_can_import_the_same_catalog_contract_from_xlsx(): void
     {
         [$organization, $admin] = $this->fixture();
