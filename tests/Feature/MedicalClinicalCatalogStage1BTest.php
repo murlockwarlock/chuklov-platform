@@ -64,6 +64,8 @@ final class MedicalClinicalCatalogStage1BTest extends TestCase
         self::assertSame('T1', $test->test_type);
         self::assertSame('main', $test->catalog_set);
         self::assertSame('standing_r', $test->catalogConfiguration()['rows'][0]['key']);
+        $t1State = collect(ClinicalTestProtocol::defaultState())->firstWhere('test_id', $test->getKey());
+        self::assertSame([], $t1State['structured']['before']['sequence'] ?? null);
         self::assertTrue(MedicalTestCauseLink::query()
             ->where('organization_id', $organization->getKey())
             ->where('medical_test_definition_id', $test->getKey())

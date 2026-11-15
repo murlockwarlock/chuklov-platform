@@ -340,7 +340,7 @@ final class ClinicalTestProtocol
         $hasRows = is_array($configuration['rows'] ?? null) && $configuration['rows'] !== [];
         $hasFeelings = is_array($configuration['feelings'] ?? null) && $configuration['feelings'] !== [];
         $hasSequence = collect(is_array($configuration['rows'] ?? null) ? $configuration['rows'] : [])
-            ->contains(static fn (mixed $row): bool => is_array($row) && is_array($row['choices'] ?? null));
+            ->contains(static fn (mixed $row): bool => is_array($row) && is_array($row['choices'] ?? null) && $row['choices'] !== []);
 
         $schema = [
             Hidden::make('allowed_cause_ids')->dehydrated(),
@@ -424,7 +424,7 @@ final class ClinicalTestProtocol
     private static function sequenceField(array $configuration): Repeater
     {
         $hasSequence = collect(is_array($configuration['rows'] ?? null) ? $configuration['rows'] : [])
-            ->contains(static fn (mixed $row): bool => is_array($row) && is_array($row['choices'] ?? null));
+            ->contains(static fn (mixed $row): bool => is_array($row) && is_array($row['choices'] ?? null) && $row['choices'] !== []);
 
         return Repeater::make('sequence')
             ->label(__('Формула по зонам'))
@@ -916,7 +916,7 @@ final class ClinicalTestProtocol
         }
 
         $hasSequence = collect(is_array($configuration['rows'] ?? null) ? $configuration['rows'] : [])
-            ->contains(static fn (mixed $row): bool => is_array($row) && is_array($row['choices'] ?? null));
+            ->contains(static fn (mixed $row): bool => is_array($row) && is_array($row['choices'] ?? null) && $row['choices'] !== []);
 
         return [
             'rows' => $rows,
