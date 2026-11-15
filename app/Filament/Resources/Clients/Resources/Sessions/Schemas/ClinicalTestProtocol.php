@@ -141,6 +141,11 @@ final class ClinicalTestProtocol
             ->reorderableWithButtons()
             ->collapsible()
             ->collapsed()
+            ->afterStateUpdated(function (\Livewire\Component $livewire): void {
+                if (method_exists($livewire, 'persistClinicalTestResults')) {
+                    $livewire->persistClinicalTestResults();
+                }
+            })
             ->extraItemActions([self::editTestAction()])
             ->columnSpanFull();
     }
@@ -160,7 +165,7 @@ final class ClinicalTestProtocol
                         ->required(),
                 ])
                 ->modalSubmitActionLabel(__('Добавить тест'))
-                ->action(function (array $data, Get $get, Set $set, \Livewire\Component $livewire): void {
+                ->action(function (array $data, Get $get, Set $set): void {
                     $testId = (int) ($data['test_id'] ?? 0);
                     if ($testId < 1) {
                         return;
@@ -170,10 +175,7 @@ final class ClinicalTestProtocol
                     if (collect($current)->contains(static fn (mixed $row): bool => is_array($row) && (int) ($row['test_id'] ?? 0) === $testId)) {
                         return;
                     }
-                    $set('test_results', self::stateFor([...$current, ['test_id' => $testId]]));
-                    if (method_exists($livewire, 'persistClinicalTestResults')) {
-                        $livewire->persistClinicalTestResults();
-                    }
+                    $set('test_results', self::stateFor([...$current, ['test_id' => $testId]]), false, true);
                 }),
         ])->columnSpanFull();
     }
@@ -197,7 +199,7 @@ final class ClinicalTestProtocol
             ->modalHeading(__('Заполнить клинический тест'))
             ->modalSubmitActionLabel(__('Сохранить тест'))
             ->modalWidth('7xl')
-            ->action(function (array $data, array $arguments, Repeater $component, \Livewire\Component $livewire): void {
+            ->action(function (array $data, array $arguments, Repeater $component): void {
                 $itemKey = (string) ($arguments['item'] ?? '');
                 $state = $component->getRawState();
                 if (! is_array($state) || ! is_array($state[$itemKey] ?? null)) {
@@ -207,9 +209,6 @@ final class ClinicalTestProtocol
                 $state[$itemKey] = array_replace($state[$itemKey], $data);
                 $component->rawState($state);
                 $component->callAfterStateUpdated();
-                if (method_exists($livewire, 'persistClinicalTestResults')) {
-                    $livewire->persistClinicalTestResults();
-                }
                 Notification::make()->success()->title(__('Тест сохранён в сеансе'))->send();
             });
     }
@@ -230,7 +229,7 @@ final class ClinicalTestProtocol
         return Placeholder::make('test_counters')
             ->label(__('Нарушения'))
             ->content(function (Get $get): string {
-                $results = $get('test_results');
+                $results = $get('/data.test_results');
                 $results = is_array($results) ? $results : [];
                 $catalog = app(MedicalClinicalCatalog::class);
                 $counts = method_exists($catalog, 'sessionCounters')

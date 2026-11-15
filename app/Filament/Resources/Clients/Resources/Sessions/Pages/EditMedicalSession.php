@@ -749,7 +749,7 @@ class EditMedicalSession extends LocalizedEditRecord
 
     public function updatedData(mixed $value, string $key): void
     {
-        if (! $this->autosaveReady || $this->autosaveInProgress || $key === 'expected_snapshot') {
+        if (! $this->autosaveReady || $this->autosaveInProgress || $key === 'expected_snapshot' || str_starts_with($key, 'test_results')) {
             return;
         }
 
