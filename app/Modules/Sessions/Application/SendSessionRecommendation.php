@@ -18,6 +18,7 @@ use App\Modules\Sessions\Application\DTOs\MedicalSessionRecommendationDeliveryDa
 use App\Modules\Sessions\Application\Models\MedicalSessionRecommendationDelivery;
 use App\Modules\Sessions\Domain\Models\MedicalSession;
 use App\Support\SupportedLocale;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use Throwable;
@@ -92,7 +93,7 @@ final readonly class SendSessionRecommendation
                 if ((string) $delivery->status === 'claimed'
                     && $delivery->getRawOriginal('claimed_at') !== null
                     && now()->subMinutes(self::CLAIM_TIMEOUT_MINUTES)->greaterThan(
-                        \Illuminate\Support\Carbon::parse((string) $delivery->getRawOriginal('claimed_at')),
+                        Carbon::parse((string) $delivery->getRawOriginal('claimed_at')),
                     )) {
                     $delivery->forceFill([
                         'status' => 'unknown',

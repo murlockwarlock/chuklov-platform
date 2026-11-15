@@ -23,7 +23,7 @@ final readonly class ApplyMedicalCauseToTests
     ) {}
 
     /**
-     * @param array<int, mixed> $testIds
+     * @param  array<int, mixed>  $testIds
      * @return Collection<int, MedicalTestCauseLink>
      */
     public function handle(User $actor, int $causeId, array $testIds, ?string $scopeKey = null): Collection

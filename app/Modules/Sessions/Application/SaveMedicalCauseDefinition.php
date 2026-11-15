@@ -90,7 +90,7 @@ final readonly class SaveMedicalCauseDefinition
     }
 
     /**
-     * @param array<string, mixed> $attributes
+     * @param  array<string, mixed>  $attributes
      * @return array{name:string,synonyms:list<string>,group_name:?string,tooltip:?string,moderation_status:string,is_active:bool,sort_order:int}
      */
     private function normalize(array $attributes): array
@@ -133,7 +133,7 @@ final readonly class SaveMedicalCauseDefinition
     }
 
     /**
-     * @param list<string> $synonyms
+     * @param  list<string>  $synonyms
      * @return list<string>
      */
     private function identityValues(string $name, array $synonyms): array

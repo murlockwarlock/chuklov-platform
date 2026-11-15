@@ -27,10 +27,10 @@ final class MedicalClinicalTypeEngine
     }
 
     /**
-     * @param array<string, mixed> $configuration
-     * @param array<string, mixed>|null $before
-     * @param array<string, mixed>|null $after
-     * @param array<string, mixed>|null $payload
+     * @param  array<string, mixed>  $configuration
+     * @param  array<string, mixed>|null  $before
+     * @param  array<string, mixed>|null  $after
+     * @param  array<string, mixed>|null  $payload
      */
     public function validate(
         MedicalTestType $type,
@@ -53,9 +53,9 @@ final class MedicalClinicalTypeEngine
     }
 
     /**
-     * @param array<string, mixed> $configuration
-     * @param array<string, mixed>|null $before
-     * @param array<string, mixed>|null $after
+     * @param  array<string, mixed>  $configuration
+     * @param  array<string, mixed>|null  $before
+     * @param  array<string, mixed>|null  $after
      */
     public function evaluate(
         MedicalTestType $type,
@@ -80,9 +80,9 @@ final class MedicalClinicalTypeEngine
     }
 
     /**
-     * @param array<string, mixed> $configuration
-     * @param array<string, mixed>|null $before
-     * @param array<string, mixed>|null $after
+     * @param  array<string, mixed>  $configuration
+     * @param  array<string, mixed>|null  $before
+     * @param  array<string, mixed>|null  $after
      */
     private function tone(array $configuration, ?array $before, ?array $after): MedicalClinicalEvaluation
     {
@@ -90,14 +90,15 @@ final class MedicalClinicalTypeEngine
     }
 
     /**
-     * @param array<string, mixed> $configuration
-     * @param array<string, mixed>|null $before
-     * @param array<string, mixed>|null $after
+     * @param  array<string, mixed>  $configuration
+     * @param  array<string, mixed>|null  $before
+     * @param  array<string, mixed>|null  $after
      */
     private function methodComputer(array $configuration, ?array $before, ?array $after): MedicalClinicalEvaluation
     {
         $rules = is_array($configuration['rules'] ?? null) ? $configuration['rules'] : [];
         $violationIndexes = is_array($rules['index_violation'] ?? null) ? $rules['index_violation'] : [1, 2, 3];
+
         return $this->evaluationFromRows(
             $this->methodRows($before),
             $this->methodRows($after),
@@ -109,9 +110,9 @@ final class MedicalClinicalTypeEngine
     }
 
     /**
-     * @param array<string, mixed> $configuration
-     * @param array<string, mixed>|null $before
-     * @param array<string, mixed>|null $after
+     * @param  array<string, mixed>  $configuration
+     * @param  array<string, mixed>|null  $before
+     * @param  array<string, mixed>|null  $after
      */
     private function palpation(array $configuration, ?array $before, ?array $after): MedicalClinicalEvaluation
     {
@@ -128,9 +129,9 @@ final class MedicalClinicalTypeEngine
     }
 
     /**
-     * @param array<string, mixed> $configuration
-     * @param array<string, mixed>|null $before
-     * @param array<string, mixed>|null $after
+     * @param  array<string, mixed>  $configuration
+     * @param  array<string, mixed>|null  $before
+     * @param  array<string, mixed>|null  $after
      */
     private function formula(array $configuration, ?array $before, ?array $after): MedicalClinicalEvaluation
     {
@@ -167,9 +168,9 @@ final class MedicalClinicalTypeEngine
     }
 
     /**
-     * @param array<string, mixed> $configuration
-     * @param array<string, mixed>|null $before
-     * @param array<string, mixed>|null $after
+     * @param  array<string, mixed>  $configuration
+     * @param  array<string, mixed>|null  $before
+     * @param  array<string, mixed>|null  $after
      */
     private function yesNo(array $configuration, ?array $before, ?array $after): MedicalClinicalEvaluation
     {
@@ -182,9 +183,9 @@ final class MedicalClinicalTypeEngine
     }
 
     /**
-     * @param array<string, mixed> $configuration
-     * @param array<string, mixed>|null $before
-     * @param array<string, mixed>|null $after
+     * @param  array<string, mixed>  $configuration
+     * @param  array<string, mixed>|null  $before
+     * @param  array<string, mixed>|null  $after
      */
     private function painPoint(array $configuration, ?array $before, ?array $after): MedicalClinicalEvaluation
     {
@@ -201,9 +202,9 @@ final class MedicalClinicalTypeEngine
     }
 
     /**
-     * @param array<string, mixed> $configuration
-     * @param array<string, mixed>|null $before
-     * @param array<string, mixed>|null $after
+     * @param  array<string, mixed>  $configuration
+     * @param  array<string, mixed>|null  $before
+     * @param  array<string, mixed>|null  $after
      */
     private function muscle(array $configuration, ?array $before, ?array $after): MedicalClinicalEvaluation
     {
@@ -211,9 +212,9 @@ final class MedicalClinicalTypeEngine
     }
 
     /**
-     * @param array<string, mixed> $configuration
-     * @param array<string, mixed>|null $before
-     * @param array<string, mixed>|null $after
+     * @param  array<string, mixed>  $configuration
+     * @param  array<string, mixed>|null  $before
+     * @param  array<string, mixed>|null  $after
      */
     private function traction(array $configuration, ?array $before, ?array $after): MedicalClinicalEvaluation
     {
@@ -242,9 +243,9 @@ final class MedicalClinicalTypeEngine
     }
 
     /**
-     * @param array<string, mixed> $configuration
-     * @param array<string, mixed>|null $before
-     * @param array<string, mixed>|null $after
+     * @param  array<string, mixed>  $configuration
+     * @param  array<string, mixed>|null  $before
+     * @param  array<string, mixed>|null  $after
      */
     private function mobility(array $configuration, ?array $before, ?array $after): MedicalClinicalEvaluation
     {
@@ -252,9 +253,9 @@ final class MedicalClinicalTypeEngine
     }
 
     /**
-     * @param array<string, mixed> $configuration
-     * @param array<string, mixed>|null $before
-     * @param array<string, mixed>|null $after
+     * @param  array<string, mixed>  $configuration
+     * @param  array<string, mixed>|null  $before
+     * @param  array<string, mixed>|null  $after
      */
     private function visualMap(array $configuration, ?array $before, ?array $after): MedicalClinicalEvaluation
     {
@@ -275,9 +276,9 @@ final class MedicalClinicalTypeEngine
     }
 
     /**
-     * @param array<string, mixed> $configuration
-     * @param array<string, mixed>|null $before
-     * @param array<string, mixed>|null $after
+     * @param  array<string, mixed>  $configuration
+     * @param  array<string, mixed>|null  $before
+     * @param  array<string, mixed>|null  $after
      */
     private function findings(array $configuration, ?array $before, ?array $after): MedicalClinicalEvaluation
     {
@@ -294,9 +295,9 @@ final class MedicalClinicalTypeEngine
     }
 
     /**
-     * @param array<string, mixed> $configuration
-     * @param array<string, mixed>|null $before
-     * @param array<string, mixed>|null $after
+     * @param  array<string, mixed>  $configuration
+     * @param  array<string, mixed>|null  $before
+     * @param  array<string, mixed>|null  $after
      */
     private function energy(array $configuration, ?array $before, ?array $after): MedicalClinicalEvaluation
     {
@@ -327,9 +328,9 @@ final class MedicalClinicalTypeEngine
     }
 
     /**
-     * @param array<string, mixed> $configuration
-     * @param array<string, mixed>|null $before
-     * @param array<string, mixed>|null $after
+     * @param  array<string, mixed>  $configuration
+     * @param  array<string, mixed>|null  $before
+     * @param  array<string, mixed>|null  $after
      */
     private function rowIndexEvaluation(array $configuration, ?array $before, ?array $after, bool $allowTone = false): MedicalClinicalEvaluation
     {
@@ -352,9 +353,9 @@ final class MedicalClinicalTypeEngine
     }
 
     /**
-     * @param list<array<string, mixed>> $beforeRows
-     * @param list<array<string, mixed>> $afterRows
-     * @param callable(array<string, mixed>): bool $isViolation
+     * @param  list<array<string, mixed>>  $beforeRows
+     * @param  list<array<string, mixed>>  $afterRows
+     * @param  callable(array<string, mixed>): bool  $isViolation
      */
     private function evaluationFromRows(array $beforeRows, array $afterRows, callable $isViolation): MedicalClinicalEvaluation
     {
@@ -510,7 +511,7 @@ final class MedicalClinicalTypeEngine
     }
 
     /** @param array<string, mixed>|null $phase
-     * @param list<array<int, string>> $allowed
+     * @param  list<array<int, string>>  $allowed
      * @return array{keys:list<string>}
      */
     private function formulaPhase(?array $phase, array $allowed, bool $countTransitions): array
@@ -542,7 +543,7 @@ final class MedicalClinicalTypeEngine
     }
 
     /**
-     * @param array<string, mixed>|null $phase
+     * @param  array<string, mixed>|null  $phase
      * @return list<string>
      */
     private function energyPhase(?array $phase, mixed $threshold, mixed $normalTor, bool $chakraViolation): array
@@ -620,7 +621,7 @@ final class MedicalClinicalTypeEngine
     }
 
     /** @param array<string, mixed> $configuration
-     * @param array<string, mixed>|null $phase
+     * @param  array<string, mixed>|null  $phase
      */
     private function validateFormula(array $configuration, ?array $phase, string $name): void
     {
@@ -649,7 +650,7 @@ final class MedicalClinicalTypeEngine
     }
 
     /** @param array<string, mixed> $configuration
-     * @param array<string, mixed>|null $phase
+     * @param  array<string, mixed>|null  $phase
      */
     private function validatePhase(MedicalTestType $type, array $configuration, ?array $phase, string $name): void
     {
@@ -697,7 +698,7 @@ final class MedicalClinicalTypeEngine
     }
 
     /** @param array<string, mixed> $configuration
-     * @param array<string, mixed> $phase
+     * @param  array<string, mixed>  $phase
      */
     private function validatePhaseScalarFields(array $configuration, array $phase, string $name): void
     {
@@ -741,7 +742,7 @@ final class MedicalClinicalTypeEngine
     }
 
     /** @param array<string, mixed> $configuration
-     * @param array<string, mixed> $payload
+     * @param  array<string, mixed>  $payload
      */
     private function validatePayloadMetadata(array $configuration, array $payload): void
     {
@@ -757,8 +758,6 @@ final class MedicalClinicalTypeEngine
     }
 
     /** @param array<string, mixed> $configuration
-     * @param mixed $rows
-     * @param mixed $configuredRows
      */
     private function validateRows(MedicalTestType $type, array $configuration, mixed $rows, mixed $configuredRows, string $name): void
     {
@@ -788,7 +787,7 @@ final class MedicalClinicalTypeEngine
     }
 
     /** @param array<string, mixed> $configuration
-     * @param array<string, mixed> $row
+     * @param  array<string, mixed>  $row
      */
     private function validateRow(MedicalTestType $type, array $configuration, array $row, string $name): void
     {
@@ -847,7 +846,6 @@ final class MedicalClinicalTypeEngine
         }
     }
 
-    /** @param mixed $options */
     private function validateChoice(mixed $value, mixed $options, string $name): void
     {
         if ($value === null || $value === '') {

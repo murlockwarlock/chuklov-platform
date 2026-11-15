@@ -2,11 +2,11 @@
 
 namespace Tests\Feature;
 
+use App\Filament\Resources\Clients\Resources\Sessions\Schemas\ClinicalTestProtocol;
 use App\Models\User;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationRole;
 use App\Modules\Organizations\Domain\Models\Organization;
-use App\Filament\Resources\Clients\Resources\Sessions\Schemas\ClinicalTestProtocol;
 use App\Modules\Sessions\Application\MedicalClinicalCatalog;
 use App\Modules\Sessions\Application\MedicalStage1BCatalogPreset;
 use App\Modules\Sessions\Application\SaveMedicalClinicalCatalog;

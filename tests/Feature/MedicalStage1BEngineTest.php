@@ -2,8 +2,9 @@
 
 namespace Tests\Feature;
 
-use App\Modules\Sessions\Application\MedicalStage1BCatalogPreset;
+use App\Modules\Sessions\Application\DTOs\MedicalClinicalEvaluation;
 use App\Modules\Sessions\Application\MedicalClinicalTypeEngine;
+use App\Modules\Sessions\Application\MedicalStage1BCatalogPreset;
 use App\Modules\Sessions\Domain\Enums\MedicalTestType;
 use Illuminate\Validation\ValidationException;
 use Tests\TestCase;
@@ -200,7 +201,7 @@ final class MedicalStage1BEngineTest extends TestCase
 
     public function test_resolved_and_new_counts_use_violation_identity_sets(): void
     {
-        $evaluation = new \App\Modules\Sessions\Application\DTOs\MedicalClinicalEvaluation(
+        $evaluation = new MedicalClinicalEvaluation(
             beforeViolationKeys: ['a', 'b'],
             afterViolationKeys: ['b', 'c'],
             beforeCount: 2,

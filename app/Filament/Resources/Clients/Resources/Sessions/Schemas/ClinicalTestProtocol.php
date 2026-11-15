@@ -6,8 +6,8 @@ use App\Filament\Pages\MedicalClinicalCatalogConfiguration;
 use App\Models\User;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Sessions\Application\ApplyMedicalCauseToTests;
-use App\Modules\Sessions\Application\MedicalClinicalCatalog;
 use App\Modules\Sessions\Application\MedicalCauseDirectory;
+use App\Modules\Sessions\Application\MedicalClinicalCatalog;
 use App\Modules\Sessions\Application\SaveMedicalCauseDefinition;
 use App\Modules\Sessions\Domain\Enums\MedicalTestType;
 use App\Modules\Sessions\Domain\Models\MedicalCauseDefinition;
@@ -17,23 +17,24 @@ use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\Select;
-use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Textarea;
+use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
 use Filament\Forms\Components\ToggleButtons;
+use Filament\Notifications\Notification;
 use Filament\Schemas\Components\Actions;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Components\Utilities\Set;
-use Filament\Notifications\Notification;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\ValidationException;
+use Livewire\Component;
 
 final class ClinicalTestProtocol
 {
     /**
-     * @param array<int, mixed> $previousResults
+     * @param  array<int, mixed>  $previousResults
      * @return list<array<string, mixed>>
      */
     public static function defaultState(array $previousResults = []): array
@@ -47,7 +48,7 @@ final class ClinicalTestProtocol
     }
 
     /** @param array<int, mixed> $results
-     * @param array<int, mixed> $previousResults
+     * @param  array<int, mixed>  $previousResults
      * @return list<array<string, mixed>>
      */
     public static function stateFor(array $results, array $previousResults = []): array
@@ -70,6 +71,7 @@ final class ClinicalTestProtocol
                     $current['review_again'] = true;
                     $currentById->put($testId, $current);
                 }
+
                 continue;
             }
             $currentById->put($testId, [
@@ -141,7 +143,7 @@ final class ClinicalTestProtocol
             ->reorderableWithButtons()
             ->collapsible()
             ->collapsed()
-            ->afterStateUpdated(function (\Livewire\Component $livewire): void {
+            ->afterStateUpdated(function (Component $livewire): void {
                 if (method_exists($livewire, 'persistClinicalTestResults')) {
                     $livewire->persistClinicalTestResults();
                 }
@@ -153,7 +155,7 @@ final class ClinicalTestProtocol
     public static function addTest(): Actions
     {
         return Actions::make([
-            \Filament\Actions\Action::make('addSpecializedTest')
+            Action::make('addSpecializedTest')
                 ->label(__('+ Тест'))
                 ->icon('heroicon-o-plus')
                 ->schema([
@@ -1066,7 +1068,6 @@ final class ClinicalTestProtocol
         return is_string($value) && trim($value) !== '' ? $value : __('Нет сохранённого значения');
     }
 
-    /** @param mixed $sequence */
     private static function formulaDisplay(mixed $sequence): string
     {
         if (! is_array($sequence) || $sequence === []) {
@@ -1105,7 +1106,7 @@ final class ClinicalTestProtocol
         return self::simpleOptions($choices);
     }
 
-    /** @param mixed $values
+    /**
      * @return array<string, string>
      */
     private static function simpleOptions(mixed $values): array
@@ -1134,7 +1135,7 @@ final class ClinicalTestProtocol
         return $options;
     }
 
-    /** @param mixed $values
+    /**
      * @return array<string, string>
      */
     private static function toneOptions(mixed $values): array
@@ -1148,7 +1149,7 @@ final class ClinicalTestProtocol
         ];
     }
 
-    /** @param mixed $values
+    /**
      * @return array<string, string>
      */
     private static function findingOptions(mixed $values): array
@@ -1162,7 +1163,7 @@ final class ClinicalTestProtocol
         ];
     }
 
-    /** @param mixed $values
+    /**
      * @return array<string, string>
      */
     private static function answerOptions(mixed $values): array
@@ -1172,7 +1173,7 @@ final class ClinicalTestProtocol
         return $options !== [] ? $options : ['no' => __('Нет'), 'yes' => __('Да')];
     }
 
-    /** @param mixed $values
+    /**
      * @return array<string, string>
      */
     private static function movementOptions(mixed $values): array
@@ -1188,7 +1189,7 @@ final class ClinicalTestProtocol
         ];
     }
 
-    /** @param mixed $values
+    /**
      * @return array<string, string>
      */
     private static function deviationOptions(mixed $values): array
@@ -1201,7 +1202,7 @@ final class ClinicalTestProtocol
         ];
     }
 
-    /** @param mixed $values
+    /**
      * @return array<string, string>
      */
     private static function priorityOptions(mixed $values): array

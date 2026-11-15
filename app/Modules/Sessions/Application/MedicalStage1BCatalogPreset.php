@@ -262,7 +262,7 @@ final class MedicalStage1BCatalogPreset
     }
 
     /** @param list<string> $labels
-     * @param array<string, mixed> $extra
+     * @param  array<string, mixed>  $extra
      * @return list<array<string, mixed>>
      */
     private static function sideRowsForLabels(array $labels, string $key, array $extra = []): array
@@ -283,7 +283,7 @@ final class MedicalStage1BCatalogPreset
     }
 
     /** @param list<string> $labels
-     * @param array<string, mixed> $extra
+     * @param  array<string, mixed>  $extra
      * @return list<array<string, mixed>>
      */
     private static function rows(array $labels, string $prefix, array $extra = []): array

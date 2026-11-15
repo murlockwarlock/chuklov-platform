@@ -186,8 +186,7 @@ final readonly class GenerateSessionResult
         ?array $testCounts,
         ?MedicalSessionEffectivenessData $effectiveness = null,
         ?string $afterVitals = null,
-    ): string
-    {
+    ): string {
         $lines = [];
         foreach ($pains as $pain) {
             $before = self::score($pain['before_score'] ?? null);

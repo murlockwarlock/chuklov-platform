@@ -125,6 +125,7 @@ final readonly class MergeMedicalCauses
                 ->exists();
             if ($exists) {
                 DB::table('medical_session_causes')->where('id', $row->id)->delete();
+
                 continue;
             }
             DB::table('medical_session_causes')->where('id', $row->id)->update([
@@ -149,6 +150,7 @@ final readonly class MergeMedicalCauses
                 ->exists();
             if ($exists) {
                 DB::table('medical_session_test_causes')->where('id', $row->id)->delete();
+
                 continue;
             }
             DB::table('medical_session_test_causes')->where('id', $row->id)->update([
@@ -193,6 +195,7 @@ final readonly class MergeMedicalCauses
                     ]);
                 }
                 DB::table('medical_test_cause_links')->where('id', $row->id)->delete();
+
                 continue;
             }
             DB::table('medical_test_cause_links')->where('id', $row->id)->update([

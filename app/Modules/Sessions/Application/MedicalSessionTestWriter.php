@@ -10,8 +10,8 @@ use App\Modules\Sessions\Domain\Models\MedicalSessionTestResult;
 use App\Modules\Sessions\Domain\Models\MedicalTestDefinition;
 use App\Modules\Sessions\Domain\Models\MedicalTestValue;
 use Illuminate\Support\Collection;
-use JsonException;
 use Illuminate\Validation\ValidationException;
+use JsonException;
 
 final readonly class MedicalSessionTestWriter
 {
@@ -229,8 +229,8 @@ final readonly class MedicalSessionTestWriter
     }
 
     /**
-     * @param array<string, mixed> $raw
-     * @param list<int> $preservedCauseIds
+     * @param  array<string, mixed>  $raw
+     * @param  list<int>  $preservedCauseIds
      * @return array<string, mixed>|null
      */
     private function structuredPayload(int $organizationId, MedicalTestDefinition $definition, array $raw, array $preservedCauseIds = []): ?array
@@ -392,8 +392,8 @@ final readonly class MedicalSessionTestWriter
     }
 
     /** @param list<int> $causeIds
-     * @param array<string, mixed> $input
-     * @param list<int> $preservedCauseIds
+     * @param  array<string, mixed>  $input
+     * @param  list<int>  $preservedCauseIds
      */
     private function validateAllowedCauses(int $organizationId, MedicalTestDefinition $definition, array $causeIds, array $input, array $preservedCauseIds = []): void
     {

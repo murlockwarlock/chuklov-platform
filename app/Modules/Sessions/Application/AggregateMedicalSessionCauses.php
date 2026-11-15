@@ -5,7 +5,7 @@ namespace App\Modules\Sessions\Application;
 final readonly class AggregateMedicalSessionCauses
 {
     /**
-     * @param array<int, mixed> $testResults
+     * @param  array<int, mixed>  $testResults
      * @return list<array{cause_id:int,test_count:int,is_primary:bool}>
      */
     public function handle(array $testResults): array

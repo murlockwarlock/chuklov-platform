@@ -127,6 +127,7 @@ final class MedicalClinicalCatalog
             $subtests = $configuration['default_subtests'] ?? [];
             if (! is_array($subtests) || $subtests === []) {
                 $selection[] = $number;
+
                 continue;
             }
 
@@ -286,6 +287,7 @@ final class MedicalClinicalCatalog
                         $causeIds[(int) $causeId] = true;
                     }
                 }
+
                 continue;
             }
 
@@ -296,7 +298,7 @@ final class MedicalClinicalCatalog
             $counts['before'] += (int) $beforeViolation;
             $counts['after'] += (int) $afterViolation;
             $counts['resolved'] += (int) ($beforeViolation && ! $afterViolation);
-            $counts['new'] += (int) (!$beforeViolation && $afterViolation);
+            $counts['new'] += (int) (! $beforeViolation && $afterViolation);
             foreach (is_array($result['cause_ids'] ?? null) ? $result['cause_ids'] : [] as $causeId) {
                 if ((int) $causeId > 0) {
                     $causeIds[(int) $causeId] = true;

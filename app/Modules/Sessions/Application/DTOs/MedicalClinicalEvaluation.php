@@ -9,10 +9,10 @@ final readonly class MedicalClinicalEvaluation
     public readonly int $newCount;
 
     /**
-     * @param list<string> $beforeViolationKeys
-     * @param list<string> $afterViolationKeys
-     * @param list<int> $causeIds
-     * @param list<string> $warnings
+     * @param  list<string>  $beforeViolationKeys
+     * @param  list<string>  $afterViolationKeys
+     * @param  list<int>  $causeIds
+     * @param  list<string>  $warnings
      */
     public function __construct(
         public int $beforeCount = 0,

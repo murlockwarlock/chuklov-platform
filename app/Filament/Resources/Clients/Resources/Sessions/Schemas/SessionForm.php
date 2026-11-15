@@ -3,7 +3,6 @@
 namespace App\Filament\Resources\Clients\Resources\Sessions\Schemas;
 
 use App\Filament\Pages\MedicalClinicalCatalogConfiguration;
-use App\Filament\Resources\Clients\Resources\Sessions\Schemas\MedicalComplaintSelect;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\MedicalProfiles\Application\MedicalFrequencyPeriodCatalog;
 use App\Modules\MedicalProfiles\Application\MedicalProblemTagCatalog;
@@ -124,7 +123,7 @@ final class SessionForm
                                             : 'text-amber-700',
                                     ])
                                     ->visible(fn (Get $get): bool => $get('state') === 'resolved' || $get('state') === 'returned' || (bool) $get('needs_confirmation')),
-                                \Filament\Forms\Components\Toggle::make('needs_confirmation')
+                                Toggle::make('needs_confirmation')
                                     ->label(__('Из анкеты, уточнить'))
                                     ->helperText(__('Снимите отметку после подтверждения или исправления жалобы.'))
                                     ->default(false)
@@ -534,6 +533,7 @@ final class SessionForm
     private static function derivedCauseIds(Get $get): array
     {
         $testResults = $get('test_results');
+
         return array_column(
             app(AggregateMedicalSessionCauses::class)->handle(is_array($testResults) ? $testResults : []),
             'cause_id',

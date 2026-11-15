@@ -311,7 +311,7 @@ final class MedicalStage1BResultRecommendationTest extends TestCase
         return [$organization, $admin, $client, $specialist];
     }
 
-    private function testDefinition(Organization $organization, string $key, string $name): MedicalTestDefinition
+    private function test_definition(Organization $organization, string $key, string $name): MedicalTestDefinition
     {
         return MedicalTestDefinition::query()->create([
             'organization_id' => $organization->getKey(),
@@ -324,7 +324,7 @@ final class MedicalStage1BResultRecommendationTest extends TestCase
     }
 
     /** @return array{MedicalTestValue, MedicalTestValue} */
-    private function testValues(
+    private function test_values(
         Organization $organization,
         MedicalTestDefinition $definition,
         string $beforeKey,

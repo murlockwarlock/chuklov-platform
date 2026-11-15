@@ -3,17 +3,18 @@
 namespace App\Modules\Sessions\Application;
 
 use App\Models\User;
-use App\Modules\MedicalProfiles\Domain\Models\MedicalProblemTag;
 use App\Modules\MedicalProfiles\Domain\Models\MedicalComplaintDefinition;
+use App\Modules\MedicalProfiles\Domain\Models\MedicalProblemTag;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
 use App\Modules\Security\Application\RecordAuditEvent;
+use App\Modules\Sessions\Domain\Enums\MedicalTestType;
 use App\Modules\Sessions\Domain\Models\MedicalCauseDefinition;
 use App\Modules\Sessions\Domain\Models\MedicalTestCauseLink;
 use App\Modules\Sessions\Domain\Models\MedicalTestDefinition;
 use App\Modules\Sessions\Domain\Models\MedicalTestValue;
-use App\Modules\Sessions\Domain\Enums\MedicalTestType;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
@@ -46,7 +47,7 @@ final readonly class SaveMedicalClinicalCatalog
         $organizationId = (int) $organization->getKey();
 
         DB::transaction(function () use ($organizationId, $normalizedTests, $normalizedCauses, $normalizedProblemTags, $normalizedComplaints, $organization, $actor): void {
-            /** @var \Illuminate\Database\Eloquent\Collection<int, MedicalCauseDefinition> $lockedCauses */
+            /** @var Collection<int, MedicalCauseDefinition> $lockedCauses */
             $lockedCauses = MedicalCauseDefinition::query()
                 ->where('organization_id', $organizationId)
                 ->whereNull('merged_into_id')
@@ -370,6 +371,7 @@ final readonly class SaveMedicalClinicalCatalog
             }
             if ($raw[$field] === null) {
                 $configuration = [];
+
                 continue;
             }
             if (! is_array($raw[$field])) {
@@ -689,7 +691,6 @@ final readonly class SaveMedicalClinicalCatalog
         return $this->normalizeConfigValue($rules);
     }
 
-    /** @return mixed */
     private function normalizeConfigValue(mixed $value, int $depth = 0): mixed
     {
         if ($depth > 8) {
@@ -713,7 +714,6 @@ final readonly class SaveMedicalClinicalCatalog
         throw ValidationException::withMessages(['tests' => 'Настройка теста содержит неподдерживаемое значение.']);
     }
 
-    /** @param mixed $value */
     private function normalizeCatalogSet(mixed $value): string
     {
         if (! is_string($value)) {
@@ -731,7 +731,6 @@ final readonly class SaveMedicalClinicalCatalog
         return $value;
     }
 
-    /** @param mixed $value */
     private function normalizeValueType(mixed $value): ?string
     {
         if ($value === null || $value === '') {
@@ -744,7 +743,6 @@ final readonly class SaveMedicalClinicalCatalog
         return $value;
     }
 
-    /** @param mixed $value */
     private function normalizeBoolean(mixed $value, bool $default): bool
     {
         if ($value === null) {
@@ -767,7 +765,6 @@ final readonly class SaveMedicalClinicalCatalog
         throw ValidationException::withMessages(['tests' => 'Поле каталога должно быть логическим.']);
     }
 
-    /** @param mixed $value */
     private function normalizeInteger(mixed $value, int $default): int
     {
         if ($value === null || $value === '') {
@@ -908,10 +905,12 @@ final readonly class SaveMedicalClinicalCatalog
                     return $this->mergeConfiguration($existingByKey[(string) $item['key']], $item);
                 }, $value);
                 $existing[$key] = $value;
+
                 continue;
             }
             if (is_array($value) && is_array($existing[$key] ?? null)) {
                 $existing[$key] = $this->mergeConfiguration($existing[$key], $value);
+
                 continue;
             }
             $existing[$key] = $value;

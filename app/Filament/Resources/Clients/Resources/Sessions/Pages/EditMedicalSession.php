@@ -23,11 +23,11 @@ use App\Modules\MedicalProfiles\Application\MedicalFrequencyPeriodCatalog;
 use App\Modules\MedicalProfiles\Application\MedicalProblemTagCatalog;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Scheduling\Domain\Models\Booking;
+use App\Modules\Sessions\Application\AggregateMedicalSessionCauses;
+use App\Modules\Sessions\Application\CalculateSessionEffectiveness;
+use App\Modules\Sessions\Application\CompleteSession;
 use App\Modules\Sessions\Application\DTOs\MedicalSessionData;
 use App\Modules\Sessions\Application\DTOs\UpdateSessionCommand;
-use App\Modules\Sessions\Application\CompleteSession;
-use App\Modules\Sessions\Application\CalculateSessionEffectiveness;
-use App\Modules\Sessions\Application\AggregateMedicalSessionCauses;
 use App\Modules\Sessions\Application\GenerateSessionResult;
 use App\Modules\Sessions\Application\GetSession;
 use App\Modules\Sessions\Application\LinkMedicalSessionBooking;
@@ -447,7 +447,7 @@ class EditMedicalSession extends LocalizedEditRecord
                                             : 'text-amber-700',
                                     ])
                                     ->visible(fn (Get $get): bool => $get('state') === 'resolved' || $get('state') === 'returned' || (bool) $get('needs_confirmation')),
-                                \Filament\Forms\Components\Toggle::make('needs_confirmation')
+                                Toggle::make('needs_confirmation')
                                     ->label(__('Из анкеты, уточнить'))
                                     ->helperText(__('Снимите отметку после подтверждения или исправления жалобы.'))
                                     ->default(false)
@@ -1302,6 +1302,7 @@ class EditMedicalSession extends LocalizedEditRecord
     private static function derivedCauseIds(Get $get): array
     {
         $testResults = $get('test_results');
+
         return array_column(
             app(AggregateMedicalSessionCauses::class)->handle(is_array($testResults) ? $testResults : []),
             'cause_id',

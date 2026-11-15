@@ -111,100 +111,100 @@ final readonly class CreateSession
 
         try {
             return DB::transaction(function () use ($actor, $organization, $client, $specialist, $booking, $command, $specialComplaints, $encrypted, $keyVersion, $occurredAtUtc, $orgId, $historicalPainValues): MedicalSessionData {
-            $session = new MedicalSession;
-            $session->forceFill([
-                'organization_id' => $orgId,
-                'client_id' => $client->getKey(),
-                'patient_profile_id' => app(EnsureSelfPatientProfile::class)->handle($client)->getKey(),
-                'specialist_id' => $specialist->getKey(),
-                'booking_id' => $booking?->getKey(),
-                'creation_token' => $command->creationToken,
-                'status' => MedicalSessionStatus::Draft,
-                'pain' => $encrypted->encryptedPain,
-                'pain_vas' => $encrypted->encryptedPainVas,
-                'tests' => $encrypted->encryptedTests,
-                'observations' => $encrypted->encryptedObservations,
-                'therapist_notes' => $this->encryptor->encryptField($orgId, $command->therapistNotes, $keyVersion),
-                'subjective_feelings' => $encrypted->encryptedSubjectiveFeelings,
-                'visual_posture_diagnostics' => $encrypted->encryptedVisualPostureDiagnostics,
-                'root_cause_hypothesis' => $encrypted->encryptedRootCauseHypothesis,
-                'protocol' => $encrypted->encryptedProtocol,
-                'result' => $encrypted->encryptedResult,
-                'causes_manual_override' => $command->causesManualOverride,
-                'encryption_key_version' => $keyVersion,
-                'occurred_at' => $occurredAtUtc,
-            ]);
-            $session->save();
-
-            if ($command->pains !== null) {
-                $this->painWriter->replace($session, $command->pains, $keyVersion, historicalPainValues: $historicalPainValues);
-            } else {
-                $this->painInitializer->initialize($session, $keyVersion);
-            }
-            if ($command->protocolSteps !== null) {
-                $this->protocolStepWriter->replace($session, $command->protocolSteps, $keyVersion);
-            }
-            if ($command->testResults !== null || $command->rootCauses !== null) {
-                $this->testWriter->replace(
-                    $session,
-                    $command->testResults ?? [],
-                    $command->rootCauses ?? [],
-                    $keyVersion,
-                    $command->causesManualOverride ? ($command->causeIds ?? []) : [],
-                );
-                if ($command->testResults !== null) {
-                    $this->syncTest18SafetyMarker($actor, $session, $command->testResults);
-                }
-            }
-            if ($command->causeIds !== null || $command->causesManualOverride) {
-                $this->causeWriter->replace($session, $command->causeIds ?? [], $command->causesManualOverride);
-            }
-
-            $this->audit->handle(
-                organization: $organization,
-                actor: $actor,
-                action: 'medical.session.created',
-                targetType: MedicalSession::class,
-                targetId: (string) $session->getKey(),
-                metadata: [
-                    'source' => 'crm',
-                    'key_version' => $keyVersion,
-                    'booking_id' => $booking?->getKey(),
+                $session = new MedicalSession;
+                $session->forceFill([
+                    'organization_id' => $orgId,
                     'client_id' => $client->getKey(),
+                    'patient_profile_id' => app(EnsureSelfPatientProfile::class)->handle($client)->getKey(),
                     'specialist_id' => $specialist->getKey(),
-                ],
-            );
+                    'booking_id' => $booking?->getKey(),
+                    'creation_token' => $command->creationToken,
+                    'status' => MedicalSessionStatus::Draft,
+                    'pain' => $encrypted->encryptedPain,
+                    'pain_vas' => $encrypted->encryptedPainVas,
+                    'tests' => $encrypted->encryptedTests,
+                    'observations' => $encrypted->encryptedObservations,
+                    'therapist_notes' => $this->encryptor->encryptField($orgId, $command->therapistNotes, $keyVersion),
+                    'subjective_feelings' => $encrypted->encryptedSubjectiveFeelings,
+                    'visual_posture_diagnostics' => $encrypted->encryptedVisualPostureDiagnostics,
+                    'root_cause_hypothesis' => $encrypted->encryptedRootCauseHypothesis,
+                    'protocol' => $encrypted->encryptedProtocol,
+                    'result' => $encrypted->encryptedResult,
+                    'causes_manual_override' => $command->causesManualOverride,
+                    'encryption_key_version' => $keyVersion,
+                    'occurred_at' => $occurredAtUtc,
+                ]);
+                $session->save();
 
-            return new MedicalSessionData(
-                id: (int) $session->getKey(),
-                organizationId: $orgId,
-                clientId: (int) $client->getKey(),
-                specialistId: (int) $specialist->getKey(),
-                bookingId: $booking?->getKey(),
-                pain: $specialComplaints,
-                tests: $command->tests,
-                observations: $command->observations,
-                rootCauseHypothesis: $command->rootCauseHypothesis,
-                protocol: $command->protocol,
-                result: $command->result,
-                encryptionKeyVersion: $keyVersion,
-                occurredAt: $session->occurred_at,
-                createdAt: $session->created_at,
-                updatedAt: $session->updated_at,
-                painVas: $command->painVas,
-                pains: $this->painReader->forSession($session),
-                subjectiveFeelings: $command->subjectiveFeelings,
-                visualPostureDiagnostics: $command->visualPostureDiagnostics,
-                testResults: $this->testReader->tests($session),
-                rootCauses: $this->testReader->rootCauses($session),
-                causes: $this->testReader->causes($session),
-                causesManualOverride: (bool) $session->causes_manual_override,
-                therapistNotes: $command->therapistNotes,
-                protocolSteps: $this->protocolStepReader->forSession($session),
-                status: (string) $session->status->value,
-                completedAt: $session->completed_at,
-                editedAt: $session->edited_at,
-            );
+                if ($command->pains !== null) {
+                    $this->painWriter->replace($session, $command->pains, $keyVersion, historicalPainValues: $historicalPainValues);
+                } else {
+                    $this->painInitializer->initialize($session, $keyVersion);
+                }
+                if ($command->protocolSteps !== null) {
+                    $this->protocolStepWriter->replace($session, $command->protocolSteps, $keyVersion);
+                }
+                if ($command->testResults !== null || $command->rootCauses !== null) {
+                    $this->testWriter->replace(
+                        $session,
+                        $command->testResults ?? [],
+                        $command->rootCauses ?? [],
+                        $keyVersion,
+                        $command->causesManualOverride ? ($command->causeIds ?? []) : [],
+                    );
+                    if ($command->testResults !== null) {
+                        $this->syncTest18SafetyMarker($actor, $session, $command->testResults);
+                    }
+                }
+                if ($command->causeIds !== null || $command->causesManualOverride) {
+                    $this->causeWriter->replace($session, $command->causeIds ?? [], $command->causesManualOverride);
+                }
+
+                $this->audit->handle(
+                    organization: $organization,
+                    actor: $actor,
+                    action: 'medical.session.created',
+                    targetType: MedicalSession::class,
+                    targetId: (string) $session->getKey(),
+                    metadata: [
+                        'source' => 'crm',
+                        'key_version' => $keyVersion,
+                        'booking_id' => $booking?->getKey(),
+                        'client_id' => $client->getKey(),
+                        'specialist_id' => $specialist->getKey(),
+                    ],
+                );
+
+                return new MedicalSessionData(
+                    id: (int) $session->getKey(),
+                    organizationId: $orgId,
+                    clientId: (int) $client->getKey(),
+                    specialistId: (int) $specialist->getKey(),
+                    bookingId: $booking?->getKey(),
+                    pain: $specialComplaints,
+                    tests: $command->tests,
+                    observations: $command->observations,
+                    rootCauseHypothesis: $command->rootCauseHypothesis,
+                    protocol: $command->protocol,
+                    result: $command->result,
+                    encryptionKeyVersion: $keyVersion,
+                    occurredAt: $session->occurred_at,
+                    createdAt: $session->created_at,
+                    updatedAt: $session->updated_at,
+                    painVas: $command->painVas,
+                    pains: $this->painReader->forSession($session),
+                    subjectiveFeelings: $command->subjectiveFeelings,
+                    visualPostureDiagnostics: $command->visualPostureDiagnostics,
+                    testResults: $this->testReader->tests($session),
+                    rootCauses: $this->testReader->rootCauses($session),
+                    causes: $this->testReader->causes($session),
+                    causesManualOverride: (bool) $session->causes_manual_override,
+                    therapistNotes: $command->therapistNotes,
+                    protocolSteps: $this->protocolStepReader->forSession($session),
+                    status: (string) $session->status->value,
+                    completedAt: $session->completed_at,
+                    editedAt: $session->edited_at,
+                );
             });
         } catch (QueryException $exception) {
             if ($command->creationToken === null

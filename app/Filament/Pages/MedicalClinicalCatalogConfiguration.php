@@ -4,31 +4,31 @@ namespace App\Filament\Pages;
 
 use App\Filament\Support\LocalizedPage;
 use App\Models\User;
-use App\Modules\MedicalProfiles\Domain\Models\MedicalProblemTag;
 use App\Modules\MedicalProfiles\Domain\Models\MedicalComplaintDefinition;
+use App\Modules\MedicalProfiles\Domain\Models\MedicalProblemTag;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
 use App\Modules\Sessions\Application\ApplyMedicalCauseToTests;
 use App\Modules\Sessions\Application\ImportMedicalClinicalCatalogCsv;
-use App\Modules\Sessions\Application\MergeMedicalCauses;
 use App\Modules\Sessions\Application\MedicalClinicalCatalog;
 use App\Modules\Sessions\Application\MedicalStage1BCatalogPreset;
+use App\Modules\Sessions\Application\MergeMedicalCauses;
 use App\Modules\Sessions\Application\SaveMedicalClinicalCatalog;
 use App\Modules\Sessions\Domain\Enums\MedicalTestType;
 use App\Modules\Sessions\Domain\Models\MedicalCauseDefinition;
 use App\Modules\Sessions\Domain\Models\MedicalTestDefinition;
 use App\Modules\Sessions\Domain\Models\MedicalTestValue;
 use Filament\Actions\Action;
-use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\CheckboxList;
+use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TagsInput;
-use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Textarea;
+use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
 use Filament\Notifications\Notification;
 use Filament\Schemas\Components\Actions;
@@ -257,7 +257,6 @@ final class MedicalClinicalCatalogConfiguration extends LocalizedPage
                                     MedicalCauseDefinition::MODERATION_PENDING => __('На модерации'),
                                     MedicalCauseDefinition::MODERATION_HIDDEN => __('Скрыта'),
                                 ])
-                                ->required()
                                 ->default(MedicalCauseDefinition::MODERATION_ACTIVE),
                             Toggle::make('is_active')->label(__('Активна'))->default(true),
                             Hidden::make('sort_order')->dehydrated(true),
@@ -485,7 +484,7 @@ final class MedicalClinicalCatalogConfiguration extends LocalizedPage
         ];
     }
 
-    /** @param mixed $tests
+    /**
      * @return array<string, string>
      */
     private static function testEditorOptions(mixed $tests): array
@@ -788,7 +787,7 @@ final class MedicalClinicalCatalogConfiguration extends LocalizedPage
         return collect($tests)->contains(static fn (mixed $test): bool => is_array($test) && filled($test['test_type'] ?? null));
     }
 
-    /** @return list<\Filament\Schemas\Components\Component> */
+    /** @return list<Component> */
     private function catalogRowSchema(string $prefix): array
     {
         return [
@@ -930,8 +929,8 @@ final class MedicalClinicalCatalogConfiguration extends LocalizedPage
         ];
     }
 
-    /** @param mixed $rawRows
-     * @param array<string, list<int>> $links
+    /**
+     * @param  array<string, list<int>>  $links
      * @return list<array<string, mixed>>
      */
     private static function rowsForForm(mixed $rawRows, array $links, bool $defaultIndexEnabled = true): array

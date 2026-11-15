@@ -14,7 +14,6 @@ use App\Modules\Sessions\Application\MergeMedicalCauses;
 use App\Modules\Sessions\Application\SaveMedicalCauseDefinition;
 use App\Modules\Sessions\Application\SaveMedicalTestCauseLinks;
 use App\Modules\Sessions\Domain\Enums\MedicalSessionStatus;
-use App\Modules\Sessions\Domain\Models\MedicalCauseDefinition;
 use App\Modules\Sessions\Domain\Models\MedicalSession;
 use App\Modules\Sessions\Domain\Models\MedicalSessionRootCause;
 use App\Modules\Sessions\Domain\Models\MedicalSessionTestResult;
