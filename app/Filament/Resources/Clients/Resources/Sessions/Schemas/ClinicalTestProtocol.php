@@ -285,57 +285,85 @@ final class ClinicalTestProtocol
     {
         $configuration = self::sessionConfiguration($test);
         $hasSubtests = is_array($configuration['subtests'] ?? null) && $configuration['subtests'] !== [];
+        $hasRows = is_array($configuration['rows'] ?? null) && $configuration['rows'] !== [];
+        $hasFeelings = is_array($configuration['feelings'] ?? null) && $configuration['feelings'] !== [];
+        $hasSequence = collect(is_array($configuration['rows'] ?? null) ? $configuration['rows'] : [])
+            ->contains(static fn (mixed $row): bool => is_array($row) && is_array($row['choices'] ?? null));
+
+        $schema = [
+            Hidden::make('allowed_cause_ids')->dehydrated(),
+            Hidden::make('priority_options')->dehydrated(),
+        ];
+
+        if ($hasSequence) {
+            $schema[] = self::sequenceField($configuration);
+        }
+
+        if ($test->type() === MedicalTestType::T4) {
+            $schema[] = Placeholder::make('formula_preview')
+                ->label(__('Формула и нарушенные переходы'))
+                ->content(fn (Get $get): string => self::formulaDisplay($get('sequence')))
+                ->extraAttributes(['class' => 'font-semibold'])
+                ->columnSpanFull();
+        }
+
+        if ($test->type() === MedicalTestType::T2 && ($configuration['index_enabled'] ?? true)) {
+            $schema[] = ToggleButtons::make('index')
+                ->label(__('Общий индекс'))
+                ->options([0 => '0', 1 => '1', 2 => '2', 3 => '3'])
+                ->inline()
+                ->live()
+                ->afterStateUpdated(static function (Set $set, mixed $state): void {
+                    if ((int) $state === 0) {
+                        self::clearCauses($set);
+                    }
+                });
+            $schema[] = Select::make('cause_ids')
+                ->label(__('Причины метода'))
+                ->options(fn (Get $get): array => self::allowedCauseOptions($get))
+                ->multiple()
+                ->searchable()
+                ->live()
+                ->visible(fn (Get $get): bool => (int) ($get('index') ?? 0) > 0);
+            $schema[] = Select::make('primary_cause_id')
+                ->label(__('Основная причина'))
+                ->options(fn (Get $get): array => self::allowedCauseOptions($get))
+                ->searchable()
+                ->nullable()
+                ->visible(fn (Get $get): bool => (int) ($get('index') ?? 0) > 0 && (array) $get('cause_ids') !== []);
+        }
+
+        if ($test->type() === MedicalTestType::T12 && ! $hasSubtests) {
+            $schema[] = TextInput::make('energy')->label(__('Энергетический потенциал'))->numeric()->minValue(0)->maxValue(1000);
+            $schema[] = ToggleButtons::make('tor_direction')->label(__('Тор-поле'))->options(['R' => __('Вправо'), 'L' => __('Влево')])->inline();
+        }
+
+        if ($hasSubtests) {
+            $schema[] = self::subtestsField($test);
+        }
+        if ($hasRows) {
+            $schema[] = self::rowsField($test);
+        }
+        if ($hasFeelings) {
+            $schema[] = self::feelingsField($configuration, (int) $test->getKey());
+        }
+
+        if ($test->type() === MedicalTestType::T6) {
+            $schema[] = Select::make('movement')->label(__('Движение провокации'))->options(self::movementOptions($configuration['movement_options'] ?? null))->nullable();
+            $schema[] = TextInput::make('pain_intensity')->label(__('Интенсивность боли'))->numeric()->minValue(0)->maxValue(10);
+            $schema[] = TextInput::make('tl_reduction_percent')->label(__('Снижение боли TL, %'))->numeric()->minValue(-100)->maxValue(100);
+        }
+
+        if (is_array($configuration['priority_options'] ?? null) && $configuration['priority_options'] !== []) {
+            $schema[] = Select::make('priority_chain')
+                ->label(__('Приоритетная цепь'))
+                ->options(fn (Get $get): array => self::priorityOptions($get('priority_options')))
+                ->nullable()
+                ->searchable();
+        }
 
         return Section::make($label)
-            ->schema([
-                Hidden::make('allowed_cause_ids')->dehydrated(),
-                Hidden::make('priority_options')->dehydrated(),
-                self::sequenceField($configuration),
-                Placeholder::make('formula_preview')
-                    ->label(__('Формула и нарушенные переходы'))
-                    ->content(fn (Get $get): string => self::formulaDisplay($get('sequence')))
-                    ->visible(fn (): bool => $test->type() === MedicalTestType::T4)
-                    ->extraAttributes(['class' => 'font-semibold'])
-                    ->columnSpanFull(),
-                ToggleButtons::make('index')
-                    ->label(__('Общий индекс'))
-                    ->options([0 => '0', 1 => '1', 2 => '2', 3 => '3'])
-                    ->inline()
-                    ->live()
-                    ->afterStateUpdated(static function (Set $set, mixed $state): void {
-                        if ((int) $state === 0) {
-                            self::clearCauses($set);
-                        }
-                    })
-                    ->visible(fn (): bool => $test->type() === MedicalTestType::T2 && ($configuration['index_enabled'] ?? true)),
-                Select::make('cause_ids')
-                    ->label(__('Причины метода'))
-                    ->options(fn (Get $get): array => self::allowedCauseOptions($get))
-                    ->multiple()
-                    ->searchable()
-                    ->live()
-                    ->visible(fn (Get $get): bool => $test->type() === MedicalTestType::T2 && ($configuration['index_enabled'] ?? true) && (int) ($get('index') ?? 0) > 0),
-                Select::make('primary_cause_id')
-                    ->label(__('Основная причина'))
-                    ->options(fn (Get $get): array => self::allowedCauseOptions($get))
-                    ->searchable()
-                    ->nullable()
-                    ->visible(fn (Get $get): bool => $test->type() === MedicalTestType::T2 && ($configuration['index_enabled'] ?? true) && (int) ($get('index') ?? 0) > 0 && (array) $get('cause_ids') !== []),
-                TextInput::make('energy')->label(__('Энергетический потенциал'))->numeric()->minValue(0)->maxValue(1000)->visible(fn (): bool => $test->type() === MedicalTestType::T12 && ! $hasSubtests),
-                ToggleButtons::make('tor_direction')->label(__('Тор-поле'))->options(['R' => __('Вправо'), 'L' => __('Влево')])->inline()->visible(fn (): bool => $test->type() === MedicalTestType::T12 && ! $hasSubtests),
-                self::subtestsField($test),
-                self::rowsField($test),
-                self::feelingsField($configuration, (int) $test->getKey()),
-                Select::make('movement')->label(__('Движение провокации'))->options(self::movementOptions($configuration['movement_options'] ?? null))->nullable()->visible(fn (): bool => $test->type() === MedicalTestType::T6),
-                TextInput::make('pain_intensity')->label(__('Интенсивность боли'))->numeric()->minValue(0)->maxValue(10)->visible(fn (): bool => $test->type() === MedicalTestType::T6),
-                TextInput::make('tl_reduction_percent')->label(__('Снижение боли TL, %'))->numeric()->minValue(-100)->maxValue(100)->visible(fn (): bool => $test->type() === MedicalTestType::T6),
-                Select::make('priority_chain')
-                    ->label(__('Приоритетная цепь'))
-                    ->options(fn (Get $get): array => self::priorityOptions($get('priority_options')))
-                    ->nullable()
-                    ->searchable()
-                    ->visible(fn (Get $get): bool => (array) $get('priority_options') !== []),
-            ])
+            ->schema($schema)
             ->statePath('structured.'.$phase)
             ->collapsible()
             ->columnSpanFull();
