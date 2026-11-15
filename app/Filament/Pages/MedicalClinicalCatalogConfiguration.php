@@ -15,6 +15,7 @@ use App\Modules\Sessions\Application\MergeMedicalCauses;
 use App\Modules\Sessions\Application\MedicalClinicalCatalog;
 use App\Modules\Sessions\Application\MedicalStage1BCatalogPreset;
 use App\Modules\Sessions\Application\SaveMedicalClinicalCatalog;
+use App\Modules\Sessions\Domain\Enums\MedicalTestType;
 use App\Modules\Sessions\Domain\Models\MedicalCauseDefinition;
 use App\Modules\Sessions\Domain\Models\MedicalTestDefinition;
 use App\Modules\Sessions\Domain\Models\MedicalTestValue;
@@ -827,8 +828,10 @@ final class MedicalClinicalCatalogConfiguration extends LocalizedPage
             $links[$scope][] = (int) $link->medical_cause_definition_id;
         }
 
-        $rows = self::rowsForForm($configuration['rows'] ?? [], $links);
-        $feelings = self::rowsForForm($configuration['feelings'] ?? [], $links);
+        $testType = $test->type();
+        $defaultIndexEnabled = self::defaultIndexEnabled($testType);
+        $rows = self::rowsForForm($configuration['rows'] ?? [], $links, $defaultIndexEnabled);
+        $feelings = self::rowsForForm($configuration['feelings'] ?? [], $links, $defaultIndexEnabled);
         $subtests = [];
         foreach (is_array($configuration['subtests'] ?? null) ? $configuration['subtests'] : [] as $subtest) {
             if (! is_array($subtest)) {
@@ -838,10 +841,11 @@ final class MedicalClinicalCatalogConfiguration extends LocalizedPage
             if ($key === '') {
                 continue;
             }
+            $subtestType = MedicalTestType::tryFrom(strtoupper(trim((string) ($subtest['type'] ?? '')))) ?? $testType;
             $subtest['cause_ids'] = array_values(array_unique($links[$key] ?? []));
-            $subtest['rows'] = self::rowsForForm($subtest['rows'] ?? [], $links);
-            $subtest['feelings'] = self::rowsForForm($subtest['feelings'] ?? [], $links);
-            $subtest['provoking_points'] = self::rowsForForm($subtest['provoking_points'] ?? [], $links);
+            $subtest['rows'] = self::rowsForForm($subtest['rows'] ?? [], $links, self::defaultIndexEnabled($subtestType));
+            $subtest['feelings'] = self::rowsForForm($subtest['feelings'] ?? [], $links, self::defaultIndexEnabled($subtestType));
+            $subtest['provoking_points'] = self::rowsForForm($subtest['provoking_points'] ?? [], $links, self::defaultIndexEnabled($subtestType));
             $subtests[] = $subtest;
         }
 
@@ -892,7 +896,7 @@ final class MedicalClinicalCatalogConfiguration extends LocalizedPage
      * @param array<string, list<int>> $links
      * @return list<array<string, mixed>>
      */
-    private static function rowsForForm(mixed $rawRows, array $links): array
+    private static function rowsForForm(mixed $rawRows, array $links, bool $defaultIndexEnabled = true): array
     {
         if (! is_array($rawRows)) {
             return [];
@@ -908,10 +912,21 @@ final class MedicalClinicalCatalogConfiguration extends LocalizedPage
                 continue;
             }
             $row['cause_ids'] = array_values(array_unique($links[$key] ?? []));
+            if (! array_key_exists('index_enabled', $row)) {
+                $row['index_enabled'] = $defaultIndexEnabled;
+            }
+            if (! array_key_exists('angle_enabled', $row)) {
+                $row['angle_enabled'] = true;
+            }
             $rows[] = $row;
         }
 
         return $rows;
+    }
+
+    private static function defaultIndexEnabled(?MedicalTestType $type): bool
+    {
+        return ! in_array($type, [MedicalTestType::T5, MedicalTestType::T11, MedicalTestType::T12], true);
     }
 
     private static function catalogItemLabel(mixed $value, mixed $isActive): string

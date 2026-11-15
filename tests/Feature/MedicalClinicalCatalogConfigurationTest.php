@@ -11,6 +11,8 @@ use App\Modules\Organizations\Domain\Enums\OrganizationRole;
 use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Sessions\Application\ImportMedicalClinicalCatalogCsv;
 use App\Modules\Sessions\Application\MedicalClinicalCatalog;
+use App\Modules\Sessions\Application\MedicalStage1BCatalogPreset;
+use App\Modules\Sessions\Application\SaveMedicalClinicalCatalog;
 use App\Modules\Sessions\Domain\Models\MedicalCauseDefinition;
 use App\Modules\Sessions\Domain\Models\MedicalTestDefinition;
 use App\Modules\Sessions\Domain\Models\MedicalTestValue;
@@ -112,6 +114,26 @@ final class MedicalClinicalCatalogConfigurationTest extends TestCase
         self::assertSame([
             '1', '2', '3', '4', '5', '6', '7', '9', '25', '31.1',
         ], app(MedicalClinicalCatalog::class)->defaultSessionSelection((int) $organization->getKey()));
+    }
+
+    public function test_catalog_form_does_not_turn_omitted_row_defaults_off(): void
+    {
+        [$organization, $admin] = $this->fixture();
+        app(SaveMedicalClinicalCatalog::class)->handle(
+            $admin,
+            MedicalStage1BCatalogPreset::definitions(),
+            [],
+        );
+        $this->resolveFilamentContext($admin, $organization);
+
+        $component = Livewire::actingAs($admin)->test(MedicalClinicalCatalogConfiguration::class);
+        $tests = array_values($component->instance()->data['tests'] ?? []);
+        $t1 = collect($tests)->firstWhere('key', 'medical_test_001');
+        $t5 = collect($tests)->firstWhere('key', 'medical_test_009');
+
+        self::assertTrue((bool) ($t1['rows'][0]['index_enabled'] ?? false));
+        self::assertFalse((bool) ($t5['subtests'][0]['rows'][0]['index_enabled'] ?? true));
+        self::assertTrue((bool) ($t1['rows'][0]['angle_enabled'] ?? false));
     }
 
     public function test_manager_can_import_tests_causes_and_problem_tags_from_human_labelled_csv(): void
