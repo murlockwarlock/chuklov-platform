@@ -569,6 +569,7 @@ class EditMedicalSession extends LocalizedEditRecord
                                 ->visible(fn (): bool => app(MedicalClinicalCatalog::class)->testOptions(app(OrganizationContext::class)->id()) === [] && MedicalClinicalCatalogConfiguration::canAccess()),
                         ])->columnSpanFull(),
                         ClinicalTestProtocol::counters(),
+                        ClinicalTestProtocol::addTest(),
                         ClinicalTestProtocol::field(),
                         Hidden::make('causes_manual_override')->default(false)->dehydrated(),
                         Placeholder::make('derived_causes')
