@@ -79,7 +79,7 @@ const purchaseIdempotencyKey = `portal-purchase-${props.service.id}-${typeof cry
       </h3>
       <p
         v-if="service.summary"
-        class="portal-card__summary break-words"
+        class="portal-card__summary portal-service-card__summary break-words"
       >
         {{ service.summary }}
       </p>
@@ -118,7 +118,7 @@ const purchaseIdempotencyKey = `portal-purchase-${props.service.id}-${typeof cry
       </h3>
       <p
         v-if="service.summary"
-        class="portal-card__summary break-words"
+        class="portal-card__summary portal-service-card__summary break-words"
       >
         {{ service.summary }}
       </p>

@@ -16,12 +16,14 @@ final class ProjectPortalService
     /** @return array<string, mixed> */
     public function handle(Service $service, string $locale): array
     {
+        $description = $this->localizedValue($service, 'description', $locale);
+
         return [
             'id' => $service->getKey(),
             'catalogType' => $service->catalogItemType()->value,
             'name' => $this->localizedValue($service, 'name', $locale) ?? (string) $service->name,
-            'summary' => $this->localizedValue($service, 'description', $locale)
-                ?? (string) $service->summary,
+            'summary' => $this->stringValue($service->getAttribute('summary')) ?? $description,
+            'description' => $description,
             'imageUrl' => $this->imageResolver->resolve($service),
             'category' => $this->stringValue($service->getAttribute('category')),
             'durationMinutes' => $service->durationMinutes(),

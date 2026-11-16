@@ -9,6 +9,7 @@ type BookingFixture = {
     serviceId: number;
     serviceName: string;
     serviceSummary: string | null;
+    serviceDescription: string | null;
     specialistId: number;
     specialistName: string;
     alternateSpecialistName: string | null;
@@ -551,6 +552,7 @@ function createBookingFixture(options: BookingFixtureOptions | boolean = false):
                 ? 'Индивидуальная консультация по глубоким и устойчивым изменениям в жизни '.$suffix
                 : 'Playwright Service '.$suffix,
             'summary' => $withServiceImage ? 'Синтетическое описание услуги для проверки карточки.' : null,
+            'description_ru' => $withServiceImage ? "Подробное описание услуги.\\n\\nВнутри: формат, порядок и ожидаемый результат." : null,
             'formats' => $homeVisit ? ['home'] : (($multipleChoices || $onlineMeeting) ? ['office', 'online'] : ['office']),
             'image_path' => $withServiceImage ? 'brand/chuklov-designer-logo-ru.jpg' : null,
             'requires_medical_profile' => getenv('PLAYWRIGHT_MEDICAL_SERVICE') === '1',
@@ -726,6 +728,7 @@ function createBookingFixture(options: BookingFixtureOptions | boolean = false):
             'serviceId' => $service->getKey(),
             'serviceName' => $service->name,
             'serviceSummary' => $service->summary,
+            'serviceDescription' => $service->description_ru,
             'specialistId' => $specialist->getKey(),
             'specialistName' => $specialist->display_name,
             'alternateSpecialistName' => $alternateSpecialist?->display_name,
@@ -1796,6 +1799,12 @@ test('client sees available bonus in the header and can open the service list fr
     await page.reload();
     await expect(page.getByRole('heading', { name: 'Записаться', exact: true })).toBeVisible();
     await expect(bonusButton).toContainText('10.00 USD');
+    await imageCard.click();
+    await expect(page).toHaveURL(/\/portal\/bookings\/create\?service_id=/);
+    await expect(page.getByTestId('booking-selection-service')).toContainText(fixture.serviceName);
+    await expect(page.locator('.portal-booking-context-summary__service-description')).toHaveText(fixture.serviceDescription as string);
+    await page.goBack();
+    await expect(page.getByRole('heading', { name: 'Записаться', exact: true })).toBeVisible();
     await page.goBack();
     await expect(page.getByRole('heading', { name: 'Добро пожаловать в пространство здоровья!', exact: true })).toBeVisible();
     await expect(bonusButton).toContainText('10.00 USD');

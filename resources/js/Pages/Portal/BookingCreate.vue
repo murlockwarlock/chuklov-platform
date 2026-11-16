@@ -29,6 +29,7 @@ type ServiceOption = {
     id: number;
     name: string;
     summary: string;
+    description: string | null;
     formats: VisitFormat[];
     durationMinutes: number | null;
     priceMajor: string | null;
@@ -939,6 +940,12 @@ function submitBooking(): void {
           >
             <span class="portal-label">{{ t('booking.service') }}</span>
             <strong data-testid="booking-choice-service">{{ selectedService.name }}</strong>
+            <p
+              v-if="selectedService.description"
+              class="portal-copy portal-booking-choice__service-description"
+            >
+              {{ selectedService.description }}
+            </p>
             <template v-if="selectedSpecialist">
               <span class="portal-label">{{ t('booking.specialist') }}</span>
               <strong data-testid="booking-choice-specialist">{{ selectedSpecialist.displayName }}</strong>
@@ -986,6 +993,12 @@ function submitBooking(): void {
                 data-testid="booking-selection-service"
               >
                 {{ selectedService.name }}
+              </p>
+              <p
+                v-if="selectedService?.description"
+                class="portal-copy portal-booking-context-summary__service-description"
+              >
+                {{ selectedService.description }}
               </p>
               <p class="portal-booking-context-summary__details">
                 <span data-testid="booking-selection-format">{{ formatLabel(props.query.format) }}</span>
