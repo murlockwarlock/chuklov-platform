@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { Link } from '@inertiajs/vue3';
 import AppShell from '../../Components/Portal/AppShell.vue';
+import PortalIcon from '../../Components/Portal/PortalIcon.vue';
 import PortalPageHeader from '../../Components/Portal/PortalPageHeader.vue';
 import { usePortalLocale } from '../../composables/usePortalLocale';
-import type { PortalShell } from '../../types/portal';
+import type { PortalIconName, PortalShell } from '../../types/portal';
+import { formatServiceText } from '../../utils/formatServiceText';
 
 type Contact = {
     type: string;
@@ -54,6 +56,10 @@ function initials(name: string): string {
         .slice(0, 2)
         .map((part) => part.slice(0, 1).toUpperCase())
         .join('') || '?';
+}
+
+function contactIcon(type: string): PortalIconName {
+    return type === 'email' ? 'mail' : type === 'telegram' ? 'telegram' : 'phone';
 }
 </script>
 
@@ -156,11 +162,13 @@ function initials(name: string): string {
               v-for="contact in props.specialist.contacts"
               :key="contact.type"
               :href="contact.url"
-              class="portal-specialist-profile__contact portal-link"
+              class="portal-specialist-profile__contact"
+              :aria-label="`${contact.label}: ${contact.value}`"
               target="_blank"
               rel="noreferrer"
             >
-              <span>{{ contact.label }}</span>
+              <PortalIcon :name="contactIcon(contact.type)" />
+              <span class="sr-only">{{ contact.label }}</span>
               <strong>{{ contact.value }}</strong>
             </a>
           </div>
@@ -179,7 +187,7 @@ function initials(name: string): string {
               :key="service.id"
               class="portal-specialist-profile__service"
             >
-              <div class="min-w-0 portal-stack portal-stack--tight">
+              <div class="portal-specialist-profile__service-copy min-w-0 portal-stack portal-stack--tight">
                 <h3 class="portal-heading portal-heading--card">
                   {{ service.name }}
                 </h3>
@@ -187,7 +195,7 @@ function initials(name: string): string {
                   v-if="service.summary"
                   class="portal-card__summary"
                 >
-                  {{ service.summary }}
+                  {{ formatServiceText(service.summary) }}
                 </p>
               </div>
               <Link
@@ -200,18 +208,15 @@ function initials(name: string): string {
           </div>
         </section>
 
-        <div class="portal-specialist-profile__actions">
+        <div
+          v-if="props.specialist.services.length === 0"
+          class="portal-specialist-profile__actions"
+        >
           <Link
             :href="props.specialist.bookingUrl"
             class="portal-button portal-button--primary"
           >
             {{ t('specialist.book') }}
-          </Link>
-          <Link
-            :href="props.urls.services"
-            class="portal-link"
-          >
-            {{ t('specialist.services') }}
           </Link>
         </div>
       </article>

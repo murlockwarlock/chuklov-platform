@@ -4,7 +4,9 @@ import { computed, onMounted, onUnmounted, ref } from 'vue';
 import type { PortalLocale, PortalShell } from '../../types/portal';
 import { portalText } from '../../locales/portal';
 
-const props = defineProps<{ portal: PortalShell }>();
+const props = defineProps<{
+    portal: PortalShell;
+}>();
 const form = useForm<{ locale: PortalLocale }>({ locale: props.portal.locale });
 const locale = computed<PortalLocale>(() => props.portal.locale === 'en' ? 'en' : 'ru');
 const open = ref(false);

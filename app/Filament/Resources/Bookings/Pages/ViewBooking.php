@@ -36,12 +36,16 @@ class ViewBooking extends LocalizedViewRecord
     #[Url(as: 'view', history: true, nullable: true)]
     public ?string $journalView = null;
 
+    #[Url(as: 'show_archived', history: true)]
+    public bool $journalShowArchived = false;
+
     public function mount(int|string $record): void
     {
         $this->returnToJournal = request()->boolean('return_to_journal');
         $this->journalSpecialistId = $this->validSpecialistId(request()->query('specialist_id'));
         $this->journalWeek = $this->validWeek(request()->query('week'));
         $this->journalView = request()->query('view') === 'list' ? 'list' : 'week';
+        $this->journalShowArchived = request()->boolean('show_archived');
 
         parent::mount($record);
     }
@@ -96,6 +100,9 @@ class ViewBooking extends LocalizedViewRecord
         $parameters['view'] = $this->journalView === 'list' ? 'list' : 'week';
         if ($this->journalSpecialistId !== null) {
             $parameters['specialist_id'] = $this->journalSpecialistId;
+        }
+        if ($this->journalShowArchived) {
+            $parameters['show_archived'] = '1';
         }
 
         return ListBookings::getUrl().'?'.http_build_query($parameters);

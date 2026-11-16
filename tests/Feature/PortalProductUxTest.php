@@ -175,6 +175,7 @@ class PortalProductUxTest extends TestCase
         self::assertStringContainsString('<PortalIcon name="external-link" />', $health);
         self::assertStringContainsString('<PortalIcon name="download" />', $health);
         self::assertStringNotContainsString('class="portal-link"', $health);
+        self::assertStringNotContainsString('target="_blank"', $health);
         self::assertStringContainsString('<PortalIcon name="download" />', $medicalUploader);
         self::assertStringContainsString('group-required-acceptance', $confirmation);
         self::assertStringContainsString('@update:required-consent', $booking);

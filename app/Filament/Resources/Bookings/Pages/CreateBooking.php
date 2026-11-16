@@ -38,6 +38,9 @@ class CreateBooking extends LocalizedCreateRecord
     #[Url(as: 'view', history: true, nullable: true)]
     public ?string $journalView = null;
 
+    #[Url(as: 'show_archived', history: true)]
+    public bool $journalShowArchived = false;
+
     public function mount(): void
     {
         parent::mount();
@@ -242,6 +245,9 @@ class CreateBooking extends LocalizedCreateRecord
                 ->whereKey($specialistId)
                 ->exists()) {
                 $parameters['specialist_id'] = $specialistId;
+            }
+            if ($this->journalShowArchived) {
+                $parameters['show_archived'] = '1';
             }
             $url = ListBookings::getUrl();
 

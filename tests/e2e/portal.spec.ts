@@ -8,6 +8,8 @@ type BookingFixture = {
     cookieValue: string;
     serviceId: number;
     serviceName: string;
+    serviceSummary: string | null;
+    serviceDescription: string | null;
     specialistId: number;
     specialistName: string;
     alternateSpecialistName: string | null;
@@ -40,8 +42,10 @@ type BookingFixtureOptions = {
     multipleChoices?: boolean;
     multipleLocations?: boolean;
     longServiceTitle?: boolean;
+    longSpecialistName?: boolean;
     homeVisit?: boolean;
     withServiceImage?: boolean;
+    equalServiceDescription?: boolean;
     feedbackEnabled?: boolean;
     tracker?: 'empty' | 'task' | 'checkins';
     duplicateOfficeLocation?: boolean;
@@ -65,8 +69,10 @@ function createBookingFixture(options: BookingFixtureOptions | boolean = false):
         $confirmedOfficeBooking = getenv('PLAYWRIGHT_CONFIRMED_OFFICE_BOOKING') === '1';
         $cancelledOfficeBooking = getenv('PLAYWRIGHT_CANCELLED_OFFICE_BOOKING') === '1';
         $longServiceTitle = getenv('PLAYWRIGHT_LONG_SERVICE_TITLE') === '1';
+        $longSpecialistName = getenv('PLAYWRIGHT_LONG_SPECIALIST_NAME') === '1';
         $homeVisit = getenv('PLAYWRIGHT_HOME_VISIT') === '1';
         $withServiceImage = getenv('PLAYWRIGHT_WITH_SERVICE_IMAGE') === '1';
+        $equalServiceDescription = getenv('PLAYWRIGHT_EQUAL_SERVICE_DESCRIPTION') === '1';
         $feedbackEnabled = getenv('PLAYWRIGHT_FEEDBACK_ENABLED') === '1';
         $withCompanionMessages = getenv('PLAYWRIGHT_WITH_COMPANION_MESSAGES') === '1';
         $withPartnerRewards = getenv('PLAYWRIGHT_WITH_PARTNER_REWARDS') === '1';
@@ -264,7 +270,9 @@ function createBookingFixture(options: BookingFixtureOptions | boolean = false):
             }
         }
         $specialist = \\App\\Modules\\Specialists\\Domain\\Models\\Specialist::factory()->forOrganization($organization)->create([
-            'display_name' => 'Playwright Specialist '.$suffix,
+            'display_name' => $longSpecialistName
+                ? 'СпециалистСОченьДлиннымИменемДляПроверкиУзкогоЭкрана'
+                : 'Playwright Specialist '.$suffix,
             'timezone' => 'UTC',
         ]);
         if ($withPartnerRewards || $withServiceCredit) {
@@ -549,6 +557,12 @@ function createBookingFixture(options: BookingFixtureOptions | boolean = false):
             'name' => $longServiceTitle
                 ? 'Индивидуальная консультация по глубоким и устойчивым изменениям в жизни '.$suffix
                 : 'Playwright Service '.$suffix,
+            'summary' => $withServiceImage ? ($equalServiceDescription
+                ? 'Подробное описание услуги. Внутри: формат, порядок и ожидаемый результат.'
+                : 'Синтетическое описание услуги для проверки карточки. Внутри: 1. формат 2. порядок 3. результат.') : null,
+            'description_ru' => $withServiceImage ? ($equalServiceDescription
+                ? 'Подробное описание услуги. Внутри: формат, порядок и ожидаемый результат.'
+                : "Подробное описание услуги.\\n\\nВнутри: формат, порядок и ожидаемый результат.") : null,
             'formats' => $homeVisit ? ['home'] : (($multipleChoices || $onlineMeeting) ? ['office', 'online'] : ['office']),
             'image_path' => $withServiceImage ? 'brand/chuklov-designer-logo-ru.jpg' : null,
             'requires_medical_profile' => getenv('PLAYWRIGHT_MEDICAL_SERVICE') === '1',
@@ -723,6 +737,8 @@ function createBookingFixture(options: BookingFixtureOptions | boolean = false):
             'clientId' => $client->getKey(),
             'serviceId' => $service->getKey(),
             'serviceName' => $service->name,
+            'serviceSummary' => $service->summary,
+            'serviceDescription' => $service->description_ru,
             'specialistId' => $specialist->getKey(),
             'specialistName' => $specialist->display_name,
             'alternateSpecialistName' => $alternateSpecialist?->display_name,
@@ -773,8 +789,10 @@ function createBookingFixture(options: BookingFixtureOptions | boolean = false):
                 PLAYWRIGHT_MULTIPLE_CHOICES: normalizedOptions.multipleChoices ? '1' : '0',
                 PLAYWRIGHT_MULTIPLE_LOCATIONS: normalizedOptions.multipleLocations ? '1' : '0',
                 PLAYWRIGHT_LONG_SERVICE_TITLE: normalizedOptions.longServiceTitle ? '1' : '0',
+                PLAYWRIGHT_LONG_SPECIALIST_NAME: normalizedOptions.longSpecialistName ? '1' : '0',
                 PLAYWRIGHT_HOME_VISIT: normalizedOptions.homeVisit ? '1' : '0',
                 PLAYWRIGHT_WITH_SERVICE_IMAGE: normalizedOptions.withServiceImage ? '1' : '0',
+                PLAYWRIGHT_EQUAL_SERVICE_DESCRIPTION: normalizedOptions.equalServiceDescription ? '1' : '0',
                 PLAYWRIGHT_FEEDBACK_ENABLED: normalizedOptions.feedbackEnabled ? '1' : '0',
                 PLAYWRIGHT_DUPLICATE_OFFICE_LOCATION: normalizedOptions.duplicateOfficeLocation ? '1' : '0',
             },
@@ -984,6 +1002,11 @@ async function acceptRequiredConsents(page: Page): Promise<void> {
     });
 
     await expect(checkbox).toHaveCount(1);
+    await expect(page.getByText('Необязательно', { exact: true })).toHaveCount(0);
+    const marketingCheckbox = page.getByRole('checkbox', { name: /полезные материалы и новости/i });
+    if (await marketingCheckbox.count() > 0) {
+        await expect(marketingCheckbox).not.toBeChecked();
+    }
     await checkbox.check();
 }
 
@@ -1608,8 +1631,63 @@ test('authenticated Portal pages keep one navigation and page-header contract', 
                     : '/portal/more');
         await expect(page.locator('.portal-page-header')).toHaveCount(1);
         await expect(page.locator('main .portal-button').filter({ hasText: 'Главная' })).toHaveCount(0);
+        if (route.path === '/') {
+            const headerBounds = await page.locator('.portal-header__inner').boundingBox();
+            expect(headerBounds).not.toBeNull();
+            expect(headerBounds?.height).toBeLessThanOrEqual(64);
+        }
         await assertNoHorizontalOverflow(page);
     }
+});
+
+test('Telegram Mini App keeps the header out of document flow and exposes language in page headers', async ({ page }) => {
+    const fixture = createBookingFixture();
+    await page.addInitScript(() => {
+        const telegramWindow = window as unknown as {
+            Telegram: { WebApp: { initData: string; ready(): void } };
+        };
+        telegramWindow.Telegram = { WebApp: { initData: 'verified-init-data', ready() {} } };
+    });
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.context().addCookies([{
+        name: fixture.cookieName,
+        value: fixture.cookieValue,
+        url: 'http://127.0.0.1:8000',
+    }]);
+
+    await page.goto('/');
+    await expect(page.locator('.portal-shell--telegram')).toHaveCount(1);
+    await expect(page.locator('.portal-shell--telegram .portal-header')).toHaveCSS('display', 'none');
+    expect(await page.locator('.portal-header__inner').boundingBox()).toBeNull();
+    await expect(page.locator('.portal-page-header .portal-language-switcher')).toHaveCount(1);
+    await expect(page.locator('.portal-page-header .portal-language-switcher__trigger')).toBeVisible();
+    await page.locator('.portal-page-header .portal-language-switcher__trigger').click();
+    await expect(page.locator('.portal-page-header .portal-language-switcher__menu')).toBeVisible();
+    await expect(page.locator('.portal-page-header .portal-language-switcher__menu-option')).toHaveCount(2);
+    await page.keyboard.press('Escape');
+    await assertNoHorizontalOverflow(page);
+
+    await page.goto('/portal/profile');
+    await expect(page.locator('.portal-shell--telegram .portal-header')).toHaveCSS('display', 'none');
+    await expect(page.locator('.portal-page-header .portal-language-switcher')).toHaveCount(1);
+    await expect(page.locator('.portal-page-header .portal-language-switcher__trigger')).toBeVisible();
+    await assertNoHorizontalOverflow(page);
+
+    await page.goto('/portal/companion');
+    const companionGeometry = await page.evaluate(() => {
+        const companion = document.querySelector('.portal-companion')?.getBoundingClientRect();
+        const bottomNavigation = document.querySelector('.portal-bottom-nav')?.getBoundingClientRect();
+
+        return {
+            companionBottom: companion?.bottom ?? null,
+            bottomNavigationTop: bottomNavigation?.top ?? null,
+        };
+    });
+    expect(companionGeometry.companionBottom).not.toBeNull();
+    expect(companionGeometry.bottomNavigationTop).not.toBeNull();
+    expect((companionGeometry.companionBottom as number) - (companionGeometry.bottomNavigationTop as number)).toBeLessThanOrEqual(1);
+    expect((companionGeometry.bottomNavigationTop as number) - (companionGeometry.companionBottom as number)).toBeLessThanOrEqual(24);
+    await assertNoHorizontalOverflow(page);
 });
 
 test('confirmed client greeting follows the saved locale after reload', async ({ page }) => {
@@ -1657,6 +1735,25 @@ test('feedback keeps the selected score visible and the portal within mobile bou
         await expect(page.getByRole('radio', { name: '5', exact: true })).not.toHaveClass(/portal-score-option--selected/);
         await assertNoHorizontalOverflow(page);
     }
+});
+
+test('positive feedback copy stays localized after submission', async ({ page }) => {
+    const fixture = createBookingFixture({ feedbackEnabled: true });
+
+    await page.context().addCookies([{
+        name: fixture.cookieName,
+        value: fixture.cookieValue,
+        url: 'http://127.0.0.1:8000',
+    }]);
+
+    await page.goto('/portal/feedback');
+    await page.getByRole('radio', { name: '10', exact: true }).click();
+    await page.getByRole('button', { name: 'Отправить оценку', exact: true }).click();
+    await expect(page.getByText('Будем благодарны за ваш положительный отзыв.', { exact: true })).toBeVisible();
+
+    await page.getByRole('button', { name: 'Русский', exact: true }).click();
+    await page.getByRole('menuitemradio', { name: 'English', exact: true }).click();
+    await expect(page.getByText('We would be grateful for your positive review.', { exact: true })).toBeVisible();
 });
 
 test('home keeps one primary booking action and ordinary referrals remain available', async ({ page }) => {
@@ -1753,10 +1850,40 @@ test('client sees available bonus in the header and can open the service list fr
     await expect(page.getByRole('heading', { name: 'Записаться', exact: true })).toBeVisible();
     const imageCard = page.locator('.portal-service-card--with-image').filter({ hasText: fixture.serviceName });
     await expect(imageCard).toBeVisible();
+    await expect(imageCard.locator('.portal-card__summary')).toHaveText(fixture.serviceSummary as string);
+    await expect(imageCard.locator('.portal-service-card__summary')).not.toHaveClass(/clamped/);
+    await expect(imageCard.locator('.portal-service-card__summary')).toHaveText(/1\. формат\s+2\. порядок\s+3\. результат\./);
+    const serviceDetails = imageCard.locator('.portal-service-card__details');
+    const detailsSummary = serviceDetails.locator('summary');
+    await expect(serviceDetails).toHaveCount(1);
+    await expect(serviceDetails).not.toHaveAttribute('open', '');
+    await expect(detailsSummary).toHaveText('Полное описание');
+    const catalogUrl = page.url();
+    await detailsSummary.focus();
+    await detailsSummary.press('Enter');
+    await expect(serviceDetails).toHaveAttribute('open', '');
+    await expect(serviceDetails.locator('.portal-service-card__description')).toHaveText(fixture.serviceDescription as string);
+    await expect(imageCard.locator('.portal-service-card__description')).toHaveCount(1);
+    expect(page.url()).toBe(catalogUrl);
+    await detailsSummary.click();
+    await expect(serviceDetails).not.toHaveAttribute('open', '');
     for (const width of [320, 360, 390, 768, 1024, 1440]) {
         await page.setViewportSize({ width, height: 900 });
         await expect(imageCard.locator('.portal-service-card__image')).toBeVisible();
         await assertNoHorizontalOverflow(page);
+        const cardLayout = await imageCard.evaluate((card) => {
+            const cardRect = card.getBoundingClientRect();
+            const bodyRect = card.querySelector('.portal-service-card__body')?.getBoundingClientRect();
+
+            return bodyRect === undefined
+                ? null
+                : { cardWidth: cardRect.width, bodyWidth: bodyRect.width };
+        });
+        expect(cardLayout).not.toBeNull();
+        if (cardLayout === null) {
+            throw new Error('service card body geometry is unavailable');
+        }
+        expect(cardLayout.bodyWidth).toBeGreaterThan(cardLayout.cardWidth * 0.7);
         if (width < 768) {
             const mediaBottom = await imageCard.locator('.portal-service-card__media').evaluate((element) => element.getBoundingClientRect().bottom);
             const bodyTop = await imageCard.locator('.portal-service-card__body').evaluate((element) => element.getBoundingClientRect().top);
@@ -1764,13 +1891,144 @@ test('client sees available bonus in the header and can open the service list fr
         }
     }
     await expect(page.getByRole('dialog')).toBeHidden();
+    const bookingAction = imageCard.getByRole('link', { name: 'Записаться', exact: true });
+    await expect(bookingAction).toHaveClass(/portal-button--primary/);
+    const actionGeometry = await imageCard.evaluate((card) => {
+        const cardRect = card.getBoundingClientRect();
+        const actionRect = card.querySelector('.portal-service-card__link')?.getBoundingClientRect();
+
+        return actionRect === undefined
+            ? null
+            : { left: actionRect.left - cardRect.left, right: actionRect.right - cardRect.right };
+    });
+    expect(actionGeometry).not.toBeNull();
+    expect(actionGeometry?.left).toBeGreaterThanOrEqual(0);
+    expect(actionGeometry?.right).toBeLessThanOrEqual(1);
 
     await page.reload();
     await expect(page.getByRole('heading', { name: 'Записаться', exact: true })).toBeVisible();
     await expect(bonusButton).toContainText('10.00 USD');
+    await expect(imageCard.locator('.portal-service-card__details')).not.toHaveAttribute('open', '');
+    await imageCard.getByRole('link', { name: 'Записаться', exact: true }).click();
+    await expect(page).toHaveURL(/\/portal\/bookings\/create\?service_id=/);
+    await expect(page.getByTestId('booking-selection-service')).toContainText(fixture.serviceName);
+    await expect(page.locator('.portal-booking-context-summary__service-description')).toHaveText(fixture.serviceDescription as string);
+    await page.goBack();
+    await expect(page.getByRole('heading', { name: 'Записаться', exact: true })).toBeVisible();
     await page.goBack();
     await expect(page.getByRole('heading', { name: 'Добро пожаловать в пространство здоровья!', exact: true })).toBeVisible();
     await expect(bonusButton).toContainText('10.00 USD');
+});
+
+test('service catalog hides redundant full-description disclosure', async ({ page }) => {
+    const equalFixture = createBookingFixture({ withServiceImage: true, equalServiceDescription: true });
+
+    await page.context().addCookies([{
+        name: equalFixture.cookieName,
+        value: equalFixture.cookieValue,
+        url: 'http://127.0.0.1:8000',
+    }]);
+
+    await page.goto('/portal/services');
+    const equalCard = page.locator('.portal-service-card--with-image').filter({ hasText: equalFixture.serviceName });
+    await expect(equalCard).toBeVisible();
+    await expect(equalCard.locator('.portal-card__summary')).toHaveText(equalFixture.serviceSummary as string);
+    await expect(equalCard.locator('.portal-service-card__details')).toHaveCount(0);
+
+    const emptyFixture = createBookingFixture();
+    await page.context().addCookies([{
+        name: emptyFixture.cookieName,
+        value: emptyFixture.cookieValue,
+        url: 'http://127.0.0.1:8000',
+    }]);
+    await page.goto('/portal/services');
+    const emptyCard = page.locator('.portal-service-card').filter({ hasText: emptyFixture.serviceName });
+    await expect(emptyCard).toBeVisible();
+    await expect(emptyCard.locator('.portal-service-card__details')).toHaveCount(0);
+});
+
+test('client can open the only specialist profile from time selection and return with the slot', async ({ page }) => {
+    const fixture = createBookingFixture();
+
+    await page.context().addCookies([{
+        name: fixture.cookieName,
+        value: fixture.cookieValue,
+        url: 'http://127.0.0.1:8000',
+    }]);
+
+    await page.goto(`/portal/bookings/create?service_id=${fixture.serviceId}`);
+    await expect(page.getByRole('heading', { name: 'Выберите дату и время', exact: true })).toBeVisible();
+    await expect(page.getByTestId('booking-selection-service')).toContainText(fixture.serviceName);
+    await expect(page.getByTestId('booking-selection-specialist')).toContainText(fixture.specialistName);
+    const slot = page.getByTestId('availability-slot').first();
+    await expect(slot).toBeVisible();
+    await slot.click();
+    const selectedStart = new URL(page.url()).searchParams.get('selected_start_at');
+    expect(selectedStart).not.toBeNull();
+
+    const detailsLink = page.getByRole('link', { name: 'Подробнее о специалисте', exact: true });
+    await expect(detailsLink).toBeVisible();
+    await detailsLink.click();
+    await expect(page.getByRole('heading', { name: fixture.specialistName, exact: true })).toBeVisible();
+    await expect(page.getByText('Профиль специалиста', { exact: true })).toBeVisible();
+
+    await page.getByRole('link', { name: 'Вернуться к записи', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'Выберите дату и время', exact: true })).toBeVisible();
+    await expect(page.getByTestId('booking-selection-specialist')).toContainText(fixture.specialistName);
+    await expect(page.locator('[data-testid="availability-slot"][aria-pressed="true"]')).toHaveCount(1);
+    expect(new URL(page.url()).searchParams.get('service_id')).toBe(String(fixture.serviceId));
+    expect(new URL(page.url()).searchParams.get('specialist_id')).toBe(String(fixture.specialistId));
+    expect(new URL(page.url()).searchParams.get('selected_start_at')).toBe(selectedStart);
+
+    await page.goBack();
+    await expect(page.getByRole('heading', { name: fixture.specialistName, exact: true })).toBeVisible();
+    await page.goForward();
+    await expect(page.getByRole('heading', { name: 'Выберите дату и время', exact: true })).toBeVisible();
+    await expect(page.locator('[data-testid="availability-slot"][aria-pressed="true"]')).toHaveCount(1);
+});
+
+test('specialist profile headings wrap inside narrow portal viewports', async ({ page }) => {
+    const fixture = createBookingFixture({ longSpecialistName: true, withServiceImage: true });
+
+    await page.context().addCookies([{
+        name: fixture.cookieName,
+        value: fixture.cookieValue,
+        url: 'http://127.0.0.1:8000',
+    }]);
+
+    await page.goto(`/portal/specialists/${fixture.specialistId}`);
+    const heading = page.locator('.portal-specialist-profile__hero .portal-heading');
+    await expect(heading).toHaveText(fixture.specialistName);
+    await expect(heading).toHaveCSS('overflow-wrap', 'anywhere');
+    const serviceCard = page.locator('.portal-specialist-profile__service').first();
+    await expect(serviceCard).toBeVisible();
+    const serviceSummary = serviceCard.locator('.portal-card__summary');
+    await expect(serviceSummary).toHaveCSS('white-space', 'pre-wrap');
+    const renderedSummary = await serviceSummary.textContent();
+    expect(renderedSummary).toContain('\n1.');
+    expect(renderedSummary).toContain('\n2.');
+    await expect(page.locator('.portal-specialist-profile__actions')).toHaveCount(0);
+    await expect(serviceCard.getByRole('link', { name: 'Записаться', exact: true })).toHaveCount(1);
+
+    for (const width of [320, 360, 390, 768, 1024, 1440]) {
+        await page.setViewportSize({ width, height: 900 });
+        await assertNoHorizontalOverflow(page);
+        await assertRenderedViewportGeometry(page, ['.portal-specialist-profile__hero'], ['.portal-specialist-profile']);
+        const cardLayout = await serviceCard.evaluate((card) => {
+            const cardRect = card.getBoundingClientRect();
+            const copyRect = card.querySelector('.portal-specialist-profile__service-copy')?.getBoundingClientRect();
+
+            return copyRect === undefined
+                ? null
+                : { cardWidth: cardRect.width, copyWidth: copyRect.width };
+        });
+        expect(cardLayout).not.toBeNull();
+        if (cardLayout === null) {
+            throw new Error('specialist service card copy geometry is unavailable');
+        }
+        expect(cardLayout.copyWidth).toBeGreaterThan(cardLayout.cardWidth * 0.7);
+        await assertRenderedViewportGeometry(page, ['.portal-specialist-profile__service'], ['.portal-specialist-profile']);
+    }
 });
 
 test('ordinary referral copy reports clipboard failure and recovers on retry', async ({ page }) => {
@@ -4080,6 +4338,10 @@ test('family profiles persist, invitations retry safely, and linked patients can
     await page.getByTestId('availability-slot').first().click();
     const preservedSlot = page.locator('[data-testid="availability-slot"][aria-pressed="true"]');
     await expect(preservedSlot).toHaveCount(1);
+    const contextActions = page.locator('.portal-booking-context-summary__actions .portal-booking-context-summary__action');
+    await expect(contextActions.first()).toBeVisible();
+    await expect(contextActions.first()).toHaveClass(/portal-button--secondary/);
+    await expect(page.getByTestId('booking-specialist-details')).toHaveClass(/portal-button/);
     const preservedStart = new URL(page.url()).searchParams.get('selected_start_at');
     expect(preservedStart).not.toBeNull();
     await expect(page.getByTestId('booking-selection-service')).toHaveText(owner.serviceName);
@@ -4118,7 +4380,7 @@ test('family profiles persist, invitations retry safely, and linked patients can
         await assertNoHorizontalOverflow(page);
         await assertRenderedViewportGeometry(
             page,
-            ['.portal-booking-patient-selector__add', '.portal-booking-flow__cta'],
+            ['.portal-booking-patient-selector__add', '.portal-booking-flow__cta', '.portal-booking-context-summary__action'],
             ['.portal-booking-context-summary', '.portal-booking-flow'],
         );
     }

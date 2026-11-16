@@ -63,6 +63,23 @@ defineProps<{
       />
       <path d="M5 20a7 7 0 0 1 14 0" />
     </template>
+    <template v-if="name === 'phone'">
+      <path d="M7.2 4.5 9.5 4l1.5 4-2 1.5a15 15 0 0 0 5.5 5.5l1.5-2 4 1.5-.5 2.3a2 2 0 0 1-2.2 1.7A15.5 15.5 0 0 1 5.5 6.7 2 2 0 0 1 7.2 4.5Z" />
+    </template>
+    <template v-if="name === 'mail'">
+      <rect
+        x="3.5"
+        y="5"
+        width="17"
+        height="14"
+        rx="2"
+      />
+      <path d="m4.5 7 7.5 5.5L19.5 7" />
+    </template>
+    <template v-if="name === 'telegram'">
+      <path d="m21 3-18 7.2 7.1 2.6L12.7 20 16 14l4.5 5L21 3Z" />
+      <path d="m10.1 12.8 9.6-7.5" />
+    </template>
     <path
       v-if="name === 'paperclip'"
       d="m9.5 12.5 5.25-5.25a3.18 3.18 0 0 1 4.5 4.5L11 20a5 5 0 0 1-7.07-7.07l8-8a3.5 3.5 0 0 1 4.95 4.95L8.7 18.06a2 2 0 1 1-2.83-2.83l7.42-7.42"

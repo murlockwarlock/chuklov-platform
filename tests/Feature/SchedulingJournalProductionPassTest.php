@@ -1428,7 +1428,7 @@ final class SchedulingJournalProductionPassTest extends TestCase
         self::assertSame($second->getKey(), $day['specialists'][$second->getKey()]['bookings'][0]['specialist_id']);
     }
 
-    public function test_journal_keeps_inactive_specialist_history_but_denies_new_bookings(): void
+    public function test_journal_hides_archived_specialists_until_the_archive_filter_is_enabled(): void
     {
         [$organization, $admin, $specialist, $service] = $this->fixture();
         $specialist->forceFill(['is_active' => false])->save();
@@ -1450,16 +1450,40 @@ final class SchedulingJournalProductionPassTest extends TestCase
             'view' => 'week',
         ])->actingAs($admin)->test(ListBookings::class);
 
-        $journal->assertSet('selectedSpecialistId', $specialist->getKey());
-        self::assertSame($booking->getKey(), $journal->instance()->journalDays['2026-10-05']['bookings'][0]['id']);
-        self::assertSame($specialist->display_name.' (неактивен)', $journal->instance()->specialistOptions[$specialist->getKey()]);
+        $journal
+            ->assertSet('showArchivedSpecialists', false)
+            ->assertSet('selectedSpecialistId', null)
+            ->assertSet('selectedSpecialistIds', []);
+        self::assertArrayNotHasKey($specialist->getKey(), $journal->instance()->specialistOptions);
+        self::assertSame([], $journal->instance()->journalDays['2026-10-05']['bookings']);
+        self::assertStringContainsString('Показать архивных', $journal->html());
 
-        $remounted = Livewire::withQueryParams([
+        $journal = Livewire::withQueryParams([
+            'show_archived' => '1',
             'specialist_id' => $specialist->getKey(),
             'week' => '2026-10-05',
             'view' => 'week',
         ])->actingAs($admin)->test(ListBookings::class);
-        $remounted->assertSet('selectedSpecialistId', $specialist->getKey());
+
+        $journal->assertSet('showArchivedSpecialists', true)
+            ->assertSet('selectedSpecialistId', $specialist->getKey());
+        self::assertSame($booking->getKey(), $journal->instance()->journalDays['2026-10-05']['bookings'][0]['id']);
+        self::assertSame($specialist->display_name.' (неактивен)', $journal->instance()->specialistOptions[$specialist->getKey()]);
+        self::assertSame($specialist->display_name.' (неактивен)', $journal->instance()->journalDays['2026-10-05']['specialists'][$specialist->getKey()]['name']);
+        self::assertFalse($journal->instance()->canCreateBooking());
+
+        parse_str((string) parse_url($journal->instance()->bookingCreationUrl('2026-10-05', '10:00'), PHP_URL_QUERY), $createQuery);
+        self::assertSame('1', $createQuery['show_archived']);
+        self::assertStringContainsString('show_archived=1', $journal->instance()->journalDays['2026-10-05']['bookings'][0]['url']);
+
+        $journal->call('setViewMode', 'list');
+        self::assertStringContainsString($client->full_name, $journal->html());
+
+        $journal->set('showArchivedSpecialists', false)
+            ->call('setViewMode', 'week')
+            ->assertSet('selectedSpecialistId', null)
+            ->assertSet('selectedSpecialistIds', []);
+        self::assertSame([], $journal->instance()->journalDays['2026-10-05']['bookings']);
 
         $this->expectException(ValidationException::class);
         app(CreateBookingAction::class)->handle(

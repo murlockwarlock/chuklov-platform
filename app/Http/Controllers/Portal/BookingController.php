@@ -88,6 +88,30 @@ class BookingController extends Controller
         $displayTimezone = $this->displayTimezone($validated['display_timezone'] ?? null, $client->timezone);
         [$dateFrom, $dateTo] = $this->dateRange($validated, $displayTimezone);
         $format = $this->selectedFormat($validated['format'] ?? null, $selectedService);
+        $specialistDetailsQuery = [
+            'service_id' => $selectedService?->getKey(),
+            'date_from' => $dateFrom,
+            'date_to' => $dateTo,
+            'display_timezone' => $displayTimezone,
+        ];
+        if (array_key_exists('format', $validated) && filled($validated['format'])) {
+            $specialistDetailsQuery['format'] = $format->value;
+        }
+        if ($this->nullableInteger($validated['working_location_id'] ?? null) !== null) {
+            $specialistDetailsQuery['working_location_id'] = $this->nullableInteger($validated['working_location_id']);
+        }
+        if (filled($validated['location_area'] ?? null)) {
+            $specialistDetailsQuery['location_area'] = trim((string) $validated['location_area']);
+        }
+        if ($this->nullableInteger($validated['patient_profile_id'] ?? null) !== null) {
+            $specialistDetailsQuery['patient_profile_id'] = $this->nullableInteger($validated['patient_profile_id']);
+        }
+        if (filled($validated['selected_start_at'] ?? null)) {
+            $specialistDetailsQuery['selected_start_at'] = $validated['selected_start_at'];
+        }
+        if (filled($validated['booking_step'] ?? null)) {
+            $specialistDetailsQuery['booking_step'] = $validated['booking_step'];
+        }
         $bookingResult = $request->session()->pull('portal_booking_result');
         $receiptIds = $validated['booking_ids'] ?? [];
         if ($receiptIds !== []) {
@@ -157,7 +181,8 @@ class BookingController extends Controller
                 app()->getLocale(),
                 route('portal.specialists.show', [
                     'specialist' => $specialist->getKey(),
-                    'service_id' => $selectedService?->getKey(),
+                    ...$specialistDetailsQuery,
+                    'specialist_id' => $specialist->getKey(),
                 ]),
             ))->values()->all(),
             'workingLocations' => $officeLocations->map(fn (WorkingLocation $location): array => [

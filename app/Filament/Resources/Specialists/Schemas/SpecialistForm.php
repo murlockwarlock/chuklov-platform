@@ -41,7 +41,7 @@ class SpecialistForm
                                 'mimetypes' => __('Не удалось прочитать фотографию. Попробуйте другой файл.'),
                                 'max' => __('Фотография должна быть размером до 15 МБ.'),
                             ])
-                            ->helperText(__('Загрузите фотографию до 15 МБ. Поддерживаются JPEG, PNG, WebP, HEIC и HEIF.'))
+                            ->helperText(__('Загрузите фотографию до 15 МБ. Поддерживаются JPEG, PNG, WebP, HEIC и HEIF. После выбора дождитесь статуса «Загрузка завершена». Если появится ошибка, удалите файл и выберите другой.'))
                             ->columnSpanFull(),
                         SchemaImage::make(
                             fn (?Specialist $record): string => self::imagePreviewUrl($record) ?? '',
@@ -114,21 +114,25 @@ class SpecialistForm
                     ->schema([
                         Textarea::make('qualification')
                             ->label(__('Квалификация и регалии'))
-                            ->maxLength(2000)
+                            ->rules(['nullable', 'string', 'max:2000'])
+                            ->live(debounce: 500)
+                            ->hint(fn (Get $get): string => self::textLengthHint($get('qualification'), 2000))
                             ->rows(4)
                             ->validationMessages([
                                 'max' => __('Квалификация и регалии должны быть не длиннее 2000 символов.'),
                             ])
-                            ->helperText(__('Коротко укажите образование, квалификацию, сертификаты или профессиональные достижения, которые важно показать клиенту.'))
+                            ->helperText(__('Не более 2000 символов. Коротко укажите образование, квалификацию, сертификаты или профессиональные достижения, которые важно показать клиенту.'))
                             ->columnSpanFull(),
                         Textarea::make('bio')
                             ->label(__('О специалисте'))
-                            ->maxLength(10000)
+                            ->rules(['nullable', 'string', 'max:10000'])
+                            ->live(debounce: 500)
+                            ->hint(fn (Get $get): string => self::textLengthHint($get('bio'), 10000))
                             ->rows(8)
                             ->validationMessages([
                                 'max' => __('Описание должно быть не длиннее 10000 символов.'),
                             ])
-                            ->helperText(__('Описание опыта, подхода и работы специалиста для клиентов.'))
+                            ->helperText(__('Не более 10000 символов. Описание опыта, подхода и работы специалиста для клиентов.'))
                             ->columnSpanFull(),
                     ])
                     ->columns(2)
@@ -242,6 +246,11 @@ class SpecialistForm
         $bytes = max(1, (int) config('specialist_media.max_bytes', 15_728_640));
 
         return intdiv($bytes + 1023, 1024);
+    }
+
+    private static function textLengthHint(mixed $value, int $limit): string
+    {
+        return mb_strlen(is_string($value) ? $value : '').' / '.$limit;
     }
 
     private static function hasImage(?Specialist $record): bool

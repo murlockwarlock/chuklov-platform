@@ -358,8 +358,6 @@ const profileFields = computed(() => [
               <a
                 v-if="material.previewUrl"
                 :href="material.previewUrl"
-                target="_blank"
-                rel="noreferrer"
                 class="portal-button portal-button--secondary portal-health-material__action"
                 :aria-label="`${t('health.materialsPreview')}: ${material.filename}`"
               >

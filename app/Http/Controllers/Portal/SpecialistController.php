@@ -49,11 +49,37 @@ class SpecialistController extends Controller
                 'serviceName' => $contextService->name,
             ],
             'urls' => [
-                'back' => $selectedServiceId === null
-                    ? route('portal.bookings.create')
-                    : route('portal.bookings.create', ['service_id' => $selectedServiceId]),
+                'back' => route('portal.bookings.create', $this->bookingBackQuery($request, $selectedServiceId, (int) $record->getKey())),
                 'services' => route('portal.services.index'),
             ],
         ]);
+    }
+
+    /** @return array<string, int|string> */
+    private function bookingBackQuery(Request $request, ?int $serviceId, int $specialistId): array
+    {
+        $query = $serviceId === null ? [] : ['service_id' => $serviceId];
+        if ($request->integer('specialist_id') === $specialistId) {
+            $query['specialist_id'] = $specialistId;
+        }
+
+        foreach ([
+            'date_from',
+            'date_to',
+            'format',
+            'display_timezone',
+            'working_location_id',
+            'location_area',
+            'patient_profile_id',
+            'selected_start_at',
+            'booking_step',
+        ] as $key) {
+            $value = $request->query($key);
+            if (is_string($value) && $value !== '') {
+                $query[$key] = $value;
+            }
+        }
+
+        return $query;
     }
 }

@@ -440,6 +440,53 @@ class PortalBookingRemediationTest extends TestCase
                 ->where('availability.slots.16.startsAt', '2026-03-31T09:00:00+00:00'));
     }
 
+    public function test_specialist_profile_return_preserves_the_booking_context_from_time_selection(): void
+    {
+        [, $client, $specialist, $service] = $this->portalFixture(language: 'ru');
+        $query = [
+            'service_id' => $service->getKey(),
+            'specialist_id' => $specialist->getKey(),
+            'date_from' => '2026-03-01',
+            'date_to' => '2026-03-31',
+            'format' => VisitFormat::Office->value,
+            'display_timezone' => 'Asia/Almaty',
+            'selected_start_at' => '2026-03-18T09:00:00+00:00',
+            'booking_step' => 'confirmation',
+        ];
+        $this->withSession(['client_portal.client_id' => $client->getKey()]);
+
+        $bookingPage = $this->get(route('portal.bookings.create', $query))
+            ->assertInertia(fn (AssertableInertia $page) => $page->component('Portal/BookingCreate'));
+        $detailsUrl = data_get($bookingPage->viewData('page'), 'props.specialists.0.detailsUrl');
+        self::assertIsString($detailsUrl);
+        $detailsQuery = [];
+        parse_str((string) parse_url($detailsUrl, PHP_URL_QUERY), $detailsQuery);
+        self::assertSame('/portal/specialists/'.$specialist->getKey(), parse_url($detailsUrl, PHP_URL_PATH));
+        $expectedDetailsQuery = array_map(static fn (int|string $value): string => (string) $value, $query);
+        ksort($expectedDetailsQuery);
+        ksort($detailsQuery);
+        self::assertSame(
+            $expectedDetailsQuery,
+            $detailsQuery,
+        );
+
+        $expectedBack = route('portal.bookings.create', $query);
+        $profilePage = $this->get(route('portal.specialists.show', [
+            'specialist' => $specialist->getKey(),
+            ...$query,
+        ]))->assertInertia(fn (AssertableInertia $page) => $page->component('Portal/SpecialistShow'));
+        $backUrl = data_get($profilePage->viewData('page'), 'props.urls.back');
+        self::assertIsString($backUrl);
+        $expectedBackQuery = [];
+        $actualBackQuery = [];
+        parse_str((string) parse_url($expectedBack, PHP_URL_QUERY), $expectedBackQuery);
+        parse_str((string) parse_url($backUrl, PHP_URL_QUERY), $actualBackQuery);
+        self::assertSame(parse_url($expectedBack, PHP_URL_PATH), parse_url($backUrl, PHP_URL_PATH));
+        ksort($expectedBackQuery);
+        ksort($actualBackQuery);
+        self::assertSame($expectedBackQuery, $actualBackQuery);
+    }
+
     public function test_booking_confirmation_survives_a_repeated_create_page_request(): void
     {
         [$organization, $client, $specialist, $service] = $this->portalFixture();

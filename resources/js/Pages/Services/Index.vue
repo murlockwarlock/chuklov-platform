@@ -13,6 +13,7 @@ type Service = {
     catalogType: 'service' | 'physical_product' | 'online_product' | 'gift_certificate';
     name: string;
     summary: string | null;
+    description: string | null;
     imageUrl: string | null;
     durationMinutes: number | null;
     priceMajor: string | null;

@@ -140,7 +140,12 @@ final class SpecialistProfileTest extends TestCase
         $this->setOrganization($organization);
         Filament::setCurrentPanel(Filament::getPanel('admin'));
 
-        $component = $this->createSpecialistPage($admin)
+        $component = $this->createSpecialistPage($admin);
+        self::assertStringContainsString('0 / 2000', $component->html());
+        self::assertStringContainsString('0 / 10000', $component->html());
+        self::assertStringContainsString('Загрузка завершена', $component->html());
+
+        $component
             ->assertFormFieldVisible('profile_image')
             ->assertFormFieldVisible('specialization')
             ->assertFormFieldVisible('practices_since_year')
@@ -194,6 +199,42 @@ final class SpecialistProfileTest extends TestCase
         self::assertSame('Новая специализация', $reloaded->specialization);
         self::assertSame('Астана', $reloaded->city);
         self::assertTrue($reloaded->email_visible);
+    }
+
+    public function test_crm_profile_text_limits_keep_input_and_show_field_errors(): void
+    {
+        $organization = Organization::factory()->create();
+        $admin = User::factory()->forOrganization($organization)->create();
+        $this->setOrganization($organization);
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        $specialist = app(CreateSpecialist::class)->handle(
+            actor: $admin,
+            displayName: 'Лидия Воронова',
+            isActive: true,
+            profileAttributes: [
+                'qualification' => 'Исходная квалификация.',
+                'bio' => 'Исходное описание.',
+            ],
+        );
+        $qualification = str_repeat('А', 2001);
+        $bio = str_repeat('Б', 10001);
+
+        $this->editSpecialistPage($admin, $specialist)
+            ->fillForm([
+                'qualification' => $qualification,
+                'bio' => $bio,
+            ])
+            ->call('save')
+            ->assertHasErrors(['data.qualification', 'data.bio'])
+            ->assertNotified('Не удалось сохранить специалиста. Исправьте отмеченные поля.')
+            ->assertSet('data.qualification', $qualification)
+            ->assertSet('data.bio', $bio);
+
+        $reloaded = $specialist->fresh();
+        self::assertNotNull($reloaded);
+        self::assertSame('Исходная квалификация.', $reloaded->qualification);
+        self::assertSame('Исходное описание.', $reloaded->bio);
     }
 
     public function test_crm_create_validation_preserves_form_state_and_allows_phone_correction(): void
@@ -378,8 +419,8 @@ final class SpecialistProfileTest extends TestCase
             profileAttributes: [
                 'specialization' => 'Реабилитолог',
                 'practices_since_year' => 2014,
-                'qualification' => 'Квалификация владельца клиники.',
-                'bio' => 'Описание подхода специалиста.',
+                'qualification' => "Квалификация владельца клиники.\n• Сертификат по восстановительной работе.",
+                'bio' => "Описание подхода специалиста.\r\n\r\nОсновные направления:\n• восстановление\n• сопровождение",
                 'country' => 'Казахстан',
                 'city' => 'Алматы',
                 'phone' => '+77001234567',
@@ -401,6 +442,8 @@ final class SpecialistProfileTest extends TestCase
                 ->component('Portal/SpecialistShow')
                 ->where('specialist.displayName', 'Наталья Ким')
                 ->where('specialist.experienceLabel', '12 лет опыта')
+                ->where('specialist.qualification', "Квалификация владельца клиники.\n• Сертификат по восстановительной работе.")
+                ->where('specialist.bio', "Описание подхода специалиста.\r\n\r\nОсновные направления:\n• восстановление\n• сопровождение")
                 ->where('specialist.contacts', [])
                 ->has('specialist.services', 1)
                 ->where('specialist.services.0.id', $service->getKey())
