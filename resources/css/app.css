@@ -165,38 +165,6 @@ body {
     color: var(--portal-color-surface);
 }
 
-.portal-language-switcher--inline {
-    gap: 0.125rem;
-}
-
-.portal-language-switcher__inline-option {
-    display: inline-flex;
-    min-width: 2.25rem;
-    height: 2rem;
-    align-items: center;
-    justify-content: center;
-    border: 0;
-    border-radius: 0.65rem;
-    background: transparent;
-    color: var(--portal-color-ink-soft);
-    cursor: pointer;
-    font-size: 0.74rem;
-    font-weight: 800;
-    letter-spacing: 0.03em;
-    line-height: 1;
-}
-
-.portal-language-switcher__inline-option:hover:not(:disabled),
-.portal-language-switcher__inline-option:focus-visible,
-.portal-language-switcher__inline-option[aria-pressed='true'] {
-    background: var(--portal-color-ink);
-    color: var(--portal-color-surface);
-}
-
-.portal-language-switcher__inline-option:disabled {
-    cursor: default;
-}
-
 .portal-language-switcher__menu {
     position: absolute;
     z-index: 30;
@@ -3357,12 +3325,28 @@ select.portal-input[aria-invalid='true'] {
 }
 
 @media (max-width: 47.99rem) {
+    .portal-shell--telegram .portal-page-header {
+        flex-direction: row;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: var(--portal-space-3);
+    }
+
+    .portal-shell--telegram .portal-page-header__main {
+        width: auto;
+        flex: 1 1 auto;
+    }
+
+    .portal-shell--telegram .portal-page-header__actions {
+        flex: 0 0 auto;
+    }
+
     .portal-shell--telegram .portal-companion-page {
         min-height: calc(100dvh - 5.75rem - env(safe-area-inset-bottom));
     }
 
     .portal-shell--telegram .portal-companion {
-        height: min(48rem, calc(100dvh - 12.25rem - env(safe-area-inset-bottom)));
+        height: min(48rem, calc(100dvh - 9.75rem - env(safe-area-inset-bottom)));
     }
 
     .portal-shell--telegram .portal-main:has(.portal-companion-page) {

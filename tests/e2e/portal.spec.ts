@@ -1659,15 +1659,18 @@ test('Telegram Mini App keeps the header out of document flow and exposes langua
     await expect(page.locator('.portal-shell--telegram')).toHaveCount(1);
     await expect(page.locator('.portal-shell--telegram .portal-header')).toHaveCSS('display', 'none');
     expect(await page.locator('.portal-header__inner').boundingBox()).toBeNull();
-    expect(await page.locator('.portal-language-switcher__trigger').boundingBox()).toBeNull();
-    await expect(page.locator('.portal-page-header .portal-language-switcher--inline')).toHaveCount(1);
-    await expect(page.locator('.portal-page-header .portal-language-switcher__inline-option').filter({ hasText: 'EN' })).toBeVisible();
+    await expect(page.locator('.portal-page-header .portal-language-switcher')).toHaveCount(1);
+    await expect(page.locator('.portal-page-header .portal-language-switcher__trigger')).toBeVisible();
+    await page.locator('.portal-page-header .portal-language-switcher__trigger').click();
+    await expect(page.locator('.portal-page-header .portal-language-switcher__menu')).toBeVisible();
+    await expect(page.locator('.portal-page-header .portal-language-switcher__menu-option')).toHaveCount(2);
+    await page.keyboard.press('Escape');
     await assertNoHorizontalOverflow(page);
 
     await page.goto('/portal/profile');
     await expect(page.locator('.portal-shell--telegram .portal-header')).toHaveCSS('display', 'none');
-    await expect(page.locator('.portal-page-header .portal-language-switcher--inline')).toHaveCount(1);
-    await expect(page.locator('.portal-page-header .portal-language-switcher__inline-option').filter({ hasText: 'EN' })).toBeVisible();
+    await expect(page.locator('.portal-page-header .portal-language-switcher')).toHaveCount(1);
+    await expect(page.locator('.portal-page-header .portal-language-switcher__trigger')).toBeVisible();
     await assertNoHorizontalOverflow(page);
 
     await page.goto('/portal/companion');

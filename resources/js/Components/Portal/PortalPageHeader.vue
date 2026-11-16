@@ -68,7 +68,6 @@ const showTelegramLanguage = computed(() => runtimeMode === 'telegram-mini-app' 
       <LanguageSwitcher
         v-if="showTelegramLanguage"
         :portal="page.props.portal"
-        mode="inline"
       />
       <slot name="actions" />
     </div>
