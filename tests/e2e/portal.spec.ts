@@ -1816,6 +1816,19 @@ test('client sees available bonus in the header and can open the service list fr
         await page.setViewportSize({ width, height: 900 });
         await expect(imageCard.locator('.portal-service-card__image')).toBeVisible();
         await assertNoHorizontalOverflow(page);
+        const cardLayout = await imageCard.evaluate((card) => {
+            const cardRect = card.getBoundingClientRect();
+            const bodyRect = card.querySelector('.portal-service-card__body')?.getBoundingClientRect();
+
+            return bodyRect === undefined
+                ? null
+                : { cardWidth: cardRect.width, bodyWidth: bodyRect.width };
+        });
+        expect(cardLayout).not.toBeNull();
+        if (cardLayout === null) {
+            throw new Error('service card body geometry is unavailable');
+        }
+        expect(cardLayout.bodyWidth).toBeGreaterThan(cardLayout.cardWidth * 0.7);
         if (width < 768) {
             const mediaBottom = await imageCard.locator('.portal-service-card__media').evaluate((element) => element.getBoundingClientRect().bottom);
             const bodyTop = await imageCard.locator('.portal-service-card__body').evaluate((element) => element.getBoundingClientRect().top);
@@ -4247,6 +4260,10 @@ test('family profiles persist, invitations retry safely, and linked patients can
     await page.getByTestId('availability-slot').first().click();
     const preservedSlot = page.locator('[data-testid="availability-slot"][aria-pressed="true"]');
     await expect(preservedSlot).toHaveCount(1);
+    const contextActions = page.locator('.portal-booking-context-summary__actions .portal-booking-context-summary__action');
+    await expect(contextActions.first()).toBeVisible();
+    await expect(contextActions.first()).toHaveClass(/portal-button--secondary/);
+    await expect(page.getByTestId('booking-specialist-details')).toHaveClass(/portal-button/);
     const preservedStart = new URL(page.url()).searchParams.get('selected_start_at');
     expect(preservedStart).not.toBeNull();
     await expect(page.getByTestId('booking-selection-service')).toHaveText(owner.serviceName);
@@ -4285,7 +4302,7 @@ test('family profiles persist, invitations retry safely, and linked patients can
         await assertNoHorizontalOverflow(page);
         await assertRenderedViewportGeometry(
             page,
-            ['.portal-booking-patient-selector__add', '.portal-booking-flow__cta'],
+            ['.portal-booking-patient-selector__add', '.portal-booking-flow__cta', '.portal-booking-context-summary__action'],
             ['.portal-booking-context-summary', '.portal-booking-flow'],
         );
     }

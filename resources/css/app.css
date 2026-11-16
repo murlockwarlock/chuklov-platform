@@ -3142,32 +3142,6 @@ select.portal-input[aria-invalid='true'] {
             height: 9rem;
         }
 
-        .portal-service-card--with-image {
-            display: grid;
-            grid-template-columns: minmax(7rem, 0.72fr) minmax(0, 1.28fr);
-            grid-template-rows: 1fr auto;
-        }
-
-        .portal-service-card--with-image .portal-service-card__media {
-            grid-row: 1 / -1;
-            min-height: 100%;
-        }
-
-        .portal-service-card--with-image .portal-service-card__image {
-            min-height: 100%;
-        }
-
-        .portal-service-card--with-image .portal-service-card__body {
-            grid-column: 2;
-            grid-row: 1;
-            align-self: center;
-        }
-
-        .portal-service-card--with-image .portal-service-card__link {
-            grid-column: 2;
-            grid-row: 2;
-        }
-
         .portal-booking-calendar__layout {
             grid-template-columns: minmax(0, 1.05fr) minmax(16rem, 0.95fr);
             align-items: stretch;
@@ -3591,8 +3565,12 @@ select.portal-input[aria-invalid='true'] {
     gap: 0.35rem 0.7rem;
 }
 
-.portal-booking-context-summary__actions .portal-link {
-    white-space: nowrap;
+.portal-booking-context-summary__action {
+    min-width: min(100%, 12rem);
+    min-height: 2.5rem;
+    padding: 0.55rem 0.85rem;
+    text-align: center;
+    white-space: normal;
 }
 
 .portal-booking-context-summary__controls {

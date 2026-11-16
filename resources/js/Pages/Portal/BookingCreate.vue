@@ -1054,7 +1054,7 @@ function submitBooking(): void {
             <div class="portal-booking-context-summary__actions">
               <button
                 type="button"
-                class="portal-link portal-link--button"
+                class="portal-button portal-button--secondary portal-booking-context-summary__action"
                 @click="changeService"
               >
                 {{ t('booking.changeService') }}
@@ -1062,7 +1062,7 @@ function submitBooking(): void {
               <button
                 v-if="hasSpecialistChoice && selectedSpecialist"
                 type="button"
-                class="portal-link portal-link--button"
+                class="portal-button portal-button--secondary portal-booking-context-summary__action"
                 @click="changeSpecialist"
               >
                 {{ t('booking.changeSpecialist') }}
@@ -1070,7 +1070,7 @@ function submitBooking(): void {
               <Link
                 v-if="selectedSpecialistDetailsUrl"
                 :href="selectedSpecialistDetailsUrl"
-                class="portal-link"
+                class="portal-button portal-button--secondary portal-booking-context-summary__action"
                 data-testid="booking-specialist-details"
               >
                 {{ t('specialist.details') }}
@@ -1078,14 +1078,14 @@ function submitBooking(): void {
               <button
                 v-if="formatOptions.length > 1"
                 type="button"
-                class="portal-link portal-link--button"
+                class="portal-button portal-button--secondary portal-booking-context-summary__action"
                 @click="changeFormat"
               >
                 {{ t('booking.changeFormat') }}
               </button>
               <button
                 type="button"
-                class="portal-link portal-link--button"
+                class="portal-button portal-button--secondary portal-booking-context-summary__action"
                 data-testid="booking-client-timezone-edit"
                 @click="timezoneEditorOpen = !timezoneEditorOpen"
               >
