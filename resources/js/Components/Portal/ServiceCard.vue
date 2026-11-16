@@ -4,6 +4,7 @@ import { Link } from '@inertiajs/vue3';
 import { portalText } from '../../locales/portal';
 import type { PortalLocale } from '../../types/portal';
 import { formatMajorPrice } from '../../utils/formatMajorPrice';
+import { formatServiceText } from '../../utils/formatServiceText';
 
 type Service = {
     id: number;
@@ -25,16 +26,6 @@ const props = defineProps<{
     authenticated: boolean;
     homeUrl: string;
 }>();
-
-const formatServiceText = (value: string): string => {
-    const normalized = value.replace(/\r\n?/g, '\n');
-
-    if (!/\b1\.\s+/.test(normalized) || !/\b2\.\s+/.test(normalized)) {
-        return normalized;
-    }
-
-    return normalized.replace(/(\S)\s+(?=\d+\.\s+)/g, '$1\n');
-};
 
 const summaryText = computed(() => props.service.summary === null ? null : formatServiceText(props.service.summary));
 

@@ -1631,6 +1631,11 @@ test('authenticated Portal pages keep one navigation and page-header contract', 
                     : '/portal/more');
         await expect(page.locator('.portal-page-header')).toHaveCount(1);
         await expect(page.locator('main .portal-button').filter({ hasText: 'Главная' })).toHaveCount(0);
+        if (route.path === '/') {
+            const headerBounds = await page.locator('.portal-header__inner').boundingBox();
+            expect(headerBounds).not.toBeNull();
+            expect(headerBounds?.height).toBeLessThanOrEqual(64);
+        }
         await assertNoHorizontalOverflow(page);
     }
 });
@@ -1933,7 +1938,7 @@ test('client can open the only specialist profile from time selection and return
 });
 
 test('specialist profile headings wrap inside narrow portal viewports', async ({ page }) => {
-    const fixture = createBookingFixture({ longSpecialistName: true });
+    const fixture = createBookingFixture({ longSpecialistName: true, withServiceImage: true });
 
     await page.context().addCookies([{
         name: fixture.cookieName,
@@ -1947,6 +1952,13 @@ test('specialist profile headings wrap inside narrow portal viewports', async ({
     await expect(heading).toHaveCSS('overflow-wrap', 'anywhere');
     const serviceCard = page.locator('.portal-specialist-profile__service').first();
     await expect(serviceCard).toBeVisible();
+    const serviceSummary = serviceCard.locator('.portal-card__summary');
+    await expect(serviceSummary).toHaveCSS('white-space', 'pre-wrap');
+    const renderedSummary = await serviceSummary.textContent();
+    expect(renderedSummary).toContain('\n1.');
+    expect(renderedSummary).toContain('\n2.');
+    await expect(page.locator('.portal-specialist-profile__actions')).toHaveCount(0);
+    await expect(serviceCard.getByRole('link', { name: 'Записаться', exact: true })).toHaveCount(1);
 
     for (const width of [320, 360, 390, 768, 1024, 1440]) {
         await page.setViewportSize({ width, height: 900 });

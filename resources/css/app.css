@@ -77,17 +77,17 @@ body {
     display: flex;
     width: min(100%, var(--portal-content-width));
     min-width: 0;
-    min-height: 4.5rem;
+    min-height: 3.75rem;
     align-items: center;
     justify-content: space-between;
-    gap: var(--portal-space-5);
+    gap: var(--portal-space-3);
     margin-inline: auto;
-    padding: var(--portal-space-3) var(--portal-space-5);
+    padding: var(--portal-space-2) var(--portal-space-4);
 }
 
 .portal-brand {
     display: inline-flex;
-    min-height: 2.75rem;
+    min-height: 2.5rem;
     align-items: center;
     gap: var(--portal-space-3);
     color: var(--portal-color-ink);
@@ -95,8 +95,8 @@ body {
 }
 
 .portal-brand__logo {
-    width: 3.25rem;
-    height: 3.25rem;
+    width: 2.75rem;
+    height: 2.75rem;
     flex: 0 0 auto;
     border-radius: 50%;
     object-fit: cover;
@@ -144,8 +144,8 @@ body {
 
 .portal-language-switcher__trigger {
     display: inline-flex;
-    min-width: 3.25rem;
-    height: 2.25rem;
+    min-width: 2.75rem;
+    height: 2rem;
     align-items: center;
     justify-content: center;
     gap: 0.25rem;
@@ -154,7 +154,7 @@ body {
     background: transparent;
     color: var(--portal-color-ink);
     cursor: pointer;
-    font-size: 1.08rem;
+    font-size: 0.98rem;
     line-height: 1;
 }
 
@@ -208,13 +208,13 @@ body {
 
 @media (max-width: 22.5rem) {
     .portal-brand__logo {
-        width: 3rem;
-        height: 3rem;
+        width: 2.5rem;
+        height: 2.5rem;
     }
 }
 
 .portal-main {
-    min-height: calc(100svh - 4.5rem);
+    min-height: calc(100svh - 3.75rem);
     padding-bottom: calc(5.75rem + env(safe-area-inset-bottom));
     scroll-padding-bottom: calc(6.5rem + env(safe-area-inset-bottom));
 }
@@ -1644,6 +1644,12 @@ select.portal-input[aria-invalid='true'] {
         white-space: pre-wrap;
     }
 
+    .portal-specialist-profile__service .portal-card__summary {
+        overflow-wrap: anywhere;
+        text-wrap: pretty;
+        white-space: pre-wrap;
+    }
+
     .portal-specialist-profile__contacts,
     .portal-specialist-profile__services {
         display: grid;
@@ -1652,20 +1658,27 @@ select.portal-input[aria-invalid='true'] {
     }
 
     .portal-specialist-profile__contact {
-        display: grid;
+        display: flex;
         min-width: 0;
-        gap: 0.2rem;
+        align-items: center;
+        gap: var(--portal-space-3);
         border: 1px solid var(--portal-color-border);
         border-radius: var(--portal-radius-md);
         padding: var(--portal-space-4);
+        color: var(--portal-color-ink-soft);
+        text-decoration: none;
+        transition: border-color 160ms ease, background-color 160ms ease;
     }
 
-    .portal-specialist-profile__contact span {
-        color: var(--portal-color-ink-faint);
-        font-size: 0.8rem;
+    .portal-specialist-profile__contact:hover,
+    .portal-specialist-profile__contact:focus-visible {
+        border-color: var(--portal-color-brand);
+        background: var(--portal-color-surface-warm);
     }
 
     .portal-specialist-profile__contact strong {
+        min-width: 0;
+        color: var(--portal-color-brand-strong);
         overflow-wrap: anywhere;
     }
 
@@ -3094,6 +3107,27 @@ select.portal-input[aria-invalid='true'] {
     }
 
     @media (min-width: 48rem) {
+        .portal-header__inner {
+            min-height: 4.5rem;
+            gap: var(--portal-space-5);
+            padding-block: var(--portal-space-3);
+        }
+
+        .portal-brand {
+            min-height: 2.75rem;
+        }
+
+        .portal-brand__logo {
+            width: 3.25rem;
+            height: 3.25rem;
+        }
+
+        .portal-language-switcher__trigger {
+            min-width: 3.25rem;
+            height: 2.25rem;
+            font-size: 1.08rem;
+        }
+
         .medical-profile__choice-grid--symptoms {
             grid-template-columns: repeat(3, minmax(0, 1fr));
         }
@@ -3107,6 +3141,7 @@ select.portal-input[aria-invalid='true'] {
         }
 
         .portal-main {
+            min-height: calc(100svh - 4.5rem);
             padding-bottom: 0;
         }
 
