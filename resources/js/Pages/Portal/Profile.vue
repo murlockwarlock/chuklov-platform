@@ -3,10 +3,12 @@ import { Link, router, useForm } from '@inertiajs/vue3';
 import { computed, onBeforeUnmount, ref } from 'vue';
 import AppShell from '../../Components/Portal/AppShell.vue';
 import LegalConsentChecklist from '../../Components/Portal/LegalConsentChecklist.vue';
+import LanguageSwitcher from '../../Components/Portal/LanguageSwitcher.vue';
 import PortalPageHeader from '../../Components/Portal/PortalPageHeader.vue';
 import TextAutocomplete from '../../Components/Portal/TextAutocomplete.vue';
 import CityAutocomplete from '../../Components/Portal/CityAutocomplete.vue';
 import { usePortalLocale } from '../../composables/usePortalLocale';
+import { resolveClientRuntime } from '../../runtime/clientRuntime';
 import type { PortalShell } from '../../types/portal';
 import { countryNames } from '../../utils/countryNames';
 import { formatPhone, formatPhoneInput, phoneExample } from '../../utils/profilePhone';
@@ -62,6 +64,7 @@ const props = defineProps<{
 }>();
 
 const { locale, t } = usePortalLocale();
+const runtimeMode = typeof window !== 'undefined' ? resolveClientRuntime() : 'web';
 const profileSaveError = ref<string | null>(null);
 const profileSaveState = ref<'idle' | 'saving' | 'saved' | 'error'>(props.saved ? 'saved' : 'idle');
 const profileFieldErrors = ref<Record<string, string>>({});
@@ -405,10 +408,16 @@ function saveB2bAnswer(): void {
       </Link>
       <section class="portal-content-section portal-stack">
         <div class="portal-section-heading">
-          <span class="portal-label">{{ t('profile.language') }}</span>
-          <span class="portal-copy portal-copy--small">
-            {{ locale === 'ru' ? t('profile.russian') : t('profile.english') }}
-          </span>
+          <div class="portal-stack portal-stack--tight">
+            <span class="portal-label">{{ t('profile.language') }}</span>
+            <span class="portal-copy portal-copy--small">
+              {{ locale === 'ru' ? t('profile.russian') : t('profile.english') }}
+            </span>
+          </div>
+          <LanguageSwitcher
+            v-if="runtimeMode === 'telegram-mini-app'"
+            :portal="props.portal"
+          />
         </div>
         <p class="portal-copy portal-copy--small">
           {{ t('profile.personalHelp') }}
