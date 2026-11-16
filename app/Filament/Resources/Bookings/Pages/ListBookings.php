@@ -220,13 +220,13 @@ class ListBookings extends LocalizedListRecords
             return $ids;
         }
 
-        return Specialist::query()
+        return array_values(Specialist::query()
             ->where('organization_id', app(OrganizationContext::class)->id())
             ->whereIn('id', $ids)
             ->where('is_active', true)
             ->pluck('id')
             ->map(static fn (int|string $id): int => (int) $id)
-            ->all();
+            ->all());
     }
 
     /** @return array<string, array{date: string, day_number: int, weekday: string, is_today: bool, is_working: bool, intervals: list<array{start: string, end: string, start_minutes: int, end_minutes: int}>, bookings: list<array<string, mixed>>, specialists: array<int, array{specialist_id: int, name: string, is_active: bool, is_working: bool, exception_type: string|null, intervals: list<array{start: string, end: string, start_minutes: int, end_minutes: int}>, bookings: list<array<string, mixed>>}>}> */

@@ -1476,7 +1476,7 @@ final class SchedulingJournalProductionPassTest extends TestCase
         self::assertSame('1', $createQuery['show_archived']);
         self::assertStringContainsString('show_archived=1', $journal->instance()->journalDays['2026-10-05']['bookings'][0]['url']);
 
-        $journal->set('viewMode', 'list');
+        $journal->call('setViewMode', 'list');
         self::assertStringContainsString($client->full_name, $journal->html());
 
         $journal->set('showArchivedSpecialists', false)
