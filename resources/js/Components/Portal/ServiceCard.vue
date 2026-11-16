@@ -26,6 +26,18 @@ const props = defineProps<{
     homeUrl: string;
 }>();
 
+const formatServiceText = (value: string): string => {
+    const normalized = value.replace(/\r\n?/g, '\n');
+
+    if (!/\b1\.\s+/.test(normalized) || !/\b2\.\s+/.test(normalized)) {
+        return normalized;
+    }
+
+    return normalized.replace(/(\S)\s+(?=\d+\.\s+)/g, '$1\n');
+};
+
+const summaryText = computed(() => props.service.summary === null ? null : formatServiceText(props.service.summary));
+
 const duration = computed(() => {
     if (props.service.durationMinutes === null) {
         return null;
@@ -57,6 +69,8 @@ const fullDescription = computed(() => {
 
     return description;
 });
+
+const fullDescriptionText = computed(() => fullDescription.value === null ? null : formatServiceText(fullDescription.value));
 
 const bookingLink = computed(() => {
     const separator = props.bookingUrl.includes('?') ? '&' : '?';
@@ -90,10 +104,10 @@ const purchaseIdempotencyKey = `portal-purchase-${props.service.id}-${typeof cry
         {{ service.name }}
       </h3>
       <p
-        v-if="service.summary"
+        v-if="summaryText"
         class="portal-card__summary portal-service-card__summary break-words"
       >
-        {{ service.summary }}
+        {{ summaryText }}
       </p>
       <details
         v-if="fullDescription"
@@ -103,7 +117,7 @@ const purchaseIdempotencyKey = `portal-purchase-${props.service.id}-${typeof cry
           {{ portalText(locale, 'services.fullDescription') }}
         </summary>
         <p class="portal-service-card__description break-words">
-          {{ fullDescription }}
+          {{ fullDescriptionText }}
         </p>
       </details>
       <div class="portal-service-card__meta">

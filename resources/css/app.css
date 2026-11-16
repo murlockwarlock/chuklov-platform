@@ -1766,6 +1766,13 @@ select.portal-input[aria-invalid='true'] {
         color: var(--portal-color-brand);
     }
 
+    .portal-service-card__summary {
+        line-height: 1.6;
+        overflow-wrap: anywhere;
+        text-wrap: pretty;
+        white-space: pre-wrap;
+    }
+
     .portal-service-card__description {
         max-width: 48rem;
         margin: var(--portal-space-3) 0 0;
@@ -1782,6 +1789,7 @@ select.portal-input[aria-invalid='true'] {
     }
 
     .portal-service-card--with-image .portal-service-card__link {
+        width: auto;
         margin-bottom: var(--portal-space-5);
     }
 

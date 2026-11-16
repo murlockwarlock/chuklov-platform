@@ -559,7 +559,7 @@ function createBookingFixture(options: BookingFixtureOptions | boolean = false):
                 : 'Playwright Service '.$suffix,
             'summary' => $withServiceImage ? ($equalServiceDescription
                 ? 'Подробное описание услуги. Внутри: формат, порядок и ожидаемый результат.'
-                : 'Синтетическое описание услуги для проверки карточки.') : null,
+                : 'Синтетическое описание услуги для проверки карточки. Внутри: 1. формат 2. порядок 3. результат.') : null,
             'description_ru' => $withServiceImage ? ($equalServiceDescription
                 ? 'Подробное описание услуги. Внутри: формат, порядок и ожидаемый результат.'
                 : "Подробное описание услуги.\\n\\nВнутри: формат, порядок и ожидаемый результат.") : null,
@@ -1797,6 +1797,7 @@ test('client sees available bonus in the header and can open the service list fr
     await expect(imageCard).toBeVisible();
     await expect(imageCard.locator('.portal-card__summary')).toHaveText(fixture.serviceSummary as string);
     await expect(imageCard.locator('.portal-service-card__summary')).not.toHaveClass(/clamped/);
+    await expect(imageCard.locator('.portal-service-card__summary')).toHaveText(/1\. формат\s+2\. порядок\s+3\. результат\./);
     const serviceDetails = imageCard.locator('.portal-service-card__details');
     const detailsSummary = serviceDetails.locator('summary');
     await expect(serviceDetails).toHaveCount(1);
@@ -1822,7 +1823,19 @@ test('client sees available bonus in the header and can open the service list fr
         }
     }
     await expect(page.getByRole('dialog')).toBeHidden();
-    await expect(imageCard.getByRole('link', { name: 'Записаться', exact: true })).toHaveClass(/portal-button--primary/);
+    const bookingAction = imageCard.getByRole('link', { name: 'Записаться', exact: true });
+    await expect(bookingAction).toHaveClass(/portal-button--primary/);
+    const actionGeometry = await imageCard.evaluate((card) => {
+        const cardRect = card.getBoundingClientRect();
+        const actionRect = card.querySelector('.portal-service-card__link')?.getBoundingClientRect();
+
+        return actionRect === undefined
+            ? null
+            : { left: actionRect.left - cardRect.left, right: actionRect.right - cardRect.right };
+    });
+    expect(actionGeometry).not.toBeNull();
+    expect(actionGeometry?.left).toBeGreaterThanOrEqual(0);
+    expect(actionGeometry?.right).toBeLessThanOrEqual(1);
 
     await page.reload();
     await expect(page.getByRole('heading', { name: 'Записаться', exact: true })).toBeVisible();
