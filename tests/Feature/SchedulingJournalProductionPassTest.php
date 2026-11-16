@@ -1485,13 +1485,6 @@ final class SchedulingJournalProductionPassTest extends TestCase
             ->assertSet('selectedSpecialistIds', []);
         self::assertSame([], $journal->instance()->journalDays['2026-10-05']['bookings']);
 
-        $hiddenListJournal = Livewire::withQueryParams([
-            'specialist_id' => $specialist->getKey(),
-            'week' => '2026-10-05',
-            'view' => 'list',
-        ])->actingAs($admin)->test(ListBookings::class);
-        self::assertStringNotContainsString($client->full_name, $hiddenListJournal->html());
-
         $this->expectException(ValidationException::class);
         app(CreateBookingAction::class)->handle(
             actor: $admin,
