@@ -201,6 +201,42 @@ final class SpecialistProfileTest extends TestCase
         self::assertTrue($reloaded->email_visible);
     }
 
+    public function test_crm_profile_text_limits_keep_input_and_show_field_errors(): void
+    {
+        $organization = Organization::factory()->create();
+        $admin = User::factory()->forOrganization($organization)->create();
+        $this->setOrganization($organization);
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        $specialist = app(CreateSpecialist::class)->handle(
+            actor: $admin,
+            displayName: 'Лидия Воронова',
+            isActive: true,
+            profileAttributes: [
+                'qualification' => 'Исходная квалификация.',
+                'bio' => 'Исходное описание.',
+            ],
+        );
+        $qualification = str_repeat('А', 2001);
+        $bio = str_repeat('Б', 10001);
+
+        $this->editSpecialistPage($admin, $specialist)
+            ->fillForm([
+                'qualification' => $qualification,
+                'bio' => $bio,
+            ])
+            ->call('save')
+            ->assertHasErrors(['data.qualification', 'data.bio'])
+            ->assertNotified('Не удалось сохранить специалиста. Исправьте отмеченные поля.')
+            ->assertSet('data.qualification', $qualification)
+            ->assertSet('data.bio', $bio);
+
+        $reloaded = $specialist->fresh();
+        self::assertNotNull($reloaded);
+        self::assertSame('Исходная квалификация.', $reloaded->qualification);
+        self::assertSame('Исходное описание.', $reloaded->bio);
+    }
+
     public function test_crm_create_validation_preserves_form_state_and_allows_phone_correction(): void
     {
         $organization = Organization::factory()->create();

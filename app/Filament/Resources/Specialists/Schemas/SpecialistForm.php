@@ -114,25 +114,25 @@ class SpecialistForm
                     ->schema([
                         Textarea::make('qualification')
                             ->label(__('Квалификация и регалии'))
-                            ->maxLength(2000)
+                            ->rules(['nullable', 'string', 'max:2000'])
                             ->live(debounce: 500)
                             ->hint(fn (Get $get): string => self::textLengthHint($get('qualification'), 2000))
                             ->rows(4)
                             ->validationMessages([
                                 'max' => __('Квалификация и регалии должны быть не длиннее 2000 символов.'),
                             ])
-                            ->helperText(__('Коротко укажите образование, квалификацию, сертификаты или профессиональные достижения, которые важно показать клиенту.'))
+                            ->helperText(__('Не более 2000 символов. Коротко укажите образование, квалификацию, сертификаты или профессиональные достижения, которые важно показать клиенту.'))
                             ->columnSpanFull(),
                         Textarea::make('bio')
                             ->label(__('О специалисте'))
-                            ->maxLength(10000)
+                            ->rules(['nullable', 'string', 'max:10000'])
                             ->live(debounce: 500)
                             ->hint(fn (Get $get): string => self::textLengthHint($get('bio'), 10000))
                             ->rows(8)
                             ->validationMessages([
                                 'max' => __('Описание должно быть не длиннее 10000 символов.'),
                             ])
-                            ->helperText(__('Описание опыта, подхода и работы специалиста для клиентов.'))
+                            ->helperText(__('Не более 10000 символов. Описание опыта, подхода и работы специалиста для клиентов.'))
                             ->columnSpanFull(),
                     ])
                     ->columns(2)
