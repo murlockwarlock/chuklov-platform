@@ -1640,6 +1640,35 @@ test('authenticated Portal pages keep one navigation and page-header contract', 
     }
 });
 
+test('Telegram Mini App shell keeps the brand out of the compact utility header', async ({ page }) => {
+    const fixture = createBookingFixture();
+    await page.addInitScript(() => {
+        const telegramWindow = window as unknown as {
+            Telegram: { WebApp: { initData: string; ready(): void } };
+        };
+        telegramWindow.Telegram = { WebApp: { initData: 'verified-init-data', ready() {} } };
+    });
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.context().addCookies([{
+        name: fixture.cookieName,
+        value: fixture.cookieValue,
+        url: 'http://127.0.0.1:8000',
+    }]);
+
+    await page.goto('/');
+    await expect(page.locator('.portal-shell--telegram')).toHaveCount(1);
+    await expect(page.locator('.portal-brand')).toHaveCSS('display', 'none');
+    const headerBounds = await page.locator('.portal-header__inner').boundingBox();
+    const languageBounds = await page.locator('.portal-language-switcher__trigger').boundingBox();
+    expect(headerBounds).not.toBeNull();
+    expect(languageBounds).not.toBeNull();
+    expect(headerBounds?.height).toBeLessThanOrEqual(52);
+    expect(languageBounds?.width).toBeLessThanOrEqual(40);
+    await page.getByRole('button', { name: 'Русский', exact: true }).click();
+    await expect(page.getByRole('menu')).toBeVisible();
+    await assertNoHorizontalOverflow(page);
+});
+
 test('confirmed client greeting follows the saved locale after reload', async ({ page }) => {
     const fixture = createBookingFixture({ confirmedName: true });
 

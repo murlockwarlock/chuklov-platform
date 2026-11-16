@@ -5,6 +5,7 @@ import PortalIcon from './PortalIcon.vue';
 import LanguageSwitcher from './LanguageSwitcher.vue';
 import MobileBottomNavigation from './MobileBottomNavigation.vue';
 import { portalText } from '../../locales/portal';
+import { resolveClientRuntime } from '../../runtime/clientRuntime';
 import type { PortalNavKey, PortalShell } from '../../types/portal';
 
 const props = withDefaults(defineProps<{
@@ -16,6 +17,7 @@ const props = withDefaults(defineProps<{
     active: null,
     bottomNavigation: true,
 });
+const runtimeMode = typeof window !== 'undefined' ? resolveClientRuntime() : 'web';
 
 const navigation = [
     { key: 'home', label: 'shell.home' },
@@ -76,7 +78,10 @@ const brandLogo = computed(() => props.portal.locale === 'en'
 </script>
 
 <template>
-  <div class="portal-shell">
+  <div
+    class="portal-shell"
+    :class="{ 'portal-shell--telegram': runtimeMode === 'telegram-mini-app' }"
+  >
     <Head :title="props.title" />
 
     <header class="portal-header">

@@ -3316,6 +3316,56 @@ select.portal-input[aria-invalid='true'] {
     }
 }
 
+.portal-shell--telegram .portal-header__inner {
+    min-height: 3rem;
+    gap: 0;
+    padding: 0.25rem 0.75rem;
+}
+
+.portal-shell--telegram .portal-brand {
+    display: none;
+}
+
+.portal-shell--telegram .portal-header-actions {
+    width: 100%;
+    margin-left: auto;
+}
+
+.portal-shell--telegram .portal-language-switcher {
+    border: 0;
+    background: transparent;
+    padding: 0;
+}
+
+.portal-shell--telegram .portal-language-switcher__trigger {
+    width: 2.25rem;
+    min-width: 2.25rem;
+    height: 2.25rem;
+    border-radius: 50%;
+    font-size: 1.1rem;
+}
+
+@media (min-width: 48rem) {
+    .portal-shell--telegram .portal-header__inner {
+        min-height: 3rem;
+        gap: var(--portal-space-4);
+        padding: 0.25rem 0.75rem;
+    }
+
+    .portal-shell--telegram .portal-header-actions {
+        width: auto;
+    }
+
+    .portal-shell--telegram .portal-header__link {
+        min-height: 2.5rem;
+        font-size: 0.82rem;
+    }
+
+    .portal-shell--telegram .portal-header__navigation {
+        gap: var(--portal-space-4);
+    }
+}
+
 .portal-container--booking {
     max-width: 60rem;
     padding-top: clamp(1.25rem, 4vw, 3rem);
