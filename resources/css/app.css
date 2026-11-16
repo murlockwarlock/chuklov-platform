@@ -3280,11 +3280,34 @@ select.portal-input[aria-invalid='true'] {
 }
 
 @media (min-width: 48rem) {
+    .portal-header__inner {
+        min-height: 4.5rem;
+        gap: var(--portal-space-5);
+        padding-block: var(--portal-space-3);
+        padding-inline: var(--portal-space-8);
+    }
+
+    .portal-brand {
+        min-height: 2.75rem;
+    }
+
+    .portal-brand__logo {
+        width: 3.25rem;
+        height: 3.25rem;
+    }
+
+    .portal-language-switcher__trigger {
+        min-width: 3.25rem;
+        height: 2.25rem;
+        font-size: 1.08rem;
+    }
+
     .portal-header__navigation {
         display: flex;
     }
 
     .portal-main {
+        min-height: calc(100svh - 4.5rem);
         padding-bottom: 0;
     }
 
