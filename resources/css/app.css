@@ -1098,7 +1098,7 @@ select.portal-input[aria-invalid='true'] {
 }
 
 .portal-service-card:hover,
-.portal-service-card:focus-visible {
+.portal-service-card:focus-within {
     border-color: var(--portal-color-brand);
     background: var(--portal-color-surface-warm);
     transform: translateY(-1px);
@@ -1484,7 +1484,7 @@ select.portal-input[aria-invalid='true'] {
         line-height: 1.7;
     }
 
-.portal-service-card__summary {
+.portal-service-card__summary--clamped {
     display: -webkit-box;
     overflow: hidden;
     -webkit-box-orient: vertical;
@@ -1711,6 +1711,7 @@ select.portal-input[aria-invalid='true'] {
 
     .portal-service-card {
         display: flex;
+        align-self: start;
         min-height: 12rem;
         flex-direction: column;
         justify-content: space-between;
@@ -1748,6 +1749,38 @@ select.portal-input[aria-invalid='true'] {
         display: flex;
         flex-direction: column;
         gap: var(--portal-space-3);
+    }
+
+    .portal-service-card__details {
+        min-width: 0;
+    }
+
+    .portal-service-card__details-toggle {
+        display: flex;
+        min-width: 0;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: var(--portal-space-3);
+        cursor: pointer;
+        color: var(--portal-color-brand);
+        font-size: 0.9rem;
+        font-weight: 750;
+        line-height: 1.45;
+        overflow-wrap: anywhere;
+    }
+
+    .portal-service-card__details-toggle::marker {
+        color: var(--portal-color-brand);
+    }
+
+    .portal-service-card__description {
+        max-width: 48rem;
+        margin: var(--portal-space-3) 0 0;
+        color: var(--portal-color-ink-soft);
+        line-height: 1.7;
+        overflow-wrap: anywhere;
+        text-wrap: pretty;
+        white-space: pre-wrap;
     }
 
     .portal-service-card--with-image .portal-service-card__body,

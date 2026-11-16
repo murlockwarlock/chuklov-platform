@@ -45,6 +45,7 @@ type BookingFixtureOptions = {
     longSpecialistName?: boolean;
     homeVisit?: boolean;
     withServiceImage?: boolean;
+    equalServiceDescription?: boolean;
     feedbackEnabled?: boolean;
     tracker?: 'empty' | 'task' | 'checkins';
     duplicateOfficeLocation?: boolean;
@@ -71,6 +72,7 @@ function createBookingFixture(options: BookingFixtureOptions | boolean = false):
         $longSpecialistName = getenv('PLAYWRIGHT_LONG_SPECIALIST_NAME') === '1';
         $homeVisit = getenv('PLAYWRIGHT_HOME_VISIT') === '1';
         $withServiceImage = getenv('PLAYWRIGHT_WITH_SERVICE_IMAGE') === '1';
+        $equalServiceDescription = getenv('PLAYWRIGHT_EQUAL_SERVICE_DESCRIPTION') === '1';
         $feedbackEnabled = getenv('PLAYWRIGHT_FEEDBACK_ENABLED') === '1';
         $withCompanionMessages = getenv('PLAYWRIGHT_WITH_COMPANION_MESSAGES') === '1';
         $withPartnerRewards = getenv('PLAYWRIGHT_WITH_PARTNER_REWARDS') === '1';
@@ -555,8 +557,12 @@ function createBookingFixture(options: BookingFixtureOptions | boolean = false):
             'name' => $longServiceTitle
                 ? 'Индивидуальная консультация по глубоким и устойчивым изменениям в жизни '.$suffix
                 : 'Playwright Service '.$suffix,
-            'summary' => $withServiceImage ? 'Синтетическое описание услуги для проверки карточки.' : null,
-            'description_ru' => $withServiceImage ? "Подробное описание услуги.\\n\\nВнутри: формат, порядок и ожидаемый результат." : null,
+            'summary' => $withServiceImage ? ($equalServiceDescription
+                ? 'Подробное описание услуги. Внутри: формат, порядок и ожидаемый результат.'
+                : 'Синтетическое описание услуги для проверки карточки.') : null,
+            'description_ru' => $withServiceImage ? ($equalServiceDescription
+                ? 'Подробное описание услуги. Внутри: формат, порядок и ожидаемый результат.'
+                : "Подробное описание услуги.\\n\\nВнутри: формат, порядок и ожидаемый результат.") : null,
             'formats' => $homeVisit ? ['home'] : (($multipleChoices || $onlineMeeting) ? ['office', 'online'] : ['office']),
             'image_path' => $withServiceImage ? 'brand/chuklov-designer-logo-ru.jpg' : null,
             'requires_medical_profile' => getenv('PLAYWRIGHT_MEDICAL_SERVICE') === '1',
@@ -1789,6 +1795,20 @@ test('client sees available bonus in the header and can open the service list fr
     const imageCard = page.locator('.portal-service-card--with-image').filter({ hasText: fixture.serviceName });
     await expect(imageCard).toBeVisible();
     await expect(imageCard.locator('.portal-card__summary')).toHaveText(fixture.serviceSummary as string);
+    const serviceDetails = imageCard.locator('.portal-service-card__details');
+    const detailsSummary = serviceDetails.locator('summary');
+    await expect(serviceDetails).toHaveCount(1);
+    await expect(serviceDetails).not.toHaveAttribute('open', '');
+    await expect(detailsSummary).toHaveText('Полное описание');
+    const catalogUrl = page.url();
+    await detailsSummary.focus();
+    await detailsSummary.press('Enter');
+    await expect(serviceDetails).toHaveAttribute('open', '');
+    await expect(serviceDetails.locator('.portal-service-card__description')).toHaveText(fixture.serviceDescription as string);
+    await expect(imageCard.locator('.portal-service-card__description')).toHaveCount(1);
+    expect(page.url()).toBe(catalogUrl);
+    await detailsSummary.click();
+    await expect(serviceDetails).not.toHaveAttribute('open', '');
     for (const width of [320, 360, 390, 768, 1024, 1440]) {
         await page.setViewportSize({ width, height: 900 });
         await expect(imageCard.locator('.portal-service-card__image')).toBeVisible();
@@ -1804,7 +1824,8 @@ test('client sees available bonus in the header and can open the service list fr
     await page.reload();
     await expect(page.getByRole('heading', { name: 'Записаться', exact: true })).toBeVisible();
     await expect(bonusButton).toContainText('10.00 USD');
-    await imageCard.click();
+    await expect(imageCard.locator('.portal-service-card__details')).not.toHaveAttribute('open', '');
+    await imageCard.getByRole('link', { name: 'Записаться', exact: true }).click();
     await expect(page).toHaveURL(/\/portal\/bookings\/create\?service_id=/);
     await expect(page.getByTestId('booking-selection-service')).toContainText(fixture.serviceName);
     await expect(page.locator('.portal-booking-context-summary__service-description')).toHaveText(fixture.serviceDescription as string);
@@ -1813,6 +1834,73 @@ test('client sees available bonus in the header and can open the service list fr
     await page.goBack();
     await expect(page.getByRole('heading', { name: 'Добро пожаловать в пространство здоровья!', exact: true })).toBeVisible();
     await expect(bonusButton).toContainText('10.00 USD');
+});
+
+test('service catalog hides redundant full-description disclosure', async ({ page }) => {
+    const equalFixture = createBookingFixture({ withServiceImage: true, equalServiceDescription: true });
+
+    await page.context().addCookies([{
+        name: equalFixture.cookieName,
+        value: equalFixture.cookieValue,
+        url: 'http://127.0.0.1:8000',
+    }]);
+
+    await page.goto('/portal/services');
+    const equalCard = page.locator('.portal-service-card--with-image').filter({ hasText: equalFixture.serviceName });
+    await expect(equalCard).toBeVisible();
+    await expect(equalCard.locator('.portal-card__summary')).toHaveText(equalFixture.serviceSummary as string);
+    await expect(equalCard.locator('.portal-service-card__details')).toHaveCount(0);
+
+    const emptyFixture = createBookingFixture();
+    await page.context().addCookies([{
+        name: emptyFixture.cookieName,
+        value: emptyFixture.cookieValue,
+        url: 'http://127.0.0.1:8000',
+    }]);
+    await page.goto('/portal/services');
+    const emptyCard = page.locator('.portal-service-card').filter({ hasText: emptyFixture.serviceName });
+    await expect(emptyCard).toBeVisible();
+    await expect(emptyCard.locator('.portal-service-card__details')).toHaveCount(0);
+});
+
+test('client can open the only specialist profile from time selection and return with the slot', async ({ page }) => {
+    const fixture = createBookingFixture();
+
+    await page.context().addCookies([{
+        name: fixture.cookieName,
+        value: fixture.cookieValue,
+        url: 'http://127.0.0.1:8000',
+    }]);
+
+    await page.goto(`/portal/bookings/create?service_id=${fixture.serviceId}`);
+    await expect(page.getByRole('heading', { name: 'Выберите дату и время', exact: true })).toBeVisible();
+    await expect(page.getByTestId('booking-selection-service')).toContainText(fixture.serviceName);
+    await expect(page.getByTestId('booking-selection-specialist')).toContainText(fixture.specialistName);
+    const slot = page.getByTestId('availability-slot').first();
+    await expect(slot).toBeVisible();
+    await slot.click();
+    const selectedStart = new URL(page.url()).searchParams.get('selected_start_at');
+    expect(selectedStart).not.toBeNull();
+
+    const detailsLink = page.getByRole('link', { name: 'Подробнее о специалисте', exact: true });
+    await expect(detailsLink).toBeVisible();
+    await detailsLink.click();
+    await expect(page.getByRole('heading', { name: fixture.specialistName, exact: true })).toBeVisible();
+    await expect(page.getByText('Профиль специалиста', { exact: true })).toBeVisible();
+
+    await page.getByRole('link', { name: 'Вернуться к записи', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'Выберите дату и время', exact: true })).toBeVisible();
+    await expect(page.getByTestId('booking-selection-specialist')).toContainText(fixture.specialistName);
+    await expect(page.locator('[data-testid="availability-slot"][aria-pressed="true"]')).toHaveCount(1);
+    expect(new URL(page.url()).searchParams.get('service_id')).toBe(String(fixture.serviceId));
+    expect(new URL(page.url()).searchParams.get('specialist_id')).toBe(String(fixture.specialistId));
+    expect(new URL(page.url()).searchParams.get('selected_start_at')).toBe(selectedStart);
+
+    await page.goBack();
+    await expect(page.getByRole('heading', { name: fixture.specialistName, exact: true })).toBeVisible();
+    await page.goForward();
+    await expect(page.getByRole('heading', { name: 'Выберите дату и время', exact: true })).toBeVisible();
+    await expect(page.locator('[data-testid="availability-slot"][aria-pressed="true"]')).toHaveCount(1);
 });
 
 test('specialist profile headings wrap inside narrow portal viewports', async ({ page }) => {

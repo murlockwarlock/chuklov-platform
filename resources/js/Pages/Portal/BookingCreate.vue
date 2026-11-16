@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { router, useForm, useRemember } from '@inertiajs/vue3';
+import { Link, router, useForm, useRemember } from '@inertiajs/vue3';
 import { computed, onMounted, ref, unref, watch } from 'vue';
 import AppShell from '../../Components/Portal/AppShell.vue';
 import BookingCalendar from '../../Components/Portal/BookingCalendar.vue';
@@ -398,6 +398,32 @@ const selectedService = computed(() =>
 const selectedSpecialist = computed(() =>
     props.specialists.find((specialist) => specialist.id === props.query.specialistId) ?? null,
 );
+const selectedSpecialistDetailsUrl = computed(() => {
+    const detailsUrl = selectedSpecialist.value?.detailsUrl;
+
+    if (detailsUrl === undefined) {
+        return null;
+    }
+
+    if (typeof window === 'undefined') {
+        return detailsUrl;
+    }
+
+    const url = new URL(detailsUrl, window.location.origin);
+    if (selectedStart.value !== null) {
+        url.searchParams.set(selectedStartParam, selectedStart.value);
+    } else {
+        url.searchParams.delete(selectedStartParam);
+    }
+
+    if (selectedStart.value !== null && bookingStep.value === 'confirmation') {
+        url.searchParams.set(bookingStepParam, 'confirmation');
+    } else {
+        url.searchParams.delete(bookingStepParam);
+    }
+
+    return `${url.pathname}${url.search}${url.hash}`;
+});
 const selectedWorkingLocation = computed(() => props.workingLocations.find((location) => location.id === selectedWorkingLocationId.value) ?? null);
 const locationAreaOptions = computed(() => Array.from(new Set(props.locationDays.map((locationDay) => locationDay.areaName))));
 const hasLocationDayRules = computed(() => props.locationDays.length > 0);
@@ -1041,6 +1067,14 @@ function submitBooking(): void {
               >
                 {{ t('booking.changeSpecialist') }}
               </button>
+              <Link
+                v-if="selectedSpecialistDetailsUrl"
+                :href="selectedSpecialistDetailsUrl"
+                class="portal-link"
+                data-testid="booking-specialist-details"
+              >
+                {{ t('specialist.details') }}
+              </Link>
               <button
                 v-if="formatOptions.length > 1"
                 type="button"
