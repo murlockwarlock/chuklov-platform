@@ -92,7 +92,6 @@ const purchaseIdempotencyKey = `portal-purchase-${props.service.id}-${typeof cry
       <p
         v-if="service.summary"
         class="portal-card__summary portal-service-card__summary break-words"
-        :class="{ 'portal-service-card__summary--clamped': fullDescription }"
       >
         {{ service.summary }}
       </p>
@@ -114,11 +113,10 @@ const purchaseIdempotencyKey = `portal-purchase-${props.service.id}-${typeof cry
     </div>
     <a
       v-if="service.catalogType === 'service'"
-      class="portal-link portal-service-card__link"
+      class="portal-button portal-button--primary portal-service-card__link"
       :href="bookingLink"
     >
       {{ portalText(locale, 'services.book') }}
-      <span aria-hidden="true">→</span>
     </a>
     <Link
       v-else-if="authenticated && service.purchaseUrl"

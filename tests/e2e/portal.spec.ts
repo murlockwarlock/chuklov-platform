@@ -792,6 +792,7 @@ function createBookingFixture(options: BookingFixtureOptions | boolean = false):
                 PLAYWRIGHT_LONG_SPECIALIST_NAME: normalizedOptions.longSpecialistName ? '1' : '0',
                 PLAYWRIGHT_HOME_VISIT: normalizedOptions.homeVisit ? '1' : '0',
                 PLAYWRIGHT_WITH_SERVICE_IMAGE: normalizedOptions.withServiceImage ? '1' : '0',
+                PLAYWRIGHT_EQUAL_SERVICE_DESCRIPTION: normalizedOptions.equalServiceDescription ? '1' : '0',
                 PLAYWRIGHT_FEEDBACK_ENABLED: normalizedOptions.feedbackEnabled ? '1' : '0',
                 PLAYWRIGHT_DUPLICATE_OFFICE_LOCATION: normalizedOptions.duplicateOfficeLocation ? '1' : '0',
             },
@@ -1795,6 +1796,7 @@ test('client sees available bonus in the header and can open the service list fr
     const imageCard = page.locator('.portal-service-card--with-image').filter({ hasText: fixture.serviceName });
     await expect(imageCard).toBeVisible();
     await expect(imageCard.locator('.portal-card__summary')).toHaveText(fixture.serviceSummary as string);
+    await expect(imageCard.locator('.portal-service-card__summary')).not.toHaveClass(/clamped/);
     const serviceDetails = imageCard.locator('.portal-service-card__details');
     const detailsSummary = serviceDetails.locator('summary');
     await expect(serviceDetails).toHaveCount(1);
@@ -1820,6 +1822,7 @@ test('client sees available bonus in the header and can open the service list fr
         }
     }
     await expect(page.getByRole('dialog')).toBeHidden();
+    await expect(imageCard.getByRole('link', { name: 'Записаться', exact: true })).toHaveClass(/portal-button--primary/);
 
     await page.reload();
     await expect(page.getByRole('heading', { name: 'Записаться', exact: true })).toBeVisible();

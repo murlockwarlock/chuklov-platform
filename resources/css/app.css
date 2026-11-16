@@ -1484,13 +1484,6 @@ select.portal-input[aria-invalid='true'] {
         line-height: 1.7;
     }
 
-.portal-service-card__summary--clamped {
-    display: -webkit-box;
-    overflow: hidden;
-    -webkit-box-orient: vertical;
-    -webkit-line-clamp: 3;
-}
-
     .portal-specialist-choice-options {
         display: grid;
         min-width: 0;
@@ -2275,7 +2268,8 @@ select.portal-input[aria-invalid='true'] {
     .portal-service-card__link {
         display: flex;
         align-items: center;
-        justify-content: space-between;
+        justify-content: center;
+        width: 100%;
         margin-top: var(--portal-space-5);
         text-decoration: none;
     }
