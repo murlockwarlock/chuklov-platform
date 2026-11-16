@@ -1,6 +1,10 @@
 <script setup lang="ts">
-import { Link } from '@inertiajs/vue3';
+import { Link, usePage } from '@inertiajs/vue3';
+import { computed } from 'vue';
+import LanguageSwitcher from './LanguageSwitcher.vue';
 import PortalIcon from './PortalIcon.vue';
+import { resolveClientRuntime } from '../../runtime/clientRuntime';
+import type { PortalShell } from '../../types/portal';
 
 withDefaults(defineProps<{
     title: string;
@@ -16,6 +20,9 @@ withDefaults(defineProps<{
     backLabel: null,
     headingLevel: 'section',
 });
+const page = usePage<{ portal: PortalShell }>();
+const runtimeMode = typeof window !== 'undefined' ? resolveClientRuntime() : 'web';
+const showTelegramLanguage = computed(() => runtimeMode === 'telegram-mini-app' && page.props.portal.authenticated);
 </script>
 
 <template>
@@ -55,9 +62,14 @@ withDefaults(defineProps<{
       </div>
     </div>
     <div
-      v-if="$slots.actions"
+      v-if="$slots.actions || showTelegramLanguage"
       class="portal-page-header__actions"
     >
+      <LanguageSwitcher
+        v-if="showTelegramLanguage"
+        :portal="page.props.portal"
+        mode="inline"
+      />
       <slot name="actions" />
     </div>
   </header>

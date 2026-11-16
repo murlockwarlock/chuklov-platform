@@ -4,7 +4,12 @@ import { computed, onMounted, onUnmounted, ref } from 'vue';
 import type { PortalLocale, PortalShell } from '../../types/portal';
 import { portalText } from '../../locales/portal';
 
-const props = defineProps<{ portal: PortalShell }>();
+const props = withDefaults(defineProps<{
+    portal: PortalShell;
+    mode?: 'menu' | 'inline';
+}>(), {
+    mode: 'menu',
+});
 const form = useForm<{ locale: PortalLocale }>({ locale: props.portal.locale });
 const locale = computed<PortalLocale>(() => props.portal.locale === 'en' ? 'en' : 'ru');
 const open = ref(false);
@@ -67,21 +72,41 @@ onUnmounted(() => {
     ref="root"
     class="portal-language-switcher"
     :aria-label="portalText(locale, 'shell.language')"
-    :class="{ 'portal-language-switcher--open': open }"
+    :class="{
+        'portal-language-switcher--open': open,
+        'portal-language-switcher--inline': props.mode === 'inline',
+    }"
   >
-    <button
-      ref="trigger"
-      type="button"
-      class="portal-language-switcher__trigger"
-      :aria-expanded="open"
-      aria-haspopup="menu"
-      :aria-label="portalText(locale, locale === 'ru' ? 'shell.russian' : 'shell.english')"
-      :title="portalText(locale, locale === 'ru' ? 'shell.russian' : 'shell.english')"
-      :disabled="form.processing"
-      @click="toggleMenu"
-    >
-      <span aria-hidden="true">{{ locale === 'ru' ? '🇷🇺' : '🇬🇧' }}</span>
-    </button>
+    <template v-if="props.mode === 'inline'">
+      <button
+        v-for="option in (['ru', 'en'] as PortalLocale[])"
+        :key="option"
+        type="button"
+        class="portal-language-switcher__inline-option"
+        :aria-pressed="locale === option"
+        :aria-label="portalText(locale, option === 'ru' ? 'shell.russian' : 'shell.english')"
+        :title="portalText(locale, option === 'ru' ? 'shell.russian' : 'shell.english')"
+        :disabled="form.processing || locale === option"
+        @click="switchLocale(option)"
+      >
+        {{ option === 'ru' ? 'RU' : 'EN' }}
+      </button>
+    </template>
+    <template v-else>
+      <button
+        ref="trigger"
+        type="button"
+        class="portal-language-switcher__trigger"
+        :aria-expanded="open"
+        aria-haspopup="menu"
+        :aria-label="portalText(locale, locale === 'ru' ? 'shell.russian' : 'shell.english')"
+        :title="portalText(locale, locale === 'ru' ? 'shell.russian' : 'shell.english')"
+        :disabled="form.processing"
+        @click="toggleMenu"
+      >
+        <span aria-hidden="true">{{ locale === 'ru' ? '🇷🇺' : '🇬🇧' }}</span>
+      </button>
+    </template>
     <div
       v-if="open"
       class="portal-language-switcher__menu"

@@ -1640,7 +1640,7 @@ test('authenticated Portal pages keep one navigation and page-header contract', 
     }
 });
 
-test('Telegram Mini App keeps the header out of document flow and exposes language in profile', async ({ page }) => {
+test('Telegram Mini App keeps the header out of document flow and exposes language in page headers', async ({ page }) => {
     const fixture = createBookingFixture();
     await page.addInitScript(() => {
         const telegramWindow = window as unknown as {
@@ -1660,15 +1660,14 @@ test('Telegram Mini App keeps the header out of document flow and exposes langua
     await expect(page.locator('.portal-shell--telegram .portal-header')).toHaveCSS('display', 'none');
     expect(await page.locator('.portal-header__inner').boundingBox()).toBeNull();
     expect(await page.locator('.portal-language-switcher__trigger').boundingBox()).toBeNull();
+    await expect(page.locator('.portal-page-header .portal-language-switcher--inline')).toHaveCount(1);
+    await expect(page.locator('.portal-page-header .portal-language-switcher__inline-option').filter({ hasText: 'EN' })).toBeVisible();
     await assertNoHorizontalOverflow(page);
 
     await page.goto('/portal/profile');
     await expect(page.locator('.portal-shell--telegram .portal-header')).toHaveCSS('display', 'none');
-    await expect(page.locator('.portal-language-switcher')).toHaveCount(1);
-    await expect(page.locator('.portal-language-switcher__trigger')).toBeVisible();
-    await page.getByRole('button', { name: 'Русский', exact: true }).click();
-    await expect(page.getByRole('menu')).toBeVisible();
-    await page.keyboard.press('Escape');
+    await expect(page.locator('.portal-page-header .portal-language-switcher--inline')).toHaveCount(1);
+    await expect(page.locator('.portal-page-header .portal-language-switcher__inline-option').filter({ hasText: 'EN' })).toBeVisible();
     await assertNoHorizontalOverflow(page);
 });
 
