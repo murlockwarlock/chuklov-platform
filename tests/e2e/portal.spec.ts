@@ -42,6 +42,7 @@ type BookingFixtureOptions = {
     multipleChoices?: boolean;
     multipleLocations?: boolean;
     longServiceTitle?: boolean;
+    longSpecialistName?: boolean;
     homeVisit?: boolean;
     withServiceImage?: boolean;
     feedbackEnabled?: boolean;
@@ -67,6 +68,7 @@ function createBookingFixture(options: BookingFixtureOptions | boolean = false):
         $confirmedOfficeBooking = getenv('PLAYWRIGHT_CONFIRMED_OFFICE_BOOKING') === '1';
         $cancelledOfficeBooking = getenv('PLAYWRIGHT_CANCELLED_OFFICE_BOOKING') === '1';
         $longServiceTitle = getenv('PLAYWRIGHT_LONG_SERVICE_TITLE') === '1';
+        $longSpecialistName = getenv('PLAYWRIGHT_LONG_SPECIALIST_NAME') === '1';
         $homeVisit = getenv('PLAYWRIGHT_HOME_VISIT') === '1';
         $withServiceImage = getenv('PLAYWRIGHT_WITH_SERVICE_IMAGE') === '1';
         $feedbackEnabled = getenv('PLAYWRIGHT_FEEDBACK_ENABLED') === '1';
@@ -266,7 +268,9 @@ function createBookingFixture(options: BookingFixtureOptions | boolean = false):
             }
         }
         $specialist = \\App\\Modules\\Specialists\\Domain\\Models\\Specialist::factory()->forOrganization($organization)->create([
-            'display_name' => 'Playwright Specialist '.$suffix,
+            'display_name' => $longSpecialistName
+                ? 'СпециалистСОченьДлиннымИменемДляПроверкиУзкогоЭкрана'
+                : 'Playwright Specialist '.$suffix,
             'timezone' => 'UTC',
         ]);
         if ($withPartnerRewards || $withServiceCredit) {
@@ -779,6 +783,7 @@ function createBookingFixture(options: BookingFixtureOptions | boolean = false):
                 PLAYWRIGHT_MULTIPLE_CHOICES: normalizedOptions.multipleChoices ? '1' : '0',
                 PLAYWRIGHT_MULTIPLE_LOCATIONS: normalizedOptions.multipleLocations ? '1' : '0',
                 PLAYWRIGHT_LONG_SERVICE_TITLE: normalizedOptions.longServiceTitle ? '1' : '0',
+                PLAYWRIGHT_LONG_SPECIALIST_NAME: normalizedOptions.longSpecialistName ? '1' : '0',
                 PLAYWRIGHT_HOME_VISIT: normalizedOptions.homeVisit ? '1' : '0',
                 PLAYWRIGHT_WITH_SERVICE_IMAGE: normalizedOptions.withServiceImage ? '1' : '0',
                 PLAYWRIGHT_FEEDBACK_ENABLED: normalizedOptions.feedbackEnabled ? '1' : '0',
@@ -1808,6 +1813,27 @@ test('client sees available bonus in the header and can open the service list fr
     await page.goBack();
     await expect(page.getByRole('heading', { name: 'Добро пожаловать в пространство здоровья!', exact: true })).toBeVisible();
     await expect(bonusButton).toContainText('10.00 USD');
+});
+
+test('specialist profile headings wrap inside narrow portal viewports', async ({ page }) => {
+    const fixture = createBookingFixture({ longSpecialistName: true });
+
+    await page.context().addCookies([{
+        name: fixture.cookieName,
+        value: fixture.cookieValue,
+        url: 'http://127.0.0.1:8000',
+    }]);
+
+    await page.goto(`/portal/specialists/${fixture.specialistId}`);
+    const heading = page.locator('.portal-specialist-profile__hero .portal-heading');
+    await expect(heading).toHaveText(fixture.specialistName);
+    await expect(heading).toHaveCSS('overflow-wrap', 'anywhere');
+
+    for (const width of [320, 360, 390, 768, 1024, 1440]) {
+        await page.setViewportSize({ width, height: 900 });
+        await assertNoHorizontalOverflow(page);
+        await assertRenderedViewportGeometry(page, ['.portal-specialist-profile__hero'], ['.portal-specialist-profile']);
+    }
 });
 
 test('ordinary referral copy reports clipboard failure and recovers on retry', async ({ page }) => {

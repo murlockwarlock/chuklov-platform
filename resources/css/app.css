@@ -1606,6 +1606,11 @@ select.portal-input[aria-invalid='true'] {
         gap: var(--portal-space-5);
     }
 
+    .portal-specialist-profile__hero .portal-heading {
+        min-width: 0;
+        overflow-wrap: anywhere;
+    }
+
     .portal-specialist-profile__avatar {
         width: 7rem;
         height: 7rem;
