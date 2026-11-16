@@ -140,7 +140,12 @@ final class SpecialistProfileTest extends TestCase
         $this->setOrganization($organization);
         Filament::setCurrentPanel(Filament::getPanel('admin'));
 
-        $component = $this->createSpecialistPage($admin)
+        $component = $this->createSpecialistPage($admin);
+        self::assertStringContainsString('0 / 2000', $component->html());
+        self::assertStringContainsString('0 / 10000', $component->html());
+        self::assertStringContainsString('Загрузка завершена', $component->html());
+
+        $component
             ->assertFormFieldVisible('profile_image')
             ->assertFormFieldVisible('specialization')
             ->assertFormFieldVisible('practices_since_year')
@@ -378,8 +383,8 @@ final class SpecialistProfileTest extends TestCase
             profileAttributes: [
                 'specialization' => 'Реабилитолог',
                 'practices_since_year' => 2014,
-                'qualification' => 'Квалификация владельца клиники.',
-                'bio' => 'Описание подхода специалиста.',
+                'qualification' => "Квалификация владельца клиники.\n• Сертификат по восстановительной работе.",
+                'bio' => "Описание подхода специалиста.\r\n\r\nОсновные направления:\n• восстановление\n• сопровождение",
                 'country' => 'Казахстан',
                 'city' => 'Алматы',
                 'phone' => '+77001234567',
@@ -401,6 +406,8 @@ final class SpecialistProfileTest extends TestCase
                 ->component('Portal/SpecialistShow')
                 ->where('specialist.displayName', 'Наталья Ким')
                 ->where('specialist.experienceLabel', '12 лет опыта')
+                ->where('specialist.qualification', "Квалификация владельца клиники.\n• Сертификат по восстановительной работе.")
+                ->where('specialist.bio', "Описание подхода специалиста.\r\n\r\nОсновные направления:\n• восстановление\n• сопровождение")
                 ->where('specialist.contacts', [])
                 ->has('specialist.services', 1)
                 ->where('specialist.services.0.id', $service->getKey())

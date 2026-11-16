@@ -8,6 +8,7 @@ type BookingFixture = {
     cookieValue: string;
     serviceId: number;
     serviceName: string;
+    serviceSummary: string | null;
     specialistId: number;
     specialistName: string;
     alternateSpecialistName: string | null;
@@ -549,6 +550,7 @@ function createBookingFixture(options: BookingFixtureOptions | boolean = false):
             'name' => $longServiceTitle
                 ? 'Индивидуальная консультация по глубоким и устойчивым изменениям в жизни '.$suffix
                 : 'Playwright Service '.$suffix,
+            'summary' => $withServiceImage ? 'Синтетическое описание услуги для проверки карточки.' : null,
             'formats' => $homeVisit ? ['home'] : (($multipleChoices || $onlineMeeting) ? ['office', 'online'] : ['office']),
             'image_path' => $withServiceImage ? 'brand/chuklov-designer-logo-ru.jpg' : null,
             'requires_medical_profile' => getenv('PLAYWRIGHT_MEDICAL_SERVICE') === '1',
@@ -723,6 +725,7 @@ function createBookingFixture(options: BookingFixtureOptions | boolean = false):
             'clientId' => $client->getKey(),
             'serviceId' => $service->getKey(),
             'serviceName' => $service->name,
+            'serviceSummary' => $service->summary,
             'specialistId' => $specialist->getKey(),
             'specialistName' => $specialist->display_name,
             'alternateSpecialistName' => $alternateSpecialist?->display_name,
@@ -984,6 +987,11 @@ async function acceptRequiredConsents(page: Page): Promise<void> {
     });
 
     await expect(checkbox).toHaveCount(1);
+    await expect(page.getByText('Необязательно', { exact: true })).toHaveCount(0);
+    const marketingCheckbox = page.getByRole('checkbox', { name: /полезные материалы и новости/i });
+    if (await marketingCheckbox.count() > 0) {
+        await expect(marketingCheckbox).not.toBeChecked();
+    }
     await checkbox.check();
 }
 
@@ -1659,6 +1667,25 @@ test('feedback keeps the selected score visible and the portal within mobile bou
     }
 });
 
+test('positive feedback copy stays localized after submission', async ({ page }) => {
+    const fixture = createBookingFixture({ feedbackEnabled: true });
+
+    await page.context().addCookies([{
+        name: fixture.cookieName,
+        value: fixture.cookieValue,
+        url: 'http://127.0.0.1:8000',
+    }]);
+
+    await page.goto('/portal/feedback');
+    await page.getByRole('radio', { name: '10', exact: true }).click();
+    await page.getByRole('button', { name: 'Отправить оценку', exact: true }).click();
+    await expect(page.getByText('Будем благодарны за ваш положительный отзыв.', { exact: true })).toBeVisible();
+
+    await page.getByRole('button', { name: 'Русский', exact: true }).click();
+    await page.getByRole('menuitemradio', { name: 'English', exact: true }).click();
+    await expect(page.getByText('We would be grateful for your positive review.', { exact: true })).toBeVisible();
+});
+
 test('home keeps one primary booking action and ordinary referrals remain available', async ({ page }) => {
     const fixture = createBookingFixture();
 
@@ -1753,6 +1780,7 @@ test('client sees available bonus in the header and can open the service list fr
     await expect(page.getByRole('heading', { name: 'Записаться', exact: true })).toBeVisible();
     const imageCard = page.locator('.portal-service-card--with-image').filter({ hasText: fixture.serviceName });
     await expect(imageCard).toBeVisible();
+    await expect(imageCard.locator('.portal-card__summary')).toHaveText(fixture.serviceSummary as string);
     for (const width of [320, 360, 390, 768, 1024, 1440]) {
         await page.setViewportSize({ width, height: 900 });
         await expect(imageCard.locator('.portal-service-card__image')).toBeVisible();

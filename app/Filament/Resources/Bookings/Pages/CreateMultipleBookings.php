@@ -39,6 +39,9 @@ class CreateMultipleBookings extends LocalizedCreateRecord
     #[Url(as: 'view', history: true, nullable: true)]
     public ?string $journalView = null;
 
+    #[Url(as: 'show_archived', history: true)]
+    public bool $journalShowArchived = false;
+
     public string $batchIntentKey = '';
 
     public int $createdBookingCount = 0;
@@ -154,6 +157,9 @@ class CreateMultipleBookings extends LocalizedCreateRecord
                 ->whereKey($this->journalSpecialistId)
                 ->exists()) {
                 $parameters['specialist_id'] = $this->journalSpecialistId;
+            }
+            if ($this->journalShowArchived) {
+                $parameters['show_archived'] = '1';
             }
 
             $url = BookingResource::getUrl('index');

@@ -165,7 +165,6 @@ function closeDocument(): void {
         <h3 class="portal-heading portal-heading--card">
           {{ t('legal.marketing') }}
         </h3>
-        <span class="portal-copy portal-copy--small">{{ t('legal.optional') }}</span>
       </div>
       <label class="portal-confirm">
         <input

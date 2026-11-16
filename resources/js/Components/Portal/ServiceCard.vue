@@ -77,6 +77,12 @@ const purchaseIdempotencyKey = `portal-purchase-${props.service.id}-${typeof cry
       <h3 class="portal-heading portal-heading--card">
         {{ service.name }}
       </h3>
+      <p
+        v-if="service.summary"
+        class="portal-card__summary break-words"
+      >
+        {{ service.summary }}
+      </p>
       <div class="portal-service-card__meta">
         <span v-if="duration">{{ duration }}</span>
         <span>{{ price }}</span>
@@ -110,6 +116,12 @@ const purchaseIdempotencyKey = `portal-purchase-${props.service.id}-${typeof cry
       <h3 class="portal-heading portal-heading--card">
         {{ service.name }}
       </h3>
+      <p
+        v-if="service.summary"
+        class="portal-card__summary break-words"
+      >
+        {{ service.summary }}
+      </p>
       <div class="portal-service-card__meta">
         <span v-if="duration">{{ duration }}</span>
         <span>{{ price }}</span>

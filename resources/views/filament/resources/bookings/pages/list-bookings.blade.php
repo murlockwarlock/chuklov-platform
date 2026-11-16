@@ -53,14 +53,25 @@
 
             <div class="flex min-w-0 flex-wrap items-center justify-end gap-2">
                 <div class="flex min-w-0 flex-wrap items-center gap-2">
-                    @if (count($this->specialistOptions) > 1)
+                    @if ($this->hasSpecialistFilterOptions())
                         <x-filament::dropdown wire:key="booking-journal-specialist-filter" placement="bottom-start" shift width="sm">
                             <x-slot name="trigger">
                                 <x-filament::button id="booking-journal-specialist" color="gray" icon="heroicon-o-funnel">
                                     {{ $specialistFilterLabel }}
                                 </x-filament::button>
                             </x-slot>
-                            <div class="max-h-64 space-y-1 overflow-y-auto p-2">
+                            <div class="max-h-80 space-y-1 overflow-y-auto p-2">
+                                <label class="flex min-h-11 min-w-0 items-center gap-2 rounded-lg px-3 py-2 text-sm">
+                                    <x-filament::input.checkbox
+                                        wire:model.live="showArchivedSpecialists"
+                                        data-testid="booking-journal-archived-toggle"
+                                        aria-label="{{ __('Показать архивных') }}"
+                                    />
+                                    <span class="min-w-0 break-words">{{ __('Показать архивных') }}</span>
+                                </label>
+                                @if ($this->specialistOptions !== [])
+                                    <div class="my-1 border-t border-gray-200 dark:border-gray-800"></div>
+                                @endif
                                 <button type="button" wire:click="clearSpecialistFilter" class="w-full rounded-lg px-3 py-2 text-start text-sm">{{ __('Все специалисты') }}</button>
                                 @foreach ($this->specialistOptions as $id => $name)
                                     <label class="flex min-h-11 min-w-0 items-center gap-2 rounded-lg px-3 py-2 text-sm">
@@ -170,7 +181,7 @@
                                             <div class="relative z-10 pointer-events-none">
                                                 <div class="flex min-w-0 items-center {{ $calendarCardHeaderGap }}">
                                                     <span class="min-w-0 flex-1 {{ $calendarDensity === 'wide' ? 'whitespace-normal break-words' : 'truncate' }} font-semibold" title="{{ $booking['specialist'] }}">{{ $booking['start_time'] }} · {{ $booking['specialist'] }}</span>
-                                                    @if ($booking['released_for_rebooking'])
+                                                    @if ($booking['released_for_rebooking'] && $booking['specialist_is_active'])
                                                         <a
                                                             href="{{ $this->bookingCreationUrl($day['date'], $booking['start_time'], $booking['specialist_id']) }}"
                                                             aria-label="{{ __('Создать новую запись на :time', ['time' => $booking['start_time']]) }}"
@@ -230,7 +241,7 @@
                                                             <div class="flex min-w-0 items-start justify-between gap-2">
                                                                 <span class="min-w-0 truncate font-semibold">@if ($booking['client_url'])<a href="{{ $booking['client_url'] }}" class="pointer-events-auto relative z-20 crm-entity-link">{{ $booking['client'] }}</a>@else{{ $booking['client'] }}@endif</span>
                                                                 <span class="shrink-0 text-xs">{{ $booking['time_range'] }}</span>
-                                                                @if ($booking['released_for_rebooking'])
+                                                                @if ($booking['released_for_rebooking'] && $booking['specialist_is_active'])
                                                                     <a
                                                                         href="{{ $this->bookingCreationUrl($day['date'], $booking['start_time'], $booking['specialist_id']) }}"
                                                                         aria-label="{{ __('Создать новую запись на :time', ['time' => $booking['start_time']]) }}"
@@ -291,7 +302,7 @@
                                                 <div class="flex min-w-0 items-start justify-between gap-2">
                                                     <span class="min-w-0 truncate font-semibold">@if ($booking['client_url'])<a href="{{ $booking['client_url'] }}" class="pointer-events-auto relative z-20 crm-entity-link">{{ $booking['client'] }}</a>@else{{ $booking['client'] }}@endif</span>
                                                     <span class="shrink-0 text-xs">{{ $booking['time_range'] }}</span>
-                                                    @if ($booking['released_for_rebooking'])
+                                                    @if ($booking['released_for_rebooking'] && $booking['specialist_is_active'])
                                                         <a
                                                             href="{{ $this->bookingCreationUrl($day['date'], $booking['start_time'], $booking['specialist_id']) }}"
                                                             aria-label="{{ __('Создать новую запись на :time', ['time' => $booking['start_time']]) }}"
