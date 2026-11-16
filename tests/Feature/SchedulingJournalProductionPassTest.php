@@ -1480,6 +1480,7 @@ final class SchedulingJournalProductionPassTest extends TestCase
         self::assertStringContainsString($client->full_name, $journal->html());
 
         $journal->set('showArchivedSpecialists', false)
+            ->call('updatedShowArchivedSpecialists')
             ->assertSet('selectedSpecialistId', null)
             ->assertSet('selectedSpecialistIds', []);
         self::assertSame([], $journal->instance()->journalDays['2026-10-05']['bookings']);
