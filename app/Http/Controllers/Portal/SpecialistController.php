@@ -75,7 +75,7 @@ class SpecialistController extends Controller
             'booking_step',
         ] as $key) {
             $value = $request->query($key);
-            if (is_int($value) || is_string($value) && $value !== '') {
+            if (is_string($value) && $value !== '') {
                 $query[$key] = $value;
             }
         }

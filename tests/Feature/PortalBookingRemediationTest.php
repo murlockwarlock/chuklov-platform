@@ -455,35 +455,31 @@ class PortalBookingRemediationTest extends TestCase
         ];
         $this->withSession(['client_portal.client_id' => $client->getKey()]);
 
-        $this->get(route('portal.bookings.create', $query))
-            ->assertInertia(fn (AssertableInertia $page) => $page
-                ->where('specialists.0.detailsUrl', function (string $url) use ($query, $service, $specialist): bool {
-                    $actual = [];
-                    parse_str((string) parse_url($url, PHP_URL_QUERY), $actual);
-
-                    return str_ends_with((string) parse_url($url, PHP_URL_PATH), '/portal/specialists/'.$specialist->getKey())
-                        && $actual === array_map(static fn (int|string $value): string => (string) $value, [
-                            ...$query,
-                            'service_id' => $service->getKey(),
-                            'specialist_id' => $specialist->getKey(),
-                        ]);
-                }));
+        $bookingPage = $this->get(route('portal.bookings.create', $query))
+            ->assertInertia(fn (AssertableInertia $page) => $page->component('Portal/BookingCreate'));
+        $detailsUrl = data_get($bookingPage->viewData('page'), 'props.specialists.0.detailsUrl');
+        self::assertIsString($detailsUrl);
+        $detailsQuery = [];
+        parse_str((string) parse_url($detailsUrl, PHP_URL_QUERY), $detailsQuery);
+        self::assertSame('/portal/specialists/'.$specialist->getKey(), parse_url($detailsUrl, PHP_URL_PATH));
+        self::assertSame(
+            array_map(static fn (int|string $value): string => (string) $value, $query),
+            $detailsQuery,
+        );
 
         $expectedBack = route('portal.bookings.create', $query);
-        $this->get(route('portal.specialists.show', [
+        $profilePage = $this->get(route('portal.specialists.show', [
             'specialist' => $specialist->getKey(),
             ...$query,
-        ]))->assertInertia(fn (AssertableInertia $page) => $page
-            ->component('Portal/SpecialistShow')
-            ->where('urls.back', function (string $url) use ($expectedBack): bool {
-                $expected = [];
-                $actual = [];
-                parse_str((string) parse_url($expectedBack, PHP_URL_QUERY), $expected);
-                parse_str((string) parse_url($url, PHP_URL_QUERY), $actual);
-
-                return parse_url($url, PHP_URL_PATH) === parse_url($expectedBack, PHP_URL_PATH)
-                    && $actual === $expected;
-            }));
+        ]))->assertInertia(fn (AssertableInertia $page) => $page->component('Portal/SpecialistShow'));
+        $backUrl = data_get($profilePage->viewData('page'), 'props.urls.back');
+        self::assertIsString($backUrl);
+        $expectedBackQuery = [];
+        $actualBackQuery = [];
+        parse_str((string) parse_url($expectedBack, PHP_URL_QUERY), $expectedBackQuery);
+        parse_str((string) parse_url($backUrl, PHP_URL_QUERY), $actualBackQuery);
+        self::assertSame(parse_url($expectedBack, PHP_URL_PATH), parse_url($backUrl, PHP_URL_PATH));
+        self::assertSame($expectedBackQuery, $actualBackQuery);
     }
 
     public function test_booking_confirmation_survives_a_repeated_create_page_request(): void
