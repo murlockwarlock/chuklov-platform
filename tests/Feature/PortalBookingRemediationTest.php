@@ -462,8 +462,11 @@ class PortalBookingRemediationTest extends TestCase
         $detailsQuery = [];
         parse_str((string) parse_url($detailsUrl, PHP_URL_QUERY), $detailsQuery);
         self::assertSame('/portal/specialists/'.$specialist->getKey(), parse_url($detailsUrl, PHP_URL_PATH));
+        $expectedDetailsQuery = array_map(static fn (int|string $value): string => (string) $value, $query);
+        ksort($expectedDetailsQuery);
+        ksort($detailsQuery);
         self::assertSame(
-            array_map(static fn (int|string $value): string => (string) $value, $query),
+            $expectedDetailsQuery,
             $detailsQuery,
         );
 
@@ -479,6 +482,8 @@ class PortalBookingRemediationTest extends TestCase
         parse_str((string) parse_url($expectedBack, PHP_URL_QUERY), $expectedBackQuery);
         parse_str((string) parse_url($backUrl, PHP_URL_QUERY), $actualBackQuery);
         self::assertSame(parse_url($expectedBack, PHP_URL_PATH), parse_url($backUrl, PHP_URL_PATH));
+        ksort($expectedBackQuery);
+        ksort($actualBackQuery);
         self::assertSame($expectedBackQuery, $actualBackQuery);
     }
 
