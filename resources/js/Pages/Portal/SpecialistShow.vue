@@ -179,7 +179,7 @@ function initials(name: string): string {
               :key="service.id"
               class="portal-specialist-profile__service"
             >
-              <div class="min-w-0 portal-stack portal-stack--tight">
+              <div class="portal-specialist-profile__service-copy min-w-0 portal-stack portal-stack--tight">
                 <h3 class="portal-heading portal-heading--card">
                   {{ service.name }}
                 </h3>

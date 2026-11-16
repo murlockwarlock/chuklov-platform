@@ -1672,12 +1672,20 @@ select.portal-input[aria-invalid='true'] {
     .portal-specialist-profile__service {
         display: flex;
         min-width: 0;
-        align-items: center;
-        justify-content: space-between;
+        flex-direction: column;
+        align-items: stretch;
         gap: var(--portal-space-4);
         border: 1px solid var(--portal-color-border);
         border-radius: var(--portal-radius-md);
         padding: var(--portal-space-4);
+    }
+
+    .portal-specialist-profile__service-copy {
+        width: 100%;
+    }
+
+    .portal-specialist-profile__service > .portal-button {
+        width: 100%;
     }
 
     .portal-specialist-profile__actions {

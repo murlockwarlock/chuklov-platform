@@ -1945,11 +1945,27 @@ test('specialist profile headings wrap inside narrow portal viewports', async ({
     const heading = page.locator('.portal-specialist-profile__hero .portal-heading');
     await expect(heading).toHaveText(fixture.specialistName);
     await expect(heading).toHaveCSS('overflow-wrap', 'anywhere');
+    const serviceCard = page.locator('.portal-specialist-profile__service').first();
+    await expect(serviceCard).toBeVisible();
 
     for (const width of [320, 360, 390, 768, 1024, 1440]) {
         await page.setViewportSize({ width, height: 900 });
         await assertNoHorizontalOverflow(page);
         await assertRenderedViewportGeometry(page, ['.portal-specialist-profile__hero'], ['.portal-specialist-profile']);
+        const cardLayout = await serviceCard.evaluate((card) => {
+            const cardRect = card.getBoundingClientRect();
+            const copyRect = card.querySelector('.portal-specialist-profile__service-copy')?.getBoundingClientRect();
+
+            return copyRect === undefined
+                ? null
+                : { cardWidth: cardRect.width, copyWidth: copyRect.width };
+        });
+        expect(cardLayout).not.toBeNull();
+        if (cardLayout === null) {
+            throw new Error('specialist service card copy geometry is unavailable');
+        }
+        expect(cardLayout.copyWidth).toBeGreaterThan(cardLayout.cardWidth * 0.7);
+        await assertRenderedViewportGeometry(page, ['.portal-specialist-profile__service'], ['.portal-specialist-profile']);
     }
 });
 
