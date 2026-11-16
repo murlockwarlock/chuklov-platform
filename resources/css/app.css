@@ -3362,7 +3362,7 @@ select.portal-input[aria-invalid='true'] {
     }
 
     .portal-shell--telegram .portal-companion {
-        height: min(48rem, calc(100dvh - 9rem - env(safe-area-inset-bottom)));
+        height: min(48rem, calc(100dvh - 12.25rem - env(safe-area-inset-bottom)));
     }
 
     .portal-shell--telegram .portal-main:has(.portal-companion-page) {

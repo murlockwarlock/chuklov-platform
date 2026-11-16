@@ -1669,6 +1669,22 @@ test('Telegram Mini App keeps the header out of document flow and exposes langua
     await expect(page.locator('.portal-page-header .portal-language-switcher--inline')).toHaveCount(1);
     await expect(page.locator('.portal-page-header .portal-language-switcher__inline-option').filter({ hasText: 'EN' })).toBeVisible();
     await assertNoHorizontalOverflow(page);
+
+    await page.goto('/portal/companion');
+    const companionGeometry = await page.evaluate(() => {
+        const companion = document.querySelector('.portal-companion')?.getBoundingClientRect();
+        const bottomNavigation = document.querySelector('.portal-bottom-nav')?.getBoundingClientRect();
+
+        return {
+            companionBottom: companion?.bottom ?? null,
+            bottomNavigationTop: bottomNavigation?.top ?? null,
+        };
+    });
+    expect(companionGeometry.companionBottom).not.toBeNull();
+    expect(companionGeometry.bottomNavigationTop).not.toBeNull();
+    expect((companionGeometry.companionBottom as number) - (companionGeometry.bottomNavigationTop as number)).toBeLessThanOrEqual(1);
+    expect((companionGeometry.bottomNavigationTop as number) - (companionGeometry.companionBottom as number)).toBeLessThanOrEqual(24);
+    await assertNoHorizontalOverflow(page);
 });
 
 test('confirmed client greeting follows the saved locale after reload', async ({ page }) => {
