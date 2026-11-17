@@ -902,6 +902,16 @@ final class SessionCockpitTest extends TestCase
         self::assertEquals(13, $updated['structured']['after']['rows'][0]['measurement'] ?? null);
         self::assertTrue((bool) ($updated['priority'] ?? false));
         self::assertSame(['otto'], $updated['priority_regions'] ?? null);
+
+        $reloaded = app(GetSession::class)->handle($admin, MedicalSession::query()->findOrFail($session->getKey()), $client);
+        $reloadedTest = collect($reloaded?->testResults ?? [])
+            ->first(static fn (mixed $row): bool => $row->testId === (int) $definition->getKey());
+
+        self::assertNotNull($reloadedTest);
+        self::assertEquals(12, $reloadedTest->structuredPayload['before']['rows'][0]['measurement'] ?? null);
+        self::assertEquals(13, $reloadedTest->structuredPayload['after']['rows'][0]['measurement'] ?? null);
+        self::assertTrue($reloadedTest->priority);
+        self::assertSame(['otto'], $reloadedTest->priorityRegions);
     }
 
     public function test_session_pain_frequency_and_time_are_optional_with_safe_defaults(): void
