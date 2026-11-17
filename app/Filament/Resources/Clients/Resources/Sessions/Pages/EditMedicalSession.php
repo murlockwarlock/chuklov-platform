@@ -807,11 +807,7 @@ class EditMedicalSession extends LocalizedEditRecord
         mixed $changedValue,
     ): bool
     {
-        $hasSnapshotConflict = collect($exception->errors())
-            ->flatten()
-            ->contains(static fn (mixed $message): bool => is_string($message)
-                && str_contains($message, 'Медицинский сеанс изменился в другой вкладке.'));
-        if (! $hasSnapshotConflict) {
+        if (! $this->isSnapshotConflict($exception)) {
             return false;
         }
 
@@ -848,6 +844,14 @@ class EditMedicalSession extends LocalizedEditRecord
         }
 
         return true;
+    }
+
+    private function isSnapshotConflict(ValidationException $exception): bool
+    {
+        return collect($exception->errors())
+            ->flatten()
+            ->contains(static fn (mixed $message): bool => is_string($message)
+                && str_contains($message, 'Медицинский сеанс изменился в другой вкладке.'));
     }
 
     private function uploadPhotoFormAction(MedicalSessionAttachmentGallery $gallery): Action
@@ -998,6 +1002,10 @@ class EditMedicalSession extends LocalizedEditRecord
 
             return $fresh;
         } catch (ValidationException $exception) {
+            if ($this->autosaveInProgress && $this->isSnapshotConflict($exception)) {
+                throw $exception;
+            }
+
             throw $this->formValidationFailure($exception, $formState);
         } catch (Throwable $exception) {
             if ($this->autosaveInProgress) {
