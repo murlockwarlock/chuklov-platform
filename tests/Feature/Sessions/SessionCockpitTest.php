@@ -857,13 +857,14 @@ final class SessionCockpitTest extends TestCase
             'sort_order' => 1,
         ]);
 
-        $session = app(CreateSession::class)->handle($admin, $client, new CreateSessionCommand(
+        $created = app(CreateSession::class)->handle($admin, $client, new CreateSessionCommand(
             specialistId: (int) $specialist->getKey(),
             occurredAt: CarbonImmutable::parse('2026-08-16 10:00:00', 'UTC'),
             testResults: [[
                 'test_id' => $definition->getKey(),
             ]],
         ));
+        $session = MedicalSession::query()->whereKey($created->id)->firstOrFail();
 
         $component = Livewire::actingAs($admin)->test(EditMedicalSession::class, [
             'parentRecord' => $client,
