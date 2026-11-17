@@ -1205,6 +1205,28 @@ final class SessionCockpitTest extends TestCase
             ->assertActionDataSet(['run_id' => $run->getKey()]);
     }
 
+    public function test_filament_session_ai_panel_polls_while_generation_is_in_progress(): void
+    {
+        [$organization, $admin, $client, $specialist] = $this->fixture();
+        $this->resolveFilamentContext($admin, $organization);
+        $session = $this->createSession($admin, $client, $specialist);
+        $run = $this->clinicalSynthesisRun(
+            $organization->getKey(),
+            $client->getKey(),
+            HumanReviewStatus::PendingReview,
+            ['client_summary' => 'Фактический черновик готовится'],
+            ClinicalSynthesizerWorkflow::SessionDraft->value,
+        );
+        $run->update([
+            'status' => AiRunStatus::Running,
+            'input_references' => [['type' => 'medical_session', 'id' => $session->getKey()]],
+        ]);
+
+        Livewire::actingAs($admin)
+            ->test(EditMedicalSession::class, ['parentRecord' => $client, 'record' => $session->getKey()])
+            ->assertSee('wire:poll.5s', false);
+    }
+
     public function test_filament_create_form_reserves_result_action_without_stage_one_ai(): void
     {
         [$organization, $admin, $client] = $this->fixture();
