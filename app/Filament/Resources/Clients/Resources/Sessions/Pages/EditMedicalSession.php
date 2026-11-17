@@ -411,6 +411,13 @@ class EditMedicalSession extends LocalizedEditRecord
             });
     }
 
+    public function refreshClinicalSessionAiPanel(): void
+    {
+        if ($this->getMountedAction() !== null) {
+            return;
+        }
+    }
+
     private function canUseClinicalSessionAi(): bool
     {
         $actor = auth()->user();
@@ -843,7 +850,7 @@ class EditMedicalSession extends LocalizedEditRecord
                             ->content(fn (): string => $this->sessionAiHistory())
                             ->columnSpanFull(),
                     ])
-                    ->extraAttributes(['wire:poll.5s' => '$refresh'])
+                    ->extraAttributes(['wire:poll.5s' => 'refreshClinicalSessionAiPanel'])
                     ->columnSpanFull(),
                 Section::make(__('Маркер безопасности'))
                     ->schema([
