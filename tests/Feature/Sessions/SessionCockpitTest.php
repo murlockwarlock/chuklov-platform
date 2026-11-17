@@ -830,6 +830,74 @@ final class SessionCockpitTest extends TestCase
         self::assertSame('Синтетика · Синтетический тест обновления', $results[0]['test_label'] ?? null);
     }
 
+    public function test_structured_clinical_test_action_writes_back_to_the_repeater_item(): void
+    {
+        [$organization, $admin, $client, $specialist] = $this->fixture();
+        $this->resolveFilamentContext($admin, $organization);
+
+        $definition = MedicalTestDefinition::query()->create([
+            'organization_id' => $organization->getKey(),
+            'key' => 'structured_action_roundtrip',
+            'name' => 'Структурированный тест',
+            'section' => 'Специализированные тесты',
+            'test_type' => 'T13',
+            'catalog_config' => [
+                'version' => 1,
+                'rows' => [[
+                    'key' => 'otto',
+                    'label' => 'Отто',
+                    'unit_options' => ['cm'],
+                ]],
+                'measurement_units' => ['cm'],
+                'rules' => ['index_violation' => [1, 2, 3], 'classification_enabled' => false],
+            ],
+            'catalog_set' => 'specialized',
+            'default_in_session' => true,
+            'is_active' => true,
+            'sort_order' => 1,
+        ]);
+
+        $session = app(CreateSession::class)->handle($admin, $client, new CreateSessionCommand(
+            specialistId: (int) $specialist->getKey(),
+            occurredAt: CarbonImmutable::parse('2026-08-16 10:00:00', 'UTC'),
+            testResults: [[
+                'test_id' => $definition->getKey(),
+            ]],
+        ));
+
+        $component = Livewire::actingAs($admin)->test(EditMedicalSession::class, [
+            'parentRecord' => $client,
+            'record' => $session->getKey(),
+        ]);
+        $results = $component->get('data.test_results');
+        $itemKey = collect(is_array($results) ? $results : [])
+            ->filter(static fn (mixed $row): bool => is_array($row) && (int) ($row['test_id'] ?? 0) === (int) $definition->getKey())
+            ->keys()
+            ->first();
+
+        self::assertIsString($itemKey);
+
+        $component
+            ->callFormComponentAction('test_results', 'editMedicalTest', [
+                'test_id' => (string) $definition->getKey(),
+                'priority' => true,
+                'priority_regions' => ['otto'],
+                'structured' => [
+                    'general_index' => ['before' => 2, 'after' => 0],
+                    'before' => ['rows' => [['key' => 'otto', 'unit' => 'cm', 'measurement' => 12]]],
+                    'after' => ['rows' => [['key' => 'otto', 'unit' => 'cm', 'measurement' => 13]]],
+                ],
+            ], ['item' => $itemKey])
+            ->assertHasNoActionErrors();
+
+        $updated = $component->get('data.test_results.'.$itemKey);
+
+        self::assertSame(12, $updated['structured']['before']['rows'][0]['measurement'] ?? null);
+        self::assertSame(13, $updated['structured']['after']['rows'][0]['measurement'] ?? null);
+        self::assertTrue((bool) ($updated['priority'] ?? false));
+        self::assertSame(['otto'], $updated['priority_regions'] ?? null);
+    }
+
     public function test_session_pain_frequency_and_time_are_optional_with_safe_defaults(): void
     {
         [$organization, $admin, $client, $specialist] = $this->fixture();
