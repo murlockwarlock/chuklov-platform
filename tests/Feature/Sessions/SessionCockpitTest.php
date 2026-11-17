@@ -1167,8 +1167,7 @@ final class SessionCockpitTest extends TestCase
 
         Livewire::actingAs($admin)
             ->test(EditMedicalSession::class, ['parentRecord' => $client, 'record' => $session->getKey()])
-            ->assertFormComponentActionVisible('form', 'openClinicalSessionAiDraft')
-            ->mountFormComponentAction('form', 'openClinicalSessionAiDraft')
+            ->call('mountAction', 'openClinicalSessionAiDraft', [], ['schemaComponent' => 'form'])
             ->assertActionMounted('openClinicalSessionAiDraft')
             ->assertActionDataSet(['run_id' => $run->getKey()])
             ->assertFormFieldExists('edited_output')
