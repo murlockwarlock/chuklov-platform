@@ -420,6 +420,48 @@ final class SessionCockpitTest extends TestCase
             ->assertSee('Файлы сеанса');
     }
 
+    public function test_filament_detail_http_page_renders_ten_session_factual_history_with_before_and_after_values(): void
+    {
+        [$organization, $admin, $client, $specialist] = $this->fixture();
+        $this->resolveFilamentContext($admin, $organization);
+
+        foreach (range(1, 10) as $day) {
+            $this->createSession(
+                $admin,
+                $client,
+                $specialist,
+                occurredAt: Carbon::parse('2026-08-'.str_pad((string) $day, 2, '0', STR_PAD_LEFT).' 10:00:00', 'UTC'),
+                pain: 'Сохранённая запись '.$day,
+            );
+        }
+        $current = app(CreateSession::class)->handle($admin, $client, new CreateSessionCommand(
+            specialistId: (int) $specialist->getKey(),
+            occurredAt: Carbon::parse('2026-08-16 10:00:00', 'UTC'),
+            pain: 'Текущая сохранённая запись',
+            measurements: [
+                'after_enabled' => true,
+                'before' => ['vitals' => ['sys' => 120, 'dia' => 80]],
+                'after' => ['vitals' => ['sys' => 118, 'dia' => 78]],
+            ],
+        ));
+        $currentRecord = MedicalSession::query()->whereKey($current->id)->firstOrFail();
+
+        $this
+            ->actingAs($admin)
+            ->get($this->relativeUrl(ViewMedicalSession::getUrl([
+                'client' => $client,
+                'record' => $currentRecord,
+            ], shouldGuessMissingParameters: true)))
+            ->assertSuccessful()
+            ->assertSee('Динамика подтверждённых фактов')
+            ->assertSee('Медицинские выводы не формируются.')
+            ->assertSee('Сеанс 9 назад')
+            ->assertSee('Показатели до сеанса')
+            ->assertSee('Показатели после сеанса')
+            ->assertSee('SYS: 120')
+            ->assertSee('SYS: 118');
+    }
+
     public function test_filament_detail_page_renders_normalized_pain_rows_with_scores_and_frequency(): void
     {
         [$organization, $admin, $client, $specialist] = $this->fixture();

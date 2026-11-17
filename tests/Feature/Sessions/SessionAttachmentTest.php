@@ -189,11 +189,14 @@ final class SessionAttachmentTest extends TestCase
         $sessionQueries = collect(DB::getQueryLog())
             ->filter(static fn (array $query): bool => str_contains($query['query'], 'from "medical_sessions"'));
 
-        self::assertCount(3, $sessionQueries);
+        self::assertCount(11, $sessionQueries);
         self::assertSame('2026-07-20', $dynamics->previous?->occurredAt?->format('Y-m-d'));
+        $comparison = $dynamics->comparison();
+        self::assertCount(10, $comparison);
+        self::assertStringStartsWith('12.07.2026', (string) $comparison[9]['occurred_at']);
         self::assertTrue($sessionQueries->contains(
             static fn (array $query): bool => str_contains($query['query'], '"occurred_at" <')
-                && str_contains($query['query'], 'limit 1'),
+                && str_contains($query['query'], 'limit 9'),
         ));
     }
 

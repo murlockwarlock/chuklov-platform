@@ -249,6 +249,7 @@ final class SessionInfolist
                     ])
                     ->visible(fn (MedicalSession $record, Section $section): bool => filled(self::sessionData($record, $section)?->therapistNotes)),
                 Section::make(__('Динамика подтверждённых фактов'))
+                    ->description(__('Сохранённые значения текущего и до 9 предыдущих сеансов. Медицинские выводы не формируются.'))
                     ->schema([
                         RepeatableEntry::make('comparison')
                             ->hiddenLabel()
@@ -257,9 +258,26 @@ final class SessionInfolist
                                 TextEntry::make('occurred_at')->label(__('Дата')),
                                 TextEntry::make('specialist')->label(__('Специалист')),
                                 TextEntry::make('booking')->label(__('Запись на приём'))->columnSpanFull(),
+                                TextEntry::make('measurements_before')
+                                    ->label(__('Показатели до сеанса'))
+                                    ->listWithLineBreaks()
+                                    ->placeholder(__('Не заполнены')),
+                                TextEntry::make('measurements_after')
+                                    ->label(__('Показатели после сеанса'))
+                                    ->listWithLineBreaks()
+                                    ->placeholder(__('Не заполнены')),
+                                TextEntry::make('pain_scores')
+                                    ->label(__('Жалобы: до / после'))
+                                    ->listWithLineBreaks()
+                                    ->placeholder(__('Не заполнены'))
+                                    ->columnSpanFull(),
                                 TextEntry::make('pain')->label(__('Особые жалобы'))->placeholder(__('Не заполнено')),
                                 TextEntry::make('pain_vas')->label(__('Шкала боли'))->suffix('/10')->placeholder(__('Не указана')),
-                                TextEntry::make('tests')->label(__('Тесты'))->placeholder(__('Не заполнено')),
+                                TextEntry::make('test_results')
+                                    ->label(__('Тесты: до / после'))
+                                    ->listWithLineBreaks()
+                                    ->placeholder(__('Не заполнены'))
+                                    ->columnSpanFull(),
                                 TextEntry::make('observations')->label(__('Наблюдения'))->placeholder(__('Не заполнено')),
                                 TextEntry::make('root_cause_hypothesis')->label(__('Первопричина'))->placeholder(__('Не заполнено')),
                                 TextEntry::make('protocol')->label(__('Протокол'))->placeholder(__('Не заполнено')),
