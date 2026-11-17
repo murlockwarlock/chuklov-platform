@@ -17,6 +17,7 @@ use App\Modules\Surveys\Domain\Models\SurveyAttempt;
 use App\Modules\Surveys\Domain\Models\SurveyComparison;
 use App\Support\SupportedLocale;
 use Throwable;
+use Illuminate\Database\Eloquent\Builder;
 
 final readonly class ListClientHealthOverview
 {
@@ -184,7 +185,18 @@ final readonly class ListClientHealthOverview
             ->where('client_id', $clientId)
             ->where('status', AiRunStatus::Succeeded->value)
             ->whereIn('human_review_status', [HumanReviewStatus::Accepted->value, HumanReviewStatus::EditedAndAccepted->value])
-            ->whereIn('capability', [AiCapability::PostureAnalysis->value, AiCapability::ClinicalSynthesizer->value])
+            ->where(function (Builder $query): void {
+                $query
+                    ->where('capability', AiCapability::PostureAnalysis->value)
+                    ->orWhere(function (Builder $synthesis): void {
+                        $synthesis
+                            ->where('capability', AiCapability::ClinicalSynthesizer->value)
+                            ->whereIn('workflow_key', [
+                                ClinicalSynthesizerWorkflow::Summary->value,
+                                ClinicalSynthesizerWorkflow::CourseReport->value,
+                            ]);
+                    });
+            })
             ->exists();
     }
 

@@ -29,7 +29,7 @@ class RecordAuditEvent
         'ai.model_config.created' => ['model_name', 'is_enabled'],
         'ai.model_release.activated' => ['model_name', 'release_number'],
         'ai.safety_control.updated' => ['is_ai_globally_enabled', 'limits_updated'],
-        'ai.human_review.submitted' => ['ai_run_id', 'decision', 'safe_reason_code'],
+        'ai.human_review.submitted' => ['ai_run_id', 'decision', 'safe_reason_code', 'target_field'],
         'ai.run.exported' => ['ai_run_id', 'format', 'identity'],
         'ai.evaluation_case.created' => ['eval_suite_id', 'is_synthetic'],
         'ai.evaluation_case.updated' => ['eval_suite_id', 'is_active'],

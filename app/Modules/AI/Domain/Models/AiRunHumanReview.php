@@ -19,6 +19,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property HumanReviewDecision $decision
  * @property int|null $reviewer_user_id
  * @property string|null $safe_reason_code
+ * @property string|null $target_field
  * @property CarbonInterface $reviewed_at
  * @property-read Organization $organization
  * @property-read AiRun $run
@@ -31,6 +32,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'decision',
     'reviewer_user_id',
     'safe_reason_code',
+    'target_field',
     'reviewed_at',
 ])]
 class AiRunHumanReview extends Model
