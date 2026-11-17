@@ -769,10 +769,10 @@ class EditMedicalSession extends LocalizedEditRecord
             return;
         }
 
-        $this->persistClinicalTestResults();
+        $this->persistClinicalTestResults($key, $value);
     }
 
-    public function persistClinicalTestResults(): void
+    public function persistClinicalTestResults(?string $changedKey = null, mixed $changedValue = null): void
     {
         if (! $this->autosaveReady || $this->autosaveInProgress) {
             return;
@@ -784,7 +784,7 @@ class EditMedicalSession extends LocalizedEditRecord
             $this->save(false, false);
             Notification::make()->success()->title(__('Изменения сохранены'))->send();
         } catch (ValidationException $exception) {
-            if ($this->retryAutosaveAfterSnapshotConflict($exception)) {
+            if ($this->retryAutosaveAfterSnapshotConflict($exception, $changedKey, $changedValue)) {
                 return;
             }
 
@@ -801,10 +801,17 @@ class EditMedicalSession extends LocalizedEditRecord
         }
     }
 
-    private function retryAutosaveAfterSnapshotConflict(ValidationException $exception): bool
+    private function retryAutosaveAfterSnapshotConflict(
+        ValidationException $exception,
+        ?string $changedKey,
+        mixed $changedValue,
+    ): bool
     {
-        $message = (string) collect($exception->errors()['session'] ?? [])->first();
-        if (! str_contains($message, 'Медицинский сеанс изменился в другой вкладке.')) {
+        $hasSnapshotConflict = collect($exception->errors())
+            ->flatten()
+            ->contains(static fn (mixed $message): bool => is_string($message)
+                && str_contains($message, 'Медицинский сеанс изменился в другой вкладке.'));
+        if (! $hasSnapshotConflict) {
             return false;
         }
 
@@ -818,6 +825,12 @@ class EditMedicalSession extends LocalizedEditRecord
 
         $this->record = $fresh;
         $this->form->model($fresh);
+        $freshData = SessionForm::withStableLineageKeys($this->mutateFormDataBeforeFill([]));
+        if ($changedKey !== null) {
+            data_set($freshData, $changedKey, $changedValue);
+        }
+        $this->data = $freshData;
+        $this->form->fill($freshData);
         $this->data['expected_snapshot'] = app(MedicalSessionSnapshotHasher::class)->forSession($fresh);
 
         try {
