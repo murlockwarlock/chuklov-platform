@@ -1,12 +1,28 @@
-# Medical Test Catalog Requirements, 2026-11-14
+# Medical Test Catalog Requirements, 2026-11-16 delta
 
-This file is the canonical Stage 1B test-engine ledger linked from [`2026-11-14-medical-stage1.md`](2026-11-14-medical-stage1.md). It is documentation only. The source catalog remains primary evidence; this file is its stable, traceable engineering reflection.
+This file is the canonical Stage 1B test-engine ledger linked from [`2026-11-14-medical-stage1.md`](2026-11-14-medical-stage1.md). It is documentation only. The three 16.11 sources remain primary evidence; this file is their stable, traceable engineering reflection and preserves the 14.11 REQ IDs.
 
 ## Source and catalog rules
 
-Primary source: `Каталог тестов как вносится результат 14.11.26.docx`. The detailed Stage 1 TZ references this catalog for the complete test behavior. The catalog says that each test's cause list comes from Женя's 03.11 source and is not repeated in the 14.11 catalog. This ledger therefore records every source-provided test row, count, zone, position, subtest, and cause-list reference without fabricating a missing clinical tag list.
+Primary sources: `Каталог тестов: как вносится результат (16.11.26)`, `ТЗ для Ивана: этап 1 — диагностика, карта клиента и карта сеанса (16.11.26)`, and `Этапы реализации CRM Чуклова (16.11.26)`. The catalog says that each test's cause list comes from Женя's 03.11 source and is not repeated in the 16.11 catalog. This ledger therefore records every source-provided test row, count, zone, position, subtest, and cause-list reference without fabricating a missing clinical tag list.
 
-All Stage 1B REQs start as `TO IMPLEMENT` unless explicitly marked `EXISTING - NEEDS VERIFICATION`, `WORTHWHILE`, or `OPEN QUESTION - NON-BLOCKING`. No catalog REQ is `IMPLEMENTED`, `VERIFIED`, or `OWNER ACCEPTED` in this documentation task.
+The 16.11 delta is authoritative for the additions below. Confirmed answers from Женя are labelled as confirmed; Denis's suggested thresholds and norms remain proposals/configuration defaults, and unresolved points remain open questions. A stable 14.11 ID is changed in place when the owner decision supersedes its earlier wording; the history is retained in the source and delta notes.
+
+All Stage 1B REQs start as `TO IMPLEMENT` unless explicitly marked `CONFIRMED DECISION - TO IMPLEMENT`, `EXISTING - NEEDS VERIFICATION`, `WORTHWHILE`, `OPEN QUESTION - NON-BLOCKING`, or `OUT OF STAGE 1`. No catalog REQ is `IMPLEMENTED`, `VERIFIED`, or `OWNER ACCEPTED` in this documentation task.
+
+## 16.11 decision register
+
+### Confirmed by Женя
+
+The 15.11 answers carried into the 16.11 source are reflected in `REQ-MED-CATALOG-OQ-001`, `REQ-MED-CATALOG-OQ-003`, `REQ-MED-CATALOG-OQ-004`, and `REQ-MED-CATALOG-OQ-006` through `REQ-MED-CATALOG-OQ-012`. They include the T7 L/R weakness and automatic segment, the general index on every test, the Test 8 myozonal rule, all three Test 15.2 method rows, T6 hypo/hyper/normal, the Test 2 label, Test 25.6/25.7 directions, department indexes for Test 10, the Main set, and Test 1 shared cause identity with position-specific marks. Test 31 tor R normal/L violation is also confirmed.
+
+### Denis proposals
+
+The below-500 Test 31 energy threshold and the suggested Test 32 norm hints are proposals/configuration inputs, not approved clinical norms. They may be stored in CRM settings but do not activate automatic classification until an approved value exists.
+
+### Open questions
+
+The Test 31 energy threshold remains `REQ-MED-CATALOG-OQ-002`; Test 9.2 movement/percentage remains `REQ-MED-CATALOG-OQ-005`; and Test 32 Patrick numeric norm and any other missing approved measurement values remain open. Missing values fail closed and do not block the technical mechanism.
 
 ## Stage 1B ledger: catalog and common session behavior
 
@@ -15,7 +31,7 @@ All Stage 1B REQs start as `TO IMPLEMENT` unless explicitly marked `EXISTING - N
 - Source: Test catalog; Stage 1 TZ
 - Source section: catalog `Как читать каталог`, paragraphs 4-14; Stage 1 TZ `В. Тесты`, paragraphs 43-54
 - Type: `ADD`
-- Requirement: Each test catalog record configures number, title, set (`Основные` or `Специализированные`), subtests, form type T1-T12, rows, zones, sides, positions, allowed cause tags, index 0-3 enabled/disabled, violation rule, tooltip/abbreviation help, and active/inactive state.
+- Requirement: Each test catalog record configures number, title, set (`Основные` or `Специализированные`), subtests, form type T1-T13, rows, zones, sides, positions, movement phases, additional answers, allowed cause tags, index 0-3 enabled/disabled, violation rule, tooltip/abbreviation help, norms/interpretation metadata, and active/inactive state.
 - Acceptance: An authorized owner/admin can inspect and change every listed field through CRM; session behavior reads the configuration rather than hardcoded test-specific form code.
 - Dependencies: `REQ-MED-1A-CORE-005`; `REQ-MED-1B-TYPE-001` through `REQ-MED-1B-TYPE-012`.
 - Delivery package: `1B`
@@ -26,7 +42,7 @@ All Stage 1B REQs start as `TO IMPLEMENT` unless explicitly marked `EXISTING - N
 - Source: Test catalog; Stage 1 TZ
 - Source section: catalog paragraph 12; Stage 1 TZ paragraph 55
 - Type: `ADD`
-- Requirement: Женя can add a test to any set and choose one of the 12 generic input types without a code change.
+- Requirement: Женя can add a test to any set and choose one of the 13 generic input types without a code change.
 - Acceptance: A newly cataloged test can be added to a session and filled using the selected type; no developer or deployment step is required for the catalog operation.
 - Dependencies: `REQ-MED-1B-CATALOG-001`; generic type REQs.
 - Delivery package: `1B`
@@ -40,6 +56,17 @@ All Stage 1B REQs start as `TO IMPLEMENT` unless explicitly marked `EXISTING - N
 - Requirement: CSV/XLSX catalog import/export may be provided. It is desirable, not an acceptance blocker for Stage 1B.
 - Acceptance: If implemented, it preserves the same validated catalog model; if not, the package report explicitly records `WORTHWHILE` as not blocking acceptance.
 - Dependencies: `REQ-MED-1B-CATALOG-001`.
+- Delivery package: `1B`
+- Status: `TO IMPLEMENT`
+
+### REQ-MED-1B-CATALOG-004 - Catalog knowledge is stored without Stage 1 AI execution
+
+- Source: 2026-11-16 Stage 1 TZ; owner instruction
+- Source section: catalog metadata and Stage 1 exclusions
+- Type: `ADD`
+- Requirement: The catalog may store technique, approved norms, interpretation hints, and provenance for future AI knowledge. Stage 1 does not expose this material to clients and does not launch AI or automatic clinical classification.
+- Acceptance: Authorized CRM users can inspect or change the catalog metadata; missing or unconfirmed clinical values leave classification disabled, and no Stage 1 client response is generated from the metadata.
+- Dependencies: `REQ-MED-1B-CATALOG-001`; Stage 2 AI backlog.
 - Delivery package: `1B`
 - Status: `TO IMPLEMENT`
 
@@ -153,13 +180,13 @@ All Stage 1B REQs start as `TO IMPLEMENT` unless explicitly marked `EXISTING - N
 - Delivery package: `1B`
 - Status: `TO IMPLEMENT`
 
-### REQ-MED-1B-COMMON-011 - One primary and accompanying causes
+### REQ-MED-1B-COMMON-011 - Multiple primary and accompanying causes
 
 - Source: Test catalog; Stage 1 TZ
 - Source section: catalog common rule paragraph 9; Stage 1 TZ paragraph 62
 - Type: `ADD`
-- Requirement: One selected cause can be marked primary; all other selected causes are accompanying.
-- Acceptance: A row cannot have two primary causes; changing the primary marker reclassifies the old one without deleting it.
+- Requirement: A row can retain several main causes for the relevant region, in addition to accompanying causes. The CRM enforces a configurable maximum of six main causes per region and never collapses them into one cause.
+- Acceptance: Multiple selected main causes remain individually linked and editable; the sixth is accepted, a seventh is rejected with a human-readable error, and accompanying causes are not deleted or silently promoted.
 - Dependencies: `REQ-MED-1B-COMMON-010`.
 - Delivery package: `1B`
 - Status: `TO IMPLEMENT`
@@ -230,6 +257,72 @@ All Stage 1B REQs start as `TO IMPLEMENT` unless explicitly marked `EXISTING - N
 - Delivery package: `1B`
 - Status: `TO IMPLEMENT`
 
+### REQ-MED-1B-COMMON-018 - General confirmed index for every test
+
+- Source: 2026-11-16 test catalog; confirmed answer from Женя on 15.11
+- Source section: common index rule and owner answer
+- Type: `CHANGE`
+- Requirement: Every test result, including tests whose rows have their own indexes, stores one overall index from 0 through 3 confirmed manually by the master. Row indexes remain in addition to this general index.
+- Acceptance: The overall index is available in both before and after payloads, is persisted independently from row indexes, and cannot be auto-classified from an absent or unconfirmed norm.
+- Dependencies: `REQ-MED-1B-COMMON-007`; `REQ-MED-1B-CATALOG-004`.
+- Delivery package: `1B`
+- Status: `TO IMPLEMENT`
+
+### REQ-MED-1B-COMMON-019 - Multiple main causes per region
+
+- Source: 2026-11-16 test catalog; owner instruction
+- Source section: causes/common rules
+- Type: `ADD`
+- Requirement: A test row can have several main causes for one region, with a maximum of six per region, plus accompanying causes. Main causes are not replaced by a single primary field.
+- Acceptance: The writer preserves all selected main-cause identities, validates six per region, and displays the distinction from accompanying causes after reload.
+- Dependencies: `REQ-MED-1B-COMMON-010`; `REQ-MED-1B-COMMON-011`.
+- Delivery package: `1B`
+- Status: `TO IMPLEMENT`
+
+### REQ-MED-1B-COMMON-020 - Complex case and myozonal limit
+
+- Source: 2026-11-16 test catalog; owner instruction
+- Source section: complex cases and myozonal rule
+- Type: `ADD`
+- Requirement: A row with three or more causes is marked as a complex case. The myozonal test has a separate configured limit of two regions and does not inherit a generic unlimited multi-region rule.
+- Acceptance: The complex marker and count are deterministic from the saved row; a third myozonal region is rejected or flagged according to CRM configuration without inventing a clinical interpretation.
+- Dependencies: `REQ-MED-1B-COMMON-019`; `REQ-MED-1B-CATALOG-004`.
+- Delivery package: `1B`
+- Status: `TO IMPLEMENT`
+
+### REQ-MED-1B-COMMON-021 - Manual priority for tests and regions
+
+- Source: 2026-11-16 test catalog; owner instruction
+- Source section: priority tests and regions
+- Type: `ADD`
+- Requirement: The master can mark a test and a region as priority. In the next session, marked items are raised to the top for recheck while preserving normal catalog order for other items.
+- Acceptance: Priority identity is carried by test/region key, shown as a recheck state in the next session, and remains editable without changing historical results.
+- Dependencies: `REQ-MED-1B-COMMON-015`; stable row identity.
+- Delivery package: `1B`
+- Status: `TO IMPLEMENT`
+
+### REQ-MED-1B-COMMON-022 - Persist stabilization as a result
+
+- Source: 2026-11-16 test catalog; owner instruction
+- Source section: stabilization rule
+- Type: `ADD`
+- Requirement: If a previously abnormal test is normal before treatment in the next session, save a separate stabilization result linked to the previous test identity. Do not delete the old abnormal result or silently remove the recheck.
+- Acceptance: The next session shows the historical abnormal result and a distinct normal/stabilized result after reload; the stabilization counter includes it once.
+- Dependencies: `REQ-MED-1B-COMMON-014`; `REQ-MED-1B-COMMON-015`.
+- Delivery package: `1B`
+- Status: `TO IMPLEMENT`
+
+### REQ-MED-1B-COMMON-023 - New-cause marker relative to the same test history
+
+- Source: 2026-11-16 test catalog; owner instruction
+- Source section: new causes/history
+- Type: `ADD`
+- Requirement: A cause selected for a test is marked `новая` only when that cause has not appeared in the history of the same test for the client. The shared cause identity and prior links remain unchanged.
+- Acceptance: The first occurrence is marked new, a later occurrence on the same test is not, and an occurrence on another test is evaluated against that test's own history.
+- Dependencies: `REQ-MED-1B-TAG-001`; `REQ-MED-1B-COMMON-019`; history reader.
+- Delivery package: `1B`
+- Status: `TO IMPLEMENT`
+
 ### Counters
 
 ### REQ-MED-1B-COUNTER-001 - Violations before
@@ -287,7 +380,29 @@ All Stage 1B REQs start as `TO IMPLEMENT` unless explicitly marked `EXISTING - N
 - Delivery package: `1B`
 - Status: `TO IMPLEMENT`
 
-## Generic form types T1-T12
+### REQ-MED-1B-COUNTER-006 - Stabilized tests
+
+- Source: 2026-11-16 Stage 1 TZ; owner instruction
+- Source section: additional counters
+- Type: `ADD`
+- Requirement: Show a separate count of tests that were previously abnormal and are normal before treatment in the current session, with the stabilization result persisted.
+- Acceptance: A prior abnormal result followed by a normal current before result increments this counter once and remains visible after reload; deleting the current row cannot erase the old result.
+- Dependencies: `REQ-MED-1B-COMMON-022`; history reader.
+- Delivery package: `1B`
+- Status: `TO IMPLEMENT`
+
+### REQ-MED-1B-COUNTER-007 - Complex cases
+
+- Source: 2026-11-16 Stage 1 TZ; owner instruction
+- Source section: additional counters
+- Type: `ADD`
+- Requirement: Show a separate count of complex rows, where three or more causes are attached, using the configured myozonal exception.
+- Acceptance: The counter matches the saved row markers, distinguishes complex cases from ordinary cause count, and remains stable after reload.
+- Dependencies: `REQ-MED-1B-COMMON-020`.
+- Delivery package: `1B`
+- Status: `TO IMPLEMENT`
+
+## Generic form types T1-T13
 
 ### REQ-MED-1B-TYPE-001 - T1 tone by sides
 
@@ -360,8 +475,8 @@ All Stage 1B REQs start as `TO IMPLEMENT` unless explicitly marked `EXISTING - N
 - Source: Test catalog
 - Source section: type table row T15.8
 - Type: `ADD`
-- Requirement: T7 configures a muscle with its derived segment and records L/R. Every marked side is a violation.
-- Acceptance: The derived segment is shown from catalog configuration and each marked side is counted independently.
+- Requirement: T7 records weakness separately on L and R, automatically marks the muscle's linked spinal segment, and stores one general integrative index for the test. Every marked side is a violation.
+- Acceptance: The derived segment is shown from catalog configuration, L/R weakness is independently persisted, and the overall index is separate from side values.
 - Dependencies: `REQ-MED-CATALOG-OQ-001`; muscle catalog.
 - Delivery package: `1B`
 - Status: `TO IMPLEMENT`
@@ -418,6 +533,17 @@ All Stage 1B REQs start as `TO IMPLEMENT` unless explicitly marked `EXISTING - N
 - Requirement: T12 records energy potential 0-1000, chakras 1-7, tor direction R/L, and causes. Its violation rule remains configurable while catalog OQ-002 is open.
 - Acceptance: The three structured subtests are stored independently and the configured violation rule can change without code deployment.
 - Dependencies: `REQ-MED-CATALOG-OQ-002`; Test 31 REQ.
+- Delivery package: `1B`
+- Status: `TO IMPLEMENT`
+
+### REQ-MED-1B-TYPE-013 - T13 measurement
+
+- Source: 2026-11-16 test catalog; confirmed answer from Женя on 15.11
+- Source section: type table T13 and measurement rules
+- Type: `ADD`
+- Requirement: T13 records centimeter and degree values, L/R side, movement phase, and configured additional yes/no answers with optional pain localization. It stores a manually confirmed general index 0-3; CRM norms may suggest a value only when configured and must not silently classify an unconfirmed result.
+- Acceptance: A CRM-configured T13 renders numeric cm/degree inputs, side and phase controls, additional answers, and before/after values; invalid ranges are rejected; the saved result preserves the general index and structured subvalues.
+- Dependencies: `REQ-MED-1B-COMMON-018`; `REQ-MED-1B-CATALOG-004`.
 - Delivery package: `1B`
 - Status: `TO IMPLEMENT`
 
@@ -641,8 +767,8 @@ Each test below is a separate REQ. The `Source configuration` line preserves the
 - Source: Test catalog
 - Source section: test table row T18.16, test 15
 - Type: `ADD`
-- Requirement: Test 15 is T1, Specialized: 15.1 pelvic R/L with source cause count 13; 15.2 ГБД R/L, legs, and method A/B/C with source cause count 16; 15.3 thoracic R/L with source cause count 15. The proposed 15.2 method is one selected method with one result.
-- Acceptance: The subtests and cause references are separate, 15.2 stores which method was used, and T1 violation behavior applies.
+- Requirement: Test 15 is T1, Specialized: 15.1 pelvic R/L with source cause count 13; 15.2 ГБД R/L, legs, and methods A/B/C with source cause count 16; 15.3 thoracic R/L with source cause count 15. Each 15.2 method records Yes/No for dome L, dome R, and legs; several methods can confirm a violation.
+- Acceptance: The subtests and cause references are separate, all three 15.2 method rows are independently persisted, and T1/T5 violation behavior applies.
 - Dependencies: `REQ-MED-1B-TYPE-001`; `REQ-MED-CATALOG-OQ-006`.
 - Delivery package: `1B`
 - Status: `TO IMPLEMENT`
@@ -652,8 +778,8 @@ Each test below is a separate REQ. The `Source configuration` line preserves the
 - Source: Test catalog
 - Source section: test table row T18.17, test 16
 - Type: `ADD`
-- Requirement: Test 16 is T7, Specialized, with 5 muscles: L1-L2, L2-L4, L5-S1, L5, and S1-S2. The per-side index semantics remain catalog OQ-001.
-- Acceptance: Each configured muscle and side can be recorded and contributes according to the resolved T7 rule.
+- Requirement: Test 16 is T7, Specialized, with 5 muscles: L1-L2, L2-L4, L5-S1, L5, and S1-S2. Weakness is selected per L/R side, the linked affected segment is marked automatically, and one general integrative index is stored.
+- Acceptance: Each configured muscle and side can be recorded, the linked segment is visible, and the general index is independent of side rows.
 - Dependencies: `REQ-MED-1B-TYPE-007`; `REQ-MED-CATALOG-OQ-001`.
 - Delivery package: `1B`
 - Status: `TO IMPLEMENT`
@@ -663,8 +789,8 @@ Each test below is a separate REQ. The `Source configuration` line preserves the
 - Source: Test catalog
 - Source section: test table row T18.18, test 17
 - Type: `ADD`
-- Requirement: Test 17 is T7, Specialized, with 7 muscles: C1-C3, C4, C5, C6, C7, C8, and Th1. The per-side index semantics remain catalog OQ-001.
-- Acceptance: Each configured muscle and side can be recorded and contributes according to the resolved T7 rule.
+- Requirement: Test 17 is T7, Specialized, with 7 muscles: C1-C3, C4, C5, C6, C7, C8, and Th1. Weakness is selected per L/R side, the linked affected segment is marked automatically, and one general integrative index is stored.
+- Acceptance: Each configured muscle and side can be recorded, the linked segment is visible, and the general index is independent of side rows.
 - Dependencies: `REQ-MED-1B-TYPE-007`; `REQ-MED-CATALOG-OQ-001`.
 - Delivery package: `1B`
 - Status: `TO IMPLEMENT`
@@ -718,8 +844,8 @@ Each test below is a separate REQ. The `Source configuration` line preserves the
 - Source: Test catalog
 - Source section: test table row T18.23, test 22
 - Type: `ADD`
-- Requirement: Test 22 is T2, Specialized, with 8 skull bones and 4 causes. The index absence remains catalog OQ-003.
-- Acceptance: Each configured bone/result is represented using the T2 cause behavior without an index unless the open question is later changed in catalog configuration.
+- Requirement: Test 22 is T2, Specialized, with 8 skull bones and 4 causes plus the confirmed general index 0-3.
+- Acceptance: Each configured bone/result is represented using the T2 cause behavior and the confirmed general index 0-3.
 - Dependencies: `REQ-MED-1B-TYPE-002`; `REQ-MED-CATALOG-OQ-003`.
 - Delivery package: `1B`
 - Status: `TO IMPLEMENT`
@@ -751,8 +877,8 @@ Each test below is a separate REQ. The `Source configuration` line preserves the
 - Source: Test catalog; catalog questions
 - Source section: test table row T18.26, test 25; question row T21.10
 - Type: `ADD`
-- Requirement: Test 25 is T9, Main, with 25.1 knees, 25.2 hip joints, 25.3 shoulders, 25.4 elbows, 25.5 scapulae, 25.6 lumbar bend, and 25.7 ankle. Source semantics: 25.6 has angle plus index and, for a forward bend, no side; 25.7 has only index and proposal/default R/L. Final side semantics remain configurable through OQ-009.
-- Acceptance: The exact subtests render; angle is 0-180 where configured; 25.6/25.7 side behavior can be changed through catalog configuration without code deployment.
+- Requirement: Test 25 is T9, Main, with 25.1 knees, 25.2 hip joints, 25.3 shoulders, 25.4 elbows, 25.5 scapulae, 25.6 lumbar bend in four directions, and 25.7 ankle with R/L normal-or-not values.
+- Acceptance: The exact subtests render; angle is 0-180 where configured; the confirmed 25.6/25.7 direction and side fields are structured and remain CRM-editable.
 - Dependencies: `REQ-MED-1B-TYPE-009`; `REQ-MED-CATALOG-OQ-009`.
 - Delivery package: `1B`
 - Status: `TO IMPLEMENT`
@@ -762,7 +888,7 @@ Each test below is a separate REQ. The `Source configuration` line preserves the
 - Source: Test catalog
 - Source section: test table row T18.27, test 26
 - Type: `ADD`
-- Requirement: Test 26 is T11, Specialized, with Yes/No and 18 locations including nuclei, branches, and organs. Index absence remains catalog OQ-003.
+- Requirement: Test 26 is T11, Specialized, with Yes/No, a general index 0-3, and 18 locations including nuclei, branches, and organs.
 - Acceptance: Each of the 18 configured locations is independently markable and each marked item is a violation.
 - Dependencies: `REQ-MED-1B-TYPE-011`; `REQ-MED-CATALOG-OQ-003`.
 - Delivery package: `1B`
@@ -773,7 +899,7 @@ Each test below is a separate REQ. The `Source configuration` line preserves the
 - Source: Test catalog
 - Source section: test table row T18.28, test 27
 - Type: `ADD`
-- Requirement: Test 27 is T11, Specialized, with Yes/No and 9 locations. Index absence remains catalog OQ-003.
+- Requirement: Test 27 is T11, Specialized, with Yes/No, a general index 0-3, and 9 locations.
 - Acceptance: Each of the 9 configured locations is independently markable and each marked item is a violation.
 - Dependencies: `REQ-MED-1B-TYPE-011`; `REQ-MED-CATALOG-OQ-003`.
 - Delivery package: `1B`
@@ -784,7 +910,7 @@ Each test below is a separate REQ. The `Source configuration` line preserves the
 - Source: Test catalog
 - Source section: test table row T18.29, test 28
 - Type: `ADD`
-- Requirement: Test 28 is T11, Specialized, with 34 organs and 10 causes. Index absence remains catalog OQ-003. The test-specific count `34` is authoritative for this row even though the generic T11 table gives a separate 20-item example.
+- Requirement: Test 28 is T11, Specialized, with a general index 0-3, 34 organs, and 10 causes. The test-specific count `34` is authoritative for this row even though the generic T11 table gives a separate 20-item example.
 - Acceptance: The catalog can configure all 34 organs, 10 cause references, and per-item violation counting without inventing the missing organ/cause names.
 - Dependencies: `REQ-MED-1B-TYPE-011`; `REQ-MED-CATALOG-OQ-003`; supplied source cause list.
 - Delivery package: `1B`
@@ -795,7 +921,7 @@ Each test below is a separate REQ. The `Source configuration` line preserves the
 - Source: Test catalog
 - Source section: test table row T18.30, test 29
 - Type: `ADD`
-- Requirement: Test 29 is T11, Specialized, with 9 items and a nested `непроработанные чувства` list of 16 feelings. Index absence remains catalog OQ-003.
+- Requirement: Test 29 is T11, Specialized, with a general index 0-3, 9 items, and a nested `непроработанные чувства` list of 16 feelings.
 - Acceptance: The nested 16-item list is configurable and each marked item contributes according to T11.
 - Dependencies: `REQ-MED-1B-TYPE-011`; `REQ-MED-CATALOG-OQ-003`.
 - Delivery package: `1B`
@@ -806,7 +932,7 @@ Each test below is a separate REQ. The `Source configuration` line preserves the
 - Source: Test catalog
 - Source section: test table row T18.31, test 30
 - Type: `ADD`
-- Requirement: Test 30 is T11, Specialized, method computer with 11 items. Index absence remains catalog OQ-003.
+- Requirement: Test 30 is T11, Specialized, method computer with a general index 0-3 and 11 items.
 - Acceptance: The 11 configured items are independently markable and counted using T11.
 - Dependencies: `REQ-MED-1B-TYPE-011`; `REQ-MED-CATALOG-OQ-003`.
 - Delivery package: `1B`
@@ -817,9 +943,20 @@ Each test below is a separate REQ. The `Source configuration` line preserves the
 - Source: Test catalog; catalog questions
 - Source section: test table row T18.32, test 31; question row T21.3
 - Type: `ADD`
-- Requirement: Test 31 is T12, Main for subtest 31.1: energy potential 0-1000; 31.2 chakras 1-7; 31.3 tor field rotation R/L. Each subtest has source cause count 5. Violation semantics, threshold, and normal tor direction remain OQ-002.
-- Acceptance: The new-session default includes 31.1 only; the catalog can configure all 31 subtests and change the business violation rule without code deployment after Женя answers OQ-002.
+- Requirement: Test 31 is T12, Main for subtest 31.1: energy potential 0-1000; 31.2 chakras 1-7; 31.3 tor field rotation R/L. Each subtest has source cause count 5. The confirmed direction is tor R = normal and tor L = violation. The below-500 energy threshold remains Denis's proposal, not an active clinical norm.
+- Acceptance: The new-session default includes 31.1 only; the catalog configures all 31 subtests; tor R/L follows the confirmed direction; energy classification remains disabled unless an authorized CRM configuration supplies an approved threshold.
 - Dependencies: `REQ-MED-1B-TYPE-012`; `REQ-MED-CATALOG-OQ-002`; `REQ-MED-1B-COMMON-002`.
+- Delivery package: `1B`
+- Status: `TO IMPLEMENT`
+
+### REQ-MED-1B-TEST-032 - Orthopedic mobility probes
+
+- Source: 2026-11-16 test catalog; Stage 1 TZ
+- Source section: test row T18.33 and T13 details
+- Type: `ADD`
+- Requirement: Test 32 is a Specialized T13 test with structured before/after subtasks: Otto, Schober, Tomayer, Lasègue (right and left), and Patrick (right and left). It is not added to the Main default set. Each subtest stores its raw measurements and confirmation/result details independently.
+- Acceptance: A master adds test 32 explicitly from Specialized, fills all five probe families for before and after, reloads them without loss, and sees no automatic clinical classification for an absent or unconfirmed norm. Norms and interpretation hints are CRM settings.
+- Dependencies: `REQ-MED-1B-TYPE-013`; `REQ-MED-1B-COMMON-006`; `REQ-MED-1B-CATALOG-004`.
 - Delivery package: `1B`
 - Status: `TO IMPLEMENT`
 
@@ -1003,6 +1140,17 @@ Each test below is a separate REQ. The `Source configuration` line preserves the
 - Delivery package: `1B`
 - Status: `TO IMPLEMENT`
 
+### REQ-MED-1B-ROOT-004 - Persistent client root-cause history
+
+- Source: 2026-11-16 Stage 1 TZ; owner instruction
+- Source section: client primary causes and session carryover
+- Type: `CHANGE`
+- Requirement: Root causes are a persistent client-level list carried between sessions with statuses `новая`, `в работе`, and `устранена`, region, complaint influence, related causes, and history. Session selections link to this one list; no second cause database is created.
+- Acceptance: A cause added in one session is visible in the next, its status and region can be changed through CRM, links/history remain queryable, and session-specific selection does not fork the shared cause identity.
+- Dependencies: `REQ-MED-1B-ROOT-001` through `REQ-MED-1B-ROOT-003`; `REQ-MED-1B-TAG-001`.
+- Delivery package: `1B`
+- Status: `TO IMPLEMENT`
+
 ## Result
 
 ### REQ-MED-1B-RESULT-001 - Deterministic editable result assembly
@@ -1092,47 +1240,47 @@ These 13 records preserve every question in the catalog. They do not block start
 
 ### REQ-MED-CATALOG-OQ-001 - Sides and index for Tests 16 and 17
 
-- Source: Test catalog
+- Source: Test catalog; confirmed answer from Женя on 15.11
 - Source section: catalog question table row T21.2, question 1
 - Type: `CHANGE`
-- Requirement: Decide what is recorded for each side in nerve-compression Tests 16 and 17.
-- Acceptance: Proposal/default: L and R each have index buttons 0-3; 0 means the muscle holds, 1-3 means weakness. The final choice remains catalog configuration.
+- Requirement: Tests 16 and 17 record weakness on L/R, mark the linked affected segment automatically, and use one general integrative index for the test.
+- Acceptance: The confirmed T7 behavior is configurable by muscle/segment mapping, preserves separate L/R values, and stores the overall index independently.
 - Dependencies: `REQ-MED-1B-TEST-016`; `REQ-MED-1B-TEST-017`.
-- Delivery package: `1B (proposal/default); Open Question bucket`
-- Status: `OPEN QUESTION - NON-BLOCKING`
+- Delivery package: `1B`
+- Status: `CONFIRMED DECISION - TO IMPLEMENT`
 
 ### REQ-MED-CATALOG-OQ-002 - Test 31 violation rule and normal tor
 
 - Source: Test catalog
 - Source section: catalog question table row T21.3, question 2
 - Type: `CHANGE`
-- Requirement: Decide the energy-potential threshold, whether each marked chakra is a violation, and which tor direction is normal in Test 31.
-- Acceptance: Proposal/default: below-threshold energy, each marked chakra, and incorrect tor direction are violations; Женя supplies the numeric threshold and normal direction. The rule is editable in catalog configuration.
+- Requirement: The tor direction is resolved: R is normal and L is a violation. The numeric energy-potential threshold remains open; Denis's below-500 value is a proposal only and must not activate automatic clinical classification.
+- Acceptance: CRM stores the confirmed tor direction; an absent or unconfirmed energy threshold leaves the dangerous calculation disabled. The owner can later configure an approved threshold without a code deployment.
 - Dependencies: `REQ-MED-1B-TEST-031`; `REQ-MED-1B-TYPE-012`.
-- Delivery package: `1B (proposal/default); Open Question bucket`
+- Delivery package: `1B (confirmed tor direction; open energy threshold)`
 - Status: `OPEN QUESTION - NON-BLOCKING`
 
 ### REQ-MED-CATALOG-OQ-003 - Index absence in Tests 19.1, 22, and 26-30
 
-- Source: Test catalog
+- Source: Test catalog; confirmed answer from Женя on 15.11
 - Source section: catalog question table row T21.4, question 3
 - Type: `CHANGE`
-- Requirement: Decide whether these findings require a 0-3 index.
-- Acceptance: Proposal/default: leave them without an index; each marked position is a violation, as the source states for the 20-organ example. Final behavior remains catalog configuration and test-specific counts remain authoritative.
+- Requirement: Every test has a general index 0-3, including Tests 19.1, 22, and 26-30. Row indexes remain additional where the test needs them.
+- Acceptance: The confirmed general index is present in each result and is manually confirmed; test-specific marked-item counts remain authoritative.
 - Dependencies: `REQ-MED-1B-TEST-019`; `REQ-MED-1B-TEST-022` through `REQ-MED-1B-TEST-030`.
-- Delivery package: `1B (proposal/default); Open Question bucket`
-- Status: `OPEN QUESTION - NON-BLOCKING`
+- Delivery package: `1B`
+- Status: `CONFIRMED DECISION - TO IMPLEMENT`
 
 ### REQ-MED-CATALOG-OQ-004 - T4 broken-transition count
 
-- Source: Test catalog
+- Source: Test catalog; confirmed answer from Женя on 15.11
 - Source section: catalog question table row T21.5, question 4
 - Type: `CHANGE`
-- Requirement: Decide how many T4 violations to count when alternation is broken.
-- Acceptance: Proposal/default: count broken transitions; `L-L-R-L` is one and `L-L-L-L` is three. The counting rule remains editable configuration.
+- Requirement: Test 8's myozonal rule counts each broken transition. A maximum of two regions outside normal is the complex-case boundary; the pattern can change between sessions.
+- Acceptance: `L-L-R-L` counts one broken transition and `L-L-L-L` counts three; the two-region complex-case marker is separate from the transition count.
 - Dependencies: `REQ-MED-1B-TYPE-004`; `REQ-MED-1B-SPECIAL-002`.
-- Delivery package: `1B (proposal/default); Open Question bucket`
-- Status: `OPEN QUESTION - NON-BLOCKING`
+- Delivery package: `1B`
+- Status: `CONFIRMED DECISION - TO IMPLEMENT`
 
 ### REQ-MED-CATALOG-OQ-005 - Test 9.2 movement and TL percentage
 
@@ -1147,110 +1295,110 @@ These 13 records preserve every question in the catalog. They do not block start
 
 ### REQ-MED-CATALOG-OQ-006 - Test 15.2 method A/B/C semantics
 
-- Source: Test catalog
+- Source: Test catalog; confirmed answer from Женя on 15.11
 - Source section: catalog question table row T21.7, question 6
 - Type: `CHANGE`
-- Requirement: Decide whether Test 15.2 methods A, B, and C are one selected method or three results.
-- Acceptance: Proposal/default: record which method was used and one result. The selection/result model remains configurable.
+- Requirement: Test 15.2 records three method rows. Each row stores Yes/No for dome L, dome R, and legs.
+- Acceptance: The three rows and their answers are independently persisted; the system does not force one method selection.
 - Dependencies: `REQ-MED-1B-TEST-015`.
-- Delivery package: `1B (proposal/default); Open Question bucket`
-- Status: `OPEN QUESTION - NON-BLOCKING`
+- Delivery package: `1B`
+- Status: `CONFIRMED DECISION - TO IMPLEMENT`
 
 ### REQ-MED-CATALOG-OQ-007 - Test 6 hypo/hyper options
 
-- Source: Test catalog
+- Source: Test catalog; confirmed answer from Женя on 15.11
 - Source section: catalog question table row T21.8, question 7
 - Type: `CHANGE`
-- Requirement: Decide whether every Test 6 zone supports both hypotone and hypertone.
-- Acceptance: Proposal/default: yes, both options are available in all zones; the catalog can configure the allowed options.
+- Requirement: Every Test 6 zone supports hypotone, hypertone, and normal; hypotone has priority in the visual presentation.
+- Acceptance: The three confirmed options are available by zone and can be edited through CRM catalog settings without inventing a threshold.
 - Dependencies: `REQ-MED-1B-TEST-006`.
-- Delivery package: `1B (proposal/default); Open Question bucket`
-- Status: `OPEN QUESTION - NON-BLOCKING`
+- Delivery package: `1B`
+- Status: `CONFIRMED DECISION - TO IMPLEMENT`
 
 ### REQ-MED-CATALOG-OQ-008 - Test 2 back-view label
 
-- Source: Test catalog
+- Source: Test catalog; confirmed answer from Женя on 15.11
 - Source section: catalog question table row T21.9, question 8
 - Type: `CHANGE`
-- Requirement: Name the last Test 2 back-view group containing heel valgus/varus, Achilles, and calves.
-- Acceptance: Proposal/default: label it `Голень и стопа`; the label is editable catalog content.
+- Requirement: Name the last Test 2 back-view group containing heel valgus/varus, Achilles, and calves `Голень и стопа`.
+- Acceptance: The confirmed label is used by the seeded catalog and remains editable as catalog content.
 - Dependencies: `REQ-MED-1B-TEST-002`.
-- Delivery package: `1B (proposal/default); Open Question bucket`
-- Status: `OPEN QUESTION - NON-BLOCKING`
+- Delivery package: `1B`
+- Status: `CONFIRMED DECISION - TO IMPLEMENT`
 
 ### REQ-MED-CATALOG-OQ-009 - Test 25.7 sides and 25.6 side semantics
 
-- Source: Test catalog
+- Source: Test catalog; confirmed answer from Женя on 15.11
 - Source section: catalog question table row T21.10, question 9
 - Type: `CHANGE`
-- Requirement: Decide whether ankle Test 25.7 has R/L and whether lumbar bend Test 25.6 has no side when bending forward.
-- Acceptance: Proposal/default: 25.7 has R/L; 25.6 has no side for forward bend. Both are catalog-configurable.
+- Requirement: Test 25.6 records four lumbar directions: forward, backward, left, and right. Test 25.7 records R/L and normal/abnormal state.
+- Acceptance: The confirmed direction and side fields are structured and independently editable through CRM catalog settings.
 - Dependencies: `REQ-MED-1B-TEST-025`; `REQ-MED-1B-TYPE-009`.
-- Delivery package: `1B (proposal/default); Open Question bucket`
-- Status: `OPEN QUESTION - NON-BLOCKING`
+- Delivery package: `1B`
+- Status: `CONFIRMED DECISION - TO IMPLEMENT`
 
 ### REQ-MED-CATALOG-OQ-010 - Test 10 index granularity
 
-- Source: Test catalog
+- Source: Test catalog; confirmed answer from Женя on 15.11
 - Source section: catalog question table row T21.11, question 10
 - Type: `CHANGE`
-- Requirement: Decide whether Test 10 has one index for the test or one index for each department.
-- Acceptance: Proposal/default: one index per department; the department-level configuration drives warnings and counting.
+- Requirement: Test 10 has one index for each department.
+- Acceptance: The confirmed department-level indexes drive the warning and counting for the corresponding department.
 - Dependencies: `REQ-MED-1B-TEST-010`; `REQ-MED-1B-TYPE-008`.
-- Delivery package: `1B (proposal/default); Open Question bucket`
-- Status: `OPEN QUESTION - NON-BLOCKING`
+- Delivery package: `1B`
+- Status: `CONFIRMED DECISION - TO IMPLEMENT`
 
 ### REQ-MED-CATALOG-OQ-011 - Exact Main set
 
-- Source: Test catalog
+- Source: Test catalog; confirmed answer from Женя on 15.11
 - Source section: catalog question table row T21.12, question 11
 - Type: `CHANGE`
-- Requirement: Confirm the exact Main set and order.
-- Acceptance: Proposal/default: `1, 2, 3, 4, 5, 6, 7, 9, 25, 31.1`; the set can be changed through catalog settings.
+- Requirement: The Main set is `1, 2, 3, 4, 5, 6, 7, 9, 25, 31.1` in that order. The owner may later change it through catalog settings.
+- Acceptance: The confirmed seed uses this order and later CRM changes do not rewrite historical session selections.
 - Dependencies: `REQ-MED-1B-COMMON-002`.
-- Delivery package: `1B (proposal/default); Open Question bucket`
-- Status: `OPEN QUESTION - NON-BLOCKING`
+- Delivery package: `1B`
+- Status: `CONFIRMED DECISION - TO IMPLEMENT`
 
 ### REQ-MED-CATALOG-OQ-012 - Shared Test 1 cause list
 
-- Source: Test catalog
+- Source: Test catalog; confirmed answer from Женя on 15.11
 - Source section: catalog question table row T21.13, question 12
 - Type: `CHANGE`
-- Requirement: Confirm the cause set shared by Test 1 standing and lying positions.
-- Acceptance: Proposal/default: both use the 21-tag list, even though the source notes a shorter standing list. The shared set remains editable catalog data.
+- Requirement: Test 1 uses one shared cause list for standing and lying, while each position keeps its own marks so the depth/layers can differ. A tag absent in the previous session is marked as a new violation.
+- Acceptance: The confirmed shared catalog identity is reused in both positions and current position values remain distinct.
 - Dependencies: `REQ-MED-1B-TEST-001`; `REQ-MED-1B-SPECIAL-001`.
-- Delivery package: `1B (proposal/default); Open Question bucket`
-- Status: `OPEN QUESTION - NON-BLOCKING`
+- Delivery package: `1B`
+- Status: `CONFIRMED DECISION - TO IMPLEMENT`
 
 ### REQ-MED-CATALOG-OQ-013 - Pulse-wave type catalog
 
-- Source: Test catalog; Stage 1 TZ
-- Source section: catalog question table row T21.14, question 13; Stage 1 TZ table row 147.9
-- Type: `CHANGE`
-- Requirement: Женя provides the complete pulse-wave type list and human names; the master selects from the configurable list and attaches a device-screen photo.
-- Acceptance: Proposal/default is the source placeholder (`Тип A / Тип B / Тип C`) until the authoritative list arrives. No final clinical names are invented.
-- Dependencies: `REQ-MED-1C-VITALS-001`; `REQ-MED-1A-CORE-005`.
-- Delivery package: `1C (proposal/default); Open Question bucket`
-- Status: `OPEN QUESTION - NON-BLOCKING`
+- Source: 14.11 catalog history; superseded by the 16.11 Stage 1 TZ and owner instruction
+- Source section: historical catalog question table row T21.14, question 13; 16.11 Stage 1 exclusions
+- Type: `EXCLUDE`
+- Requirement: Pulse-wave type names and device-screen photos are not part of Stage 1. The old question is retained only to explain why the earlier pulse-wave wording was removed; it is not an active Stage 1 configuration request.
+- Acceptance: No Stage 1 form, payload, history, PDF, or CRM setting exposes pulse-wave capture. Reconsideration requires an explicit owner decision in a later stage.
+- Dependencies: `REQ-MED-1C-VITALS-007`.
+- Delivery package: `OUT OF STAGE 1`
+- Status: `OUT OF STAGE 1`
 
 ## Catalog source-to-REQ traceability
 
-The rows below are the source-to-REQ traceability pass for the catalog DOCX. Each range is inclusive. The source's title/date/author paragraphs are non-normative metadata; all normative list paragraphs and table rows are mapped.
+The rows below are the source-to-REQ traceability pass for the 16.11 catalog source. Each range is inclusive. The source's title/date/author paragraphs are non-normative metadata; all normative list paragraphs and table rows are mapped.
 
 | Source blocks | Mapped REQs |
 |---|---|
-| Catalog P3-P14 | `REQ-MED-1B-CATALOG-001` through `REQ-MED-1B-CATALOG-003`; `REQ-MED-1B-COMMON-001` through `REQ-MED-1B-COMMON-017`; `REQ-MED-1B-SPECIAL-001` through `REQ-MED-1B-SPECIAL-005` |
-| Catalog T15.2-T15.13 | `REQ-MED-1B-TYPE-001` through `REQ-MED-1B-TYPE-012` |
-| Catalog P16-P17 and T18.2-T18.32 | `REQ-MED-1B-TEST-001` through `REQ-MED-1B-TEST-031` |
+| Catalog P3-P14 | `REQ-MED-1B-CATALOG-001` through `REQ-MED-1B-CATALOG-004`; `REQ-MED-1B-COMMON-001` through `REQ-MED-1B-COMMON-023`; `REQ-MED-1B-SPECIAL-001` through `REQ-MED-1B-SPECIAL-005` |
+| Catalog T15.2-T15.14 | `REQ-MED-1B-TYPE-001` through `REQ-MED-1B-TYPE-013` |
+| Catalog P16-P17 and T18.2-T18.33 | `REQ-MED-1B-TEST-001` through `REQ-MED-1B-TEST-032` |
 | Catalog P19-P20 and T21.2-T21.14 | `REQ-MED-CATALOG-OQ-001` through `REQ-MED-CATALOG-OQ-013` |
-| Detailed Stage 1 TZ P43-P79 | `REQ-MED-1B-CATALOG-001` through `REQ-MED-1B-COUNTER-005`; `REQ-MED-1B-SPECIAL-001` through `REQ-MED-1B-SPECIAL-005`; test REQs 001-031; Stage 2 exclusion REQs in the Stage 1 file |
+| Detailed Stage 1 TZ P43-P79 | `REQ-MED-1B-CATALOG-001` through `REQ-MED-1B-COUNTER-007`; `REQ-MED-1B-SPECIAL-001` through `REQ-MED-1B-SPECIAL-005`; test REQs 001-032; Stage 2 exclusion REQs in the Stage 1 file |
 | Detailed Stage 1 TZ P80-P102 | `REQ-MED-1B-TAG-001` through `REQ-MED-1B-TAG-013` |
-| Detailed Stage 1 TZ P103-P142 | `REQ-MED-1B-ROOT-001` through `REQ-MED-1B-ROOT-003`; `REQ-MED-1B-RESULT-001` through `REQ-MED-1B-RESULT-003`; `REQ-MED-1B-EFFECT-001`, `REQ-MED-1B-EFFECT-002`; `REQ-MED-1B-RECOMMEND-001`, `REQ-MED-1B-RECOMMEND-002` |
+| Detailed Stage 1 TZ P103-P142 | `REQ-MED-1B-ROOT-001` through `REQ-MED-1B-ROOT-004`; `REQ-MED-1B-RESULT-001` through `REQ-MED-1B-RESULT-003`; `REQ-MED-1B-EFFECT-001`, `REQ-MED-1B-EFFECT-002`; `REQ-MED-1B-RECOMMEND-001`, `REQ-MED-1B-RECOMMEND-002` |
 
 ### Traceability result
 
 - Source requirements mapped: `YES`.
-- Detailed catalog blocks mapped: `P3-P20`, `T15.2-T15.13`, `T18.2-T18.32`, `T21.2-T21.14`.
-- Catalog normative source blocks inventoried: `72`.
+- Detailed catalog blocks mapped: `P3-P20`, `T15.2-T15.14`, `T18.2-T18.33`, `T21.2-T21.14`.
+- Catalog normative source blocks inventoried: `75`.
 - Normative source blocks silently unmapped: `0`.
 - Full source rows are not collapsed into a generic test-engine statement; every generic type and every test has a separate REQ-ID.

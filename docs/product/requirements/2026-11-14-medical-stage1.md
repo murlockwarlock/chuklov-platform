@@ -1,4 +1,4 @@
-# Medical Stage 1 Requirements, 2026-11-14
+# Medical Stage 1 Requirements, 2026-11-16 delta
 
 This is the canonical entrypoint for the medical requirements superseding the 2026-10-23 medical TZ. It is documentation only. It does not prove implementation, verification, staging readiness, or owner acceptance.
 
@@ -6,20 +6,22 @@ The complete test-engine ledger is in [`2026-11-14-medical-test-catalog.md`](202
 
 ## Authority and source files
 
-The requirements below are an engineering transcription of these three primary sources, read in full on 2026-11-14:
+The requirements below are the 2026-11-16 delta over the 2026-11-14 ledger. The three current Markdown sources supplied on 2026-11-17 were read in full before this update:
 
-1. `Этапы реализации CRM Чуклова 14.11.26 — для Ивана.docx`
-2. `ТЗ для Ивана этап 1 — диагностика, карта клиента и карта сеанса 14.11.26.docx`
-3. `Каталог тестов как вносится результат 14.11.26.docx`
+1. `ТЗ для Ивана: этап 1 — диагностика, карта клиента и карта сеанса (16.11.26)`
+2. `Каталог тестов: как вносится результат (16.11.26)`
+3. `Этапы реализации CRM Чуклова (16.11.26)`
+
+The private source files are the three 16.11 Markdown files supplied outside the repository. Their complete text is provenance for this delta; this repository keeps the stable REQ ledger rather than copying the source pack.
 
 Authority order for this package:
 
 1. The current owner/task instruction.
-2. The detailed Stage 1 TZ and test catalog.
-3. The stages document for Stage 1 / Stage 2 / Stage 3 / Stage 4 boundaries and backlog.
+2. The detailed 2026-11-16 Stage 1 TZ and test catalog.
+3. The 2026-11-16 stages document for Stage 1 / Stage 2 / Stage 3 / Stage 4 boundaries and backlog.
 4. Existing code is evidence for status hints only. It is not a source for inventing requirements.
 
-The 2026-11-14 medical TZ replaces the 2026-10-23 medical TZ. Suitable existing behavior is reused after verification. Existing medical data is retained. No requirement in this file is marked `IMPLEMENTED`, `VERIFIED`, or `OWNER ACCEPTED` merely because this ledger exists.
+The 2026-11-16 sources supersede conflicting 2026-11-14 source interpretations while stable REQ IDs and their history remain. Suitable existing behavior is reused after verification. Existing medical data is retained. No requirement in this file is marked `IMPLEMENTED`, `VERIFIED`, or `OWNER ACCEPTED` merely because this ledger exists.
 
 ## Ledger conventions
 
@@ -48,13 +50,14 @@ The word `required` describes the future product contract, not current implement
 | Bucket | REQs | Meaning |
 |---|---:|---|
 | Stage 1A | 94 | Session card, complaints, questionnaire/profile, protocol/notes, call-10.11 fixes, and compatibility foundation |
-| Stage 1B | 96 | Test engine, 12 generic types, 31 tests, causes/tags, root causes, result, effectiveness, recommendations |
-| Stage 1C | 24 | Vitals, anthropometry, photos, files, audio delivery, avatar, PDF |
+| Stage 1B | 108 | Test engine, 13 generic types, 32 tests, causes/tags, root causes, result, effectiveness, recommendations |
+| Stage 1C | 25 | Vitals, anthropometry, photos, files, audio delivery, avatar, PDF; pulse wave excluded |
 | Stage 2 | 25 | AI and automated-rule backlog, including named preparation inputs |
 | Stage 3 | 22 | Client-facing, communication, payment, export, and voice backlog excluding separately counted source OQs |
 | Stage 4 | 21 | Multi-master scale, analytics, technique library, apps, devices, and other methodologies |
 | Open Questions | 18 | 13 catalog OQs plus 5 Stage 3 source OQs; none blocks starting Stage 1 development |
-| **Total unique REQs** | **300** | Every ID in this file and the linked catalog is unique |
+| Deferred Stage 1 source scope | 1 | `Наши специалисты`, recorded but not implemented |
+| **Total unique REQs** | **314** | Every ID in this file and the linked catalog is unique; the pulse-wave OQ is retained as historical traceability |
 
 Catalog REQs and catalog OQs are defined in the linked test-catalog file. The package counts are disjoint: open questions are counted in the Open Questions bucket, not in a delivery-package bucket, while their proposed/default behavior remains linked to the applicable stage.
 
@@ -62,13 +65,13 @@ Catalog REQs and catalog OQs are defined in the linked test-catalog file. The pa
 
 ### Core principles
 
-### REQ-MED-1A-CORE-001 - 2026-11-14 supersedes the 2026-10-23 medical TZ
+### REQ-MED-1A-CORE-001 - 2026-11-16 source delta supersedes conflicting 2026-11-14 interpretations
 
-- Source: Stage 1 TZ; requirements changelog
-- Source section: `Преамбула`, paragraphs 4-6
+- Source: 2026-11-16 Stage 1 TZ, test catalog, stages document; requirements history
+- Source section: source preambles and the 16.11 owner delta
 - Type: `CHANGE`
-- Requirement: Treat the 2026-11-14 medical TZ as the current medical source and the 2026-10-23 medical TZ as superseded.
-- Acceptance: The canonical files identify the supersession and future implementation tasks reference these REQ IDs rather than re-auditing the old DOCX.
+- Requirement: Treat the three 2026-11-16 sources and the current owner instruction as authoritative for conflicting Stage 1 behavior. Keep the 2026-11-14 REQ IDs and record their changes in this ledger.
+- Acceptance: The canonical files name all three current sources, retain stable IDs and history, distinguish confirmed answers, Denis proposals, and open questions, and future implementation does not restore superseded pulse-wave or unconfirmed clinical behavior.
 - Dependencies: None.
 - Delivery package: `1A`
 - Status: `TO IMPLEMENT`
@@ -111,9 +114,9 @@ Catalog REQs and catalog OQs are defined in the linked test-catalog file. The pa
 - Source: Stage 1 TZ
 - Source section: `Принципы`, paragraph 9
 - Type: `ADD`
-- Requirement: Authorized owner/admin users manage tests, test sets, cause/tag records, complaints, measurement norms, and pulse-wave types through CRM without code change or deployment.
-- Acceptance: A permitted dictionary change is saved through a normal CRM control and is used by later sessions; no deployment is required for the business value change.
-- Dependencies: Stage 1B catalog/tag engine; Stage 1C threshold/pulse-wave configuration.
+- Requirement: Authorized owner/admin users manage tests, test sets, cause/tag records, complaints, measurement norms, and Stage 1C thresholds through CRM without code change or deployment. Pulse-wave configuration is not part of Stage 1.
+- Acceptance: A permitted dictionary or threshold change is saved through a normal CRM control and is used by later sessions; no deployment is required for the business value change, and no pulse-wave control is exposed in Stage 1.
+- Dependencies: Stage 1B catalog/tag engine; Stage 1C threshold configuration.
 - Delivery package: `1A / 1B / 1C`
 - Status: `TO IMPLEMENT`
 
@@ -1119,8 +1122,8 @@ Catalog REQs and catalog OQs are defined in the linked test-catalog file. The pa
 - Source: Stage 1 TZ
 - Source section: `Е. Показатели и антропометрия`, table 147
 - Type: `ADD`
-- Requirement: Store optional `SYS` integer, `DIA` integer, `PD = SYS - DIA`, `MAP = DIA + PD / 3` rounded to an integer, pulse integer, `PI` decimal from 0.02 through 20, `SpO2` integer, configurable pulse-wave type, and pulse-wave device photo.
-- Acceptance: `138/88` produces `PD 50` and `MAP 105`; all fields remain structured and independently readable by session/date.
+- Requirement: Store optional `SYS` integer, `DIA` integer, `PD = SYS - DIA`, `MAP = DIA + PD / 3` rounded to an integer, pulse integer, `PI` decimal from 0.02 through 20, and `SpO2` integer. Pulse wave and a pulse-wave device photo are excluded from Stage 1.
+- Acceptance: `138/88` produces `PD 50` and `MAP 105`; all included fields remain structured and independently readable by session/date; no pulse-wave field is required or shown.
 - Dependencies: `REQ-MED-1A-CORE-005`; session block order.
 - Delivery package: `1C`
 - Status: `TO IMPLEMENT`
@@ -1179,6 +1182,17 @@ Catalog REQs and catalog OQs are defined in the linked test-catalog file. The pa
 - Dependencies: `REQ-MED-1C-VITALS-001` through `REQ-MED-1C-VITALS-005`.
 - Delivery package: `1C`
 - Status: `TO IMPLEMENT`
+
+### REQ-MED-1C-VITALS-007 - Pulse wave excluded from Stage 1
+
+- Source: 2026-11-16 Stage 1 TZ; owner instruction
+- Source section: Stage 1 exclusions and owner delta
+- Type: `EXCLUDE`
+- Requirement: Do not implement pulse-wave capture, pulse-wave type dictionaries, device-screen photos, or pulse-wave client/CRM presentation in medical Stage 1. Preserve this as future scope only if the owner promotes it later.
+- Acceptance: Stage 1C forms, payloads, history, PDF, and CRM settings contain no active pulse-wave workflow; the old pulse-wave OQ remains only as historical traceability in the catalog ledger.
+- Dependencies: `REQ-MED-1C-VITALS-001`; `REQ-MED-CATALOG-OQ-013`.
+- Delivery package: `1C`
+- Status: `OUT OF STAGE 1`
 
 ### Anthropometry
 
@@ -1389,6 +1403,19 @@ Catalog REQs and catalog OQs are defined in the linked test-catalog file. The pa
 - Dependencies: `REQ-MED-1A-NOTES-002`; Stage 3 backlog.
 - Delivery package: `1C`
 - Status: `TO IMPLEMENT`
+
+## Deferred source scope
+
+### REQ-MED-1-DEFERRED-SPECIALISTS-001 - “Наши специалисты” is deferred
+
+- Source: 2026-11-16 stages document; owner instruction
+- Source section: Stage 1 source list and latest owner decision
+- Type: `EXCLUDE`
+- Requirement: Do not implement the separate `Наши специалисты` section in Medical Stage 1. Keep the source item recorded as deferred until the owner promotes it with a separate acceptance decision.
+- Acceptance: No new menu, model, route, CRM page, or client-facing section for `Наши специалисты` is added by Packages A or B; the deferred status is visible in the requirements ledger.
+- Dependencies: None.
+- Delivery package: `Deferred`
+- Status: `OUT OF STAGE 1`
 
 ## Stage 2 backlog - out of Stage 1
 
@@ -2276,19 +2303,21 @@ Each package is independently checked by the agent on staging with PostgreSQL an
 
 | Acceptance proof | REQ coverage | Status |
 |---|---|---|
-| All T1-T12 are exercised with their type-specific controls | `REQ-MED-1B-TYPE-001` through `REQ-MED-1B-TYPE-012` | NOT RUN |
-| All 31 tests are configured and individually readable | `REQ-MED-1B-TEST-001` through `REQ-MED-1B-TEST-031` | NOT RUN |
-| Add a custom test without code; choose one of 12 types | `REQ-MED-1B-CATALOG-001`, `REQ-MED-1B-CATALOG-002` | NOT RUN |
+| All T1-T13 are exercised with their type-specific controls | `REQ-MED-1B-TYPE-001` through `REQ-MED-1B-TYPE-013` | NOT RUN |
+| All 32 tests are configured and individually readable, including specialized test 32 | `REQ-MED-1B-TEST-001` through `REQ-MED-1B-TEST-032` | NOT RUN |
+| Add a custom test without code; choose one of 13 types | `REQ-MED-1B-CATALOG-001`, `REQ-MED-1B-CATALOG-002` | NOT RUN |
 | Exact default Main set `1, 2, 3, 4, 5, 6, 7, 9, 25, 31.1`; remove Main; add Specialized; search | `REQ-MED-1B-COMMON-002` through `REQ-MED-1B-COMMON-005` | NOT RUN |
 | Before/after, 0/1/2/3, 0 normal and type-specific fields hidden/open | `REQ-MED-1B-COMMON-006` through `REQ-MED-1B-COMMON-009` | NOT RUN |
 | Primary/accompanying causes, `Также`, global cause search/create | `REQ-MED-1B-COMMON-010` through `REQ-MED-1B-COMMON-013` | NOT RUN |
 | Previous after grey, automatic recheck, new before empty | `REQ-MED-1B-COMMON-014` through `REQ-MED-1B-COMMON-017` | NOT RUN |
-| Counters manually cross-check before, after, resolved, new, session-only | `REQ-MED-1B-COUNTER-001` through `REQ-MED-1B-COUNTER-005` | NOT RUN |
+| Multiple main causes up to six per region, complex rows, priority, stabilization, same-test new-cause marker | `REQ-MED-1B-COMMON-018` through `REQ-MED-1B-COMMON-023` | NOT RUN |
+| Counters manually cross-check before, after, resolved, new, session-only, stabilized, complex | `REQ-MED-1B-COUNTER-001` through `REQ-MED-1B-COUNTER-007` | NOT RUN |
 | Test 1 standing/lying; Test 8 formula/highlight/correction; Test 10 warning | `REQ-MED-1B-SPECIAL-001` through `REQ-MED-1B-SPECIAL-003` | NOT RUN |
 | Test 18 persistent red marker, exact warning, clear with date/reason, editable text | `REQ-MED-1B-SPECIAL-004` | NOT RUN |
 | Test 19 mechanical/informational type | `REQ-MED-1B-SPECIAL-005` | NOT RUN |
+| Test 32 Otto, Schober, Tomayer, Lasègue, Patrick before/after with CRM norms and fail-closed classification | `REQ-MED-1B-TEST-032`, `REQ-MED-1B-TYPE-013` | NOT RUN |
 | Create/search cause, `Применить к`, shared reuse, moderation lifecycle, merge preserves history | `REQ-MED-1B-TAG-001` through `REQ-MED-1B-TAG-013` | NOT RUN |
-| Root cause main selection and optional `на это влияет` relation | `REQ-MED-1B-ROOT-001` through `REQ-MED-1B-ROOT-003` | NOT RUN |
+| Persistent client root causes, status/region/relations/history and session links | `REQ-MED-1B-ROOT-001` through `REQ-MED-1B-ROOT-004` | NOT RUN |
 | Deterministic result, five hints, second `Собрать` overwrite confirmation, no AI | `REQ-MED-1B-RESULT-001` through `REQ-MED-1B-RESULT-003` | NOT RUN |
 | Effectiveness components, negative worsening, no integrative percentage | `REQ-MED-1B-EFFECT-001`, `REQ-MED-1B-EFFECT-002` | NOT RUN |
 | Explicit recommendation send, Telegram status/date, client card/PDF access | `REQ-MED-1B-RECOMMEND-001`, `REQ-MED-1B-RECOMMEND-002` | NOT RUN |
@@ -2321,7 +2350,7 @@ Each package is independently checked by the agent on staging with PostgreSQL an
 
 ## Source-to-REQ traceability pass
 
-The source block notation below uses the complete paragraph/table extraction of the three supplied DOCX. A range is inclusive. Every normative paragraph, list item, and table row in the range is covered by at least one listed REQ. Title/date/author metadata and section labels are non-normative and are explicitly excluded from the normative count.
+The source block notation below uses the complete paragraph/table extraction of the three supplied 16.11 Markdown sources. A range is inclusive. Every normative paragraph, list item, and table row in the range is covered by at least one listed REQ. Title/date/author metadata and section labels are non-normative and are explicitly excluded from the normative count.
 
 ### Stage 1 TZ and stages source
 
@@ -2333,7 +2362,7 @@ The source block notation below uses the complete paragraph/table extraction of 
 | Stage 1 TZ P43-P79 | Stage 1B catalog link, common behavior, special rules, counters, and Stage 2 exclusions in the catalog file |
 | Stage 1 TZ P80-P102 | Stage 1B tag REQs in the catalog file |
 | Stage 1 TZ P103-P142 | Stage 1B root/result/effectiveness/recommendation REQs in the catalog file |
-| Stage 1 TZ P143-P166 and T147.2-T147.9 | `REQ-MED-1A-PROFILE-004`; `REQ-MED-1C-VITALS-001` through `REQ-MED-1C-VITALS-006`; `REQ-MED-1C-ANTHRO-001`, `REQ-MED-1C-ANTHRO-002` |
+| Stage 1 TZ P143-P166 and T147.2-T147.9 | `REQ-MED-1A-PROFILE-004`; `REQ-MED-1C-VITALS-001` through `REQ-MED-1C-VITALS-007`; `REQ-MED-1C-ANTHRO-001`, `REQ-MED-1C-ANTHRO-002` |
 | Stage 1 TZ P167-P182 | `REQ-MED-1C-PHOTO-001` through `REQ-MED-1C-PHOTO-005` |
 | Stage 1 TZ P183-P207 | `REQ-MED-1A-QUESTIONNAIRE-001` through `REQ-MED-1A-QUESTIONNAIRE-014`; `REQ-MED-1A-PROFILE-001` through `REQ-MED-1A-PROFILE-006`; `REQ-MED-COMPAT-009` |
 | Stage 1 TZ P208-P239 | `REQ-MED-1C-FILES-001` through `REQ-MED-1C-FILES-004`; `REQ-MED-1C-AUDIO-001` through `REQ-MED-1C-AUDIO-004`; `REQ-MED-1C-AVATAR-001`; `REQ-MED-1C-PDF-001`, `REQ-MED-1C-PDF-002` |
@@ -2358,7 +2387,7 @@ These source blocks are not silently dropped. They are delivery/provenance instr
 
 ### Test catalog source
 
-The test catalog traceability matrix, including each generic form row, each of the 31 test rows, and all 13 catalog-question rows, is in [`2026-11-14-medical-test-catalog.md`](2026-11-14-medical-test-catalog.md). Its final audit records the exact source block inventory and unmapped count.
+The test catalog traceability matrix, including each generic form row, each of the 32 test rows, and all 13 catalog-question rows, is in [`2026-11-14-medical-test-catalog.md`](2026-11-14-medical-test-catalog.md). Its final audit records the exact source block inventory and unmapped count.
 
 ## Source conflicts and handling
 
@@ -2366,13 +2395,13 @@ The test catalog traceability matrix, including each generic form row, each of t
 |---|---|
 | Generic T11 description says `20 органов - 20 нарушений`, while the test 28 row says `34 органа и 10 причин`. | Preserve both source statements in traceability. The test-specific row remains `34 органа` for test 28; the generic T11 sentence is not used to overwrite test 28. No clinical interpretation is invented. |
 | Test 1 source context mentions a shorter standing cause list, while the catalog question resolves both standing and lying to the 21-tag list. | Preserve the question and answer as source history; the canonical test rule uses the resolved 21-tag shared set, subject to the editable catalog. |
-| The source pulse-wave table contains a placeholder `Тип A / Тип B / Тип C`, while the catalog question says the final list is still needed and mentions A/C. | Use a configurable catalog with a placeholder until Женя supplies the authoritative names. This is non-blocking and does not invent the final list. |
+| The 14.11 source had a pulse-wave placeholder and open list question. | The 16.11 owner instruction removes pulse wave from Stage 1. Preserve `REQ-MED-CATALOG-OQ-013` as historical `OUT OF STAGE 1`; do not create a placeholder, payload field, CRM setting, or clinical interpretation. |
 | The file source gives an approximate 30 seconds / 50 MB video guideline and asks the implementer to name the exact limit, while the current task forbids hidden business policy invention. | Preserve the guidance, require an owner/admin-facing policy/configuration, and do not choose a hidden limit in this ledger. |
 | The stages document calls the session card 10 blocks, while the detailed Stage 1 table has an unnumbered pre-session vitals block plus numbered blocks 1-10. | Canonical order uses the unnumbered `0` vitals block plus the exact numbered 1-10 blocks. |
 
 ## Documentation-only guardrails
 
-- Application code changed: `NO`.
+- Application code changed: `NO` at the requirements-only checkpoint; the dependent implementation packages follow this delta.
 - Migrations changed or run: `NO`.
 - Staging deployed: `NO`.
 - Existing product bugs fixed: `NO`.
