@@ -894,9 +894,11 @@ final class SessionCockpitTest extends TestCase
             ], ['item' => $itemKey])
             ->assertHasNoActionErrors();
 
-        $updated = $component->get('data.test_results.'.$itemKey);
+        $updated = collect(array_values($component->get('data.test_results') ?? []))
+            ->first(static fn (mixed $row): bool => is_array($row) && (int) ($row['test_id'] ?? 0) === (int) $definition->getKey());
 
-        self::assertSame(12, $updated['structured']['before']['rows'][0]['measurement'] ?? null, json_encode($updated, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+        self::assertIsArray($updated);
+        self::assertSame(12, $updated['structured']['before']['rows'][0]['measurement'] ?? null);
         self::assertSame(13, $updated['structured']['after']['rows'][0]['measurement'] ?? null);
         self::assertTrue((bool) ($updated['priority'] ?? false));
         self::assertSame(['otto'], $updated['priority_regions'] ?? null);
