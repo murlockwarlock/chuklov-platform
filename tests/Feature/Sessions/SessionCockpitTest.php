@@ -1149,6 +1149,33 @@ final class SessionCockpitTest extends TestCase
         );
     }
 
+    public function test_filament_session_ai_draft_review_action_mounts_the_editable_result(): void
+    {
+        [$organization, $admin, $client, $specialist] = $this->fixture();
+        $this->resolveFilamentContext($admin, $organization);
+        $session = $this->createSession($admin, $client, $specialist, result: 'Исходный результат');
+        $run = $this->clinicalSynthesisRun(
+            $organization->getKey(),
+            $client->getKey(),
+            HumanReviewStatus::PendingReview,
+            ['client_summary' => 'Фактический черновик для проверки'],
+            ClinicalSynthesizerWorkflow::SessionDraft->value,
+        );
+        $run->update([
+            'input_references' => [['type' => 'medical_session', 'id' => $session->getKey()]],
+        ]);
+
+        Livewire::actingAs($admin)
+            ->test(EditMedicalSession::class, ['parentRecord' => $client, 'record' => $session->getKey()])
+            ->assertActionVisible('openClinicalSessionAiDraft')
+            ->mountAction('openClinicalSessionAiDraft')
+            ->assertActionMounted('openClinicalSessionAiDraft')
+            ->assertActionDataSet(['run_id' => $run->getKey()])
+            ->assertFormFieldExists('edited_output')
+            ->assertFormFieldExists('target')
+            ->assertFormFieldExists('sources');
+    }
+
     public function test_filament_create_form_reserves_result_action_without_stage_one_ai(): void
     {
         [$organization, $admin, $client] = $this->fixture();
