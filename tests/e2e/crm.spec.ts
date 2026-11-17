@@ -3817,6 +3817,13 @@ test('staff can create, view, and edit a client session from the CRM client flow
         ]) {
             await expect(page.getByLabel(label, { exact: true })).toHaveCount(1);
         }
+        for (const technicalLabel of [
+            'Effectiveness stage1b',
+            'Session photos hint',
+            'Session history fields',
+        ]) {
+            await expect(page.getByText(technicalLabel, { exact: true })).toHaveCount(0);
+        }
     };
     await assertSessionBlockOrder();
 

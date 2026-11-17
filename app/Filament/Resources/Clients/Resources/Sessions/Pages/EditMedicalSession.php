@@ -726,6 +726,7 @@ class EditMedicalSession extends LocalizedEditRecord
                 Section::make(__('9. Эффективность проведённого сеанса'))
                     ->schema([
                         Placeholder::make('effectiveness_stage1b')
+                            ->label(__('Показатели эффективности'))
                             ->hiddenLabel()
                             ->content(fn (): string => $this->effectivenessSummary())
                             ->columnSpanFull(),
@@ -743,6 +744,7 @@ class EditMedicalSession extends LocalizedEditRecord
                 Section::make(__('Фото до / после'))
                     ->schema([
                         Placeholder::make('session_photos_hint')
+                            ->label(__('Подсказка по фотографиям'))
                             ->hiddenLabel()
                             ->content(__('Добавьте фотографии в нужную галерею. Файлы сохраняются в приватном хранилище.'))
                             ->columnSpanFull(),
@@ -754,7 +756,10 @@ class EditMedicalSession extends LocalizedEditRecord
                     ->columnSpanFull(),
                 Section::make(__('Исторические значения'))
                     ->schema([
-                        Placeholder::make('session_history_fields')->hiddenLabel()->content(__('Старые поля остаются доступными в истории и не показываются как активные поля новой формы.')),
+                        Placeholder::make('session_history_fields')
+                            ->label(__('История полей'))
+                            ->hiddenLabel()
+                            ->content(__('Старые поля остаются доступными в истории и не показываются как активные поля новой формы.')),
                     ])->columnSpanFull(),
             ]);
     }

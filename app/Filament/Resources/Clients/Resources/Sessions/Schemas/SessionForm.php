@@ -402,7 +402,10 @@ final class SessionForm
                     ])->collapsible()->columnSpanFull(),
                 Section::make(__('9. Эффективность проведённого сеанса'))
                     ->schema([
-                        Placeholder::make('effectiveness_stage1b')->hiddenLabel()->content(__('Показатели эффективности доступны после сохранения сеанса на странице редактирования.')),
+                        Placeholder::make('effectiveness_stage1b')
+                            ->label(__('Показатели эффективности'))
+                            ->hiddenLabel()
+                            ->content(__('Показатели эффективности доступны после сохранения сеанса на странице редактирования.')),
                     ])->collapsible()->columnSpanFull(),
                 Section::make(__('10. Рекомендации эксперта'))
                     ->schema([
@@ -419,6 +422,7 @@ final class SessionForm
                 Section::make(__('Исторические значения'))
                     ->schema([
                         Placeholder::make('session_history_fields')
+                            ->label(__('История полей'))
                             ->hiddenLabel()
                             ->content(__('Старые поля остаются доступными в истории и не показываются как активные поля новой формы.'))
                             ->columnSpanFull(),
