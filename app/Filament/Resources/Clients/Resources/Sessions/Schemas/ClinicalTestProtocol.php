@@ -216,9 +216,14 @@ final class ClinicalTestProtocol
                     return;
                 }
 
-                $state[$itemKey] = array_replace($state[$itemKey], $data);
+                $existingItem = $state[$itemKey];
+                $state[$itemKey] = array_replace($existingItem, $data);
+                if (is_array($existingItem['structured'] ?? null) && is_array($data['structured'] ?? null)) {
+                    $state[$itemKey]['structured'] = array_replace_recursive($existingItem['structured'], $data['structured']);
+                }
                 $component->rawState($state);
-                $component->getChildSchema($itemKey)?->fill($data);
+                $component->getChildSchema($itemKey)?->fill($state[$itemKey], shouldFillStateWithNull: false);
+                $component->rawState($state);
                 $component->callAfterStateUpdated();
                 Notification::make()->success()->title(__('Тест сохранён в сеансе'))->send();
             });
