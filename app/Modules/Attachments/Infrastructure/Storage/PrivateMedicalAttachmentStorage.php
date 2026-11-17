@@ -3,6 +3,7 @@
 namespace App\Modules\Attachments\Infrastructure\Storage;
 
 use App\Modules\Attachments\Domain\Contracts\AttachmentStorageInterface;
+use App\Modules\Attachments\Application\MedicalFilePolicy;
 use App\Modules\Attachments\Domain\Enums\AttachmentType;
 use App\Modules\Attachments\Domain\Exceptions\InvalidAttachmentException;
 use App\Modules\Attachments\Domain\Exceptions\UnsupportedDicomException;
@@ -17,9 +18,12 @@ use RuntimeException;
 
 final class PrivateMedicalAttachmentStorage implements AttachmentStorageInterface
 {
-    public function __construct(private readonly NormalizeUploadedImage $images) {}
+    public function __construct(
+        private readonly NormalizeUploadedImage $images,
+        private readonly MedicalFilePolicy $filePolicy,
+    ) {}
 
-    public function maxBytes(?AttachmentType $attachmentType = null): int
+    public function maxBytes(?AttachmentType $attachmentType = null, int $organizationId = 0): int
     {
         if ($attachmentType === AttachmentType::AudioRecording) {
             return (int) config('medical.audio_attachment_max_bytes', 67_108_864);
@@ -27,6 +31,10 @@ final class PrivateMedicalAttachmentStorage implements AttachmentStorageInterfac
 
         if ($attachmentType === AttachmentType::CompanionImage) {
             return (int) config('ai.companion.maximum_image_bytes', 10_485_760);
+        }
+
+        if ($attachmentType === AttachmentType::GeneralFile) {
+            return $this->filePolicy->maxBytes($organizationId);
         }
 
         return (int) config('medical.attachment_max_bytes', 20_971_520);
@@ -39,6 +47,13 @@ final class PrivateMedicalAttachmentStorage implements AttachmentStorageInterfac
         'image/jpeg' => ['jpg', 'jpeg'],
         'image/png' => ['png'],
         'image/webp' => ['webp'],
+        'image/heic' => ['heic'],
+        'image/heif' => ['heif'],
+        'image/x-heic' => ['heic'],
+        'image/x-heif' => ['heif'],
+        'video/mp4' => ['mp4'],
+        'video/quicktime' => ['mov', 'qt'],
+        'video/webm' => ['webm'],
     ];
 
     /** @var array<string, list<string>> */
@@ -72,7 +87,7 @@ final class PrivateMedicalAttachmentStorage implements AttachmentStorageInterfac
             throw new InvalidAttachmentException('Файл пуст.');
         }
 
-        $maxBytes = $this->maxBytes($attachmentType);
+        $maxBytes = $this->maxBytes($attachmentType, $organizationId);
 
         if ($size > $maxBytes) {
             $limitMb = round($maxBytes / (1024 * 1024), 1);
@@ -163,12 +178,9 @@ final class PrivateMedicalAttachmentStorage implements AttachmentStorageInterfac
 
     private function isImageCandidate(UploadedFile $file, string $mimeType, ?AttachmentType $attachmentType): bool
     {
-        if ($attachmentType === AttachmentType::AudioRecording) {
-            return false;
-        }
-
-        return str_starts_with($mimeType, 'image/')
-            || in_array(strtolower((string) $file->getClientOriginalExtension()), ['jpg', 'jpeg', 'png', 'webp', 'heic', 'heif'], true);
+        return $attachmentType === AttachmentType::CompanionImage
+            && (str_starts_with($mimeType, 'image/')
+            || in_array(strtolower((string) $file->getClientOriginalExtension()), ['jpg', 'jpeg', 'png', 'webp', 'heic', 'heif'], true));
     }
 
     private function maxPixels(?AttachmentType $attachmentType): ?int

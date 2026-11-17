@@ -11,6 +11,7 @@ use App\Modules\Attachments\Application\DTOs\AttachmentUploadCommand;
 use App\Modules\Attachments\Application\GetTemporaryAttachmentUrl;
 use App\Modules\Attachments\Application\ListClientAttachments;
 use App\Modules\Attachments\Application\MedicalAudioPolicy;
+use App\Modules\Attachments\Application\SendMedicalAudioToClient;
 use App\Modules\Attachments\Application\UploadMedicalAttachment;
 use App\Modules\Attachments\Domain\Enums\AttachmentType;
 use App\Modules\Attachments\Domain\Models\MedicalAttachment;
@@ -59,7 +60,8 @@ final class ClientAudioRecordingsRelationManager extends LocalizedRelationManage
             ->modifyQueryUsing(
                 fn (Builder $query): Builder => app(ListClientAttachments::class)
                     ->query($actor, $client)
-                    ->where('attachment_type', AttachmentType::AudioRecording),
+                    ->where('attachment_type', AttachmentType::AudioRecording)
+                    ->with('deliveries'),
             )
             ->columns([
                 TextColumn::make('presentation_name')
@@ -74,6 +76,12 @@ final class ClientAudioRecordingsRelationManager extends LocalizedRelationManage
                     ->label(__('Загружено'))
                     ->dateTime('d.m.Y H:i')
                     ->visibleFrom('md'),
+                TextColumn::make('delivery_status')
+                    ->label(__('Отправка клиенту'))
+                    ->state(fn (MedicalAttachment $record): string => self::deliveryLabel($record))
+                    ->badge()
+                    ->color(fn (MedicalAttachment $record): string => self::deliveryColor($record))
+                    ->visibleFrom('sm'),
             ])
             ->headerActions([
                 Action::make('upload')
@@ -134,6 +142,30 @@ final class ClientAudioRecordingsRelationManager extends LocalizedRelationManage
                     ->action(fn (MedicalAttachment $record): mixed => redirect()->to(
                         app(GetTemporaryAttachmentUrl::class)->handle($actor, $record),
                     )),
+                Action::make('sendToClient')
+                    ->label(fn (MedicalAttachment $record): string => self::deliveryStatus($record) === null ? __('Отправить клиенту') : __('Повторить отправку'))
+                    ->icon('heroicon-o-paper-airplane')
+                    ->requiresConfirmation()
+                    ->visible(fn (MedicalAttachment $record): bool => $canManage && self::canSend($record))
+                    ->authorize($canManage)
+                    ->action(function (MedicalAttachment $record) use ($actor): void {
+                        $delivery = app(SendMedicalAudioToClient::class)->handle($actor, $record);
+                        $title = match ((string) $delivery->status) {
+                            'delivered' => __('Аудиозапись отправлена клиенту'),
+                            'retryable' => __('Отправка не удалась, её можно повторить'),
+                            'unavailable' => __('Канал клиента недоступен'),
+                            'unknown' => __('Результат отправки неизвестен, повторять автоматически нельзя'),
+                            default => __('Отправка завершилась с ошибкой'),
+                        };
+                        $notification = Notification::make()->title($title);
+                        if ((string) $delivery->status === 'delivered') {
+                            $notification->success();
+                        } else {
+                            $notification->warning();
+                        }
+                        $notification->send();
+                        $this->flushCachedTableRecords();
+                    }),
                 Action::make('delete')
                     ->label(__('Удалить'))
                     ->icon('heroicon-o-trash')
@@ -163,5 +195,41 @@ final class ClientAudioRecordingsRelationManager extends LocalizedRelationManage
         }
 
         return number_format($bytes / 1024 / 1024, 1, ',', ' ').' МБ';
+    }
+
+    private static function deliveryStatus(MedicalAttachment $record): ?string
+    {
+        $delivery = $record->deliveries->firstWhere('channel', 'telegram');
+
+        return $delivery?->status;
+    }
+
+    private static function canSend(MedicalAttachment $record): bool
+    {
+        return ! in_array(self::deliveryStatus($record), ['delivered', 'claimed', 'unknown', 'permanent'], true);
+    }
+
+    private static function deliveryLabel(MedicalAttachment $record): string
+    {
+        return match (self::deliveryStatus($record)) {
+            'delivered' => __('Отправлено'),
+            'claimed' => __('Отправляется'),
+            'retryable' => __('Можно повторить'),
+            'unavailable' => __('Канал недоступен'),
+            'unknown' => __('Результат неизвестен'),
+            'permanent' => __('Не отправлено'),
+            default => __('Не отправлялось'),
+        };
+    }
+
+    private static function deliveryColor(MedicalAttachment $record): string
+    {
+        return match (self::deliveryStatus($record)) {
+            'delivered' => 'success',
+            'claimed' => 'warning',
+            'retryable', 'unavailable' => 'warning',
+            'unknown', 'permanent' => 'danger',
+            default => 'gray',
+        };
     }
 }

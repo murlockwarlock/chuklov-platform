@@ -30,6 +30,7 @@ use Illuminate\Support\Carbon;
  * @property string|null $therapist_notes
  * @property string|null $subjective_feelings
  * @property string|null $visual_posture_diagnostics
+ * @property string|null $measurements
  * @property string|null $root_cause_hypothesis
  * @property string|null $protocol
  * @property string|null $result
@@ -51,7 +52,7 @@ use Illuminate\Support\Carbon;
  * @property-read Collection<int, MedicalSessionSafetyMarker> $safetyMarkers
  * @property-read Collection<int, MedicalCauseDefinition> $causes
  */
-#[Fillable(['pain', 'pain_vas', 'tests', 'observations', 'therapist_notes', 'subjective_feelings', 'visual_posture_diagnostics', 'root_cause_hypothesis', 'protocol', 'result', 'causes_manual_override', 'encryption_key_version', 'status', 'completed_at', 'edited_at'])]
+#[Fillable(['pain', 'pain_vas', 'tests', 'observations', 'therapist_notes', 'subjective_feelings', 'visual_posture_diagnostics', 'measurements', 'root_cause_hypothesis', 'protocol', 'result', 'causes_manual_override', 'encryption_key_version', 'status', 'completed_at', 'edited_at'])]
 class MedicalSession extends Model
 {
     /** @return BelongsTo<Organization, $this> */

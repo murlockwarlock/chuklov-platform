@@ -18,6 +18,7 @@ use App\Modules\Finance\Application\FinanceAuthorization;
 use App\Modules\Finance\Application\GetClientBalanceSummary;
 use App\Modules\Finance\Domain\ValueObjects\Money;
 use App\Modules\Identity\Application\GetClientCommunicationIdentities;
+use App\Modules\Identity\Application\ClientAvatarPresentation;
 use App\Modules\Identity\Application\GetLatestClientMarketingConsent;
 use App\Modules\Identity\Application\VerifiedChannelIdentity;
 use App\Modules\Identity\Domain\Enums\ChannelIdentityStatus;
@@ -34,6 +35,7 @@ use App\Modules\Tracker\Application\ResolveTrackerAccess;
 use App\Modules\Tracker\Domain\Models\TrackerCheckIn;
 use Carbon\CarbonImmutable;
 use Filament\Infolists\Components\RepeatableEntry;
+use Filament\Infolists\Components\ImageEntry;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
@@ -110,6 +112,19 @@ final class ClientWorkspaceInfolist
                     ->columnSpanFull(),
                 Section::make(__('Клиент'))
                     ->schema([
+                        ImageEntry::make('client_avatar')
+                            ->label(__('Фото профиля'))
+                            ->getStateUsing(function (Client $record): string {
+                                $actor = auth()->user();
+                                $presentation = app(ClientAvatarPresentation::class);
+
+                                return $actor instanceof User
+                                    ? ($presentation->forCrm($actor, $record)['url'] ?? $presentation->fallbackDataUri($record))
+                                    : $presentation->fallbackDataUri($record);
+                            })
+                            ->imageSize(120)
+                            ->circular()
+                            ->columnSpanFull(),
                         TextEntry::make('last_name')->label(__('Фамилия'))->placeholder(__('Не указана'))->wrap(),
                         TextEntry::make('first_name')->label(__('Имя'))->placeholder(__('Не указано'))->wrap(),
                         TextEntry::make('middle_name')->label(__('Отчество'))->placeholder(__('Не указано'))->wrap(),

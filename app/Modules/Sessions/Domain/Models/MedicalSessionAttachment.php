@@ -4,6 +4,7 @@ namespace App\Modules\Sessions\Domain\Models;
 
 use App\Modules\Attachments\Domain\Models\MedicalAttachment;
 use App\Modules\Sessions\Domain\Enums\MedicalSessionAttachmentGallery;
+use App\Modules\Sessions\Domain\Enums\MedicalSessionAttachmentPlane;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -16,6 +17,7 @@ use Illuminate\Support\Carbon;
  * @property int $medical_session_id
  * @property int $medical_attachment_id
  * @property MedicalSessionAttachmentGallery $gallery
+ * @property MedicalSessionAttachmentPlane|null $plane
  * @property Carbon $created_at
  * @property Carbon $updated_at
  * @property-read MedicalSession $session
@@ -27,6 +29,7 @@ use Illuminate\Support\Carbon;
     'medical_session_id',
     'medical_attachment_id',
     'gallery',
+    'plane',
 ])]
 class MedicalSessionAttachment extends Model
 {
@@ -46,6 +49,7 @@ class MedicalSessionAttachment extends Model
     {
         return [
             'gallery' => MedicalSessionAttachmentGallery::class,
+            'plane' => MedicalSessionAttachmentPlane::class,
             'created_at' => 'datetime',
             'updated_at' => 'datetime',
         ];

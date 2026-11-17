@@ -26,6 +26,7 @@ final readonly class ListClientAttachments
                 'uuid',
                 'organization_id',
                 'client_id',
+                'uploaded_by_user_id',
                 'attachment_type',
                 'original_filename',
                 'display_name',
@@ -34,6 +35,7 @@ final readonly class ListClientAttachments
                 'evaluation_fixture_key',
                 'created_at',
             ])
+            ->with('uploadedBy:id,name')
             ->orderByDesc('created_at')
             ->orderByDesc('id');
     }

@@ -193,7 +193,10 @@
                                                         </a>
                                                     @endif
                                                 </div>
-                                                <span class="block truncate" title="{{ $booking['client'] }}">@if ($booking['client_url'])<a href="{{ $booking['client_url'] }}" class="pointer-events-auto relative z-20 crm-entity-link">{{ $booking['client'] }}</a>@else{{ $booking['client'] }}@endif</span>
+                                                <span class="flex min-w-0 items-center gap-1 truncate" title="{{ $booking['client'] }}">
+                                                    @if ($booking['client_avatar_url'])<img src="{{ $booking['client_avatar_url'] }}" alt="" class="size-5 shrink-0 rounded-full object-cover" loading="lazy">@else<span class="inline-flex size-5 shrink-0 items-center justify-center rounded-full bg-orange-100 text-[9px] font-semibold text-orange-800 dark:bg-orange-950/40 dark:text-orange-200">{{ $booking['client_avatar_initials'] }}</span>@endif
+                                                    <span class="min-w-0 truncate">@if ($booking['client_url'])<a href="{{ $booking['client_url'] }}" class="pointer-events-auto relative z-20 crm-entity-link">{{ $booking['client'] }}</a>@else{{ $booking['client'] }}@endif</span>
+                                                </span>
                                                 <span class="block truncate" title="{{ $booking['service'] }}">{{ $booking['service'] }}</span>
                                                 <span class="block truncate opacity-80">{{ $booking['status'] }} · {{ $booking['location_label'] }}@if ($booking['party_size_label']) · {{ $booking['party_size_label'] }}@endif @if ($booking['has_debt']) · {{ __('Есть долг') }}@endif</span>
                                                 @if ($booking['retention_warning'])
@@ -239,7 +242,10 @@
                                                         <a href="{{ $booking['url'] }}" aria-label="{{ __('Открыть запись') }}" class="absolute inset-0 z-0 rounded-lg"></a>
                                                         <div class="relative z-10 pointer-events-none">
                                                             <div class="flex min-w-0 items-start justify-between gap-2">
-                                                                <span class="min-w-0 truncate font-semibold">@if ($booking['client_url'])<a href="{{ $booking['client_url'] }}" class="pointer-events-auto relative z-20 crm-entity-link">{{ $booking['client'] }}</a>@else{{ $booking['client'] }}@endif</span>
+                                                                <span class="flex min-w-0 items-center gap-1 truncate font-semibold">
+                                                                    @if ($booking['client_avatar_url'])<img src="{{ $booking['client_avatar_url'] }}" alt="" class="size-5 shrink-0 rounded-full object-cover" loading="lazy">@else<span class="inline-flex size-5 shrink-0 items-center justify-center rounded-full bg-orange-100 text-[9px] font-semibold text-orange-800 dark:bg-orange-950/40 dark:text-orange-200">{{ $booking['client_avatar_initials'] }}</span>@endif
+                                                                    <span class="min-w-0 truncate">@if ($booking['client_url'])<a href="{{ $booking['client_url'] }}" class="pointer-events-auto relative z-20 crm-entity-link">{{ $booking['client'] }}</a>@else{{ $booking['client'] }}@endif</span>
+                                                                </span>
                                                                 <span class="shrink-0 text-xs">{{ $booking['time_range'] }}</span>
                                                                 @if ($booking['released_for_rebooking'] && $booking['specialist_is_active'])
                                                                     <a
@@ -300,7 +306,10 @@
                                             <a href="{{ $booking['url'] }}" aria-label="{{ __('Открыть запись') }}" class="absolute inset-0 z-0 rounded-lg"></a>
                                             <div class="relative z-10 pointer-events-none">
                                                 <div class="flex min-w-0 items-start justify-between gap-2">
-                                                    <span class="min-w-0 truncate font-semibold">@if ($booking['client_url'])<a href="{{ $booking['client_url'] }}" class="pointer-events-auto relative z-20 crm-entity-link">{{ $booking['client'] }}</a>@else{{ $booking['client'] }}@endif</span>
+                                                    <span class="flex min-w-0 items-center gap-1 truncate font-semibold">
+                                                        @if ($booking['client_avatar_url'])<img src="{{ $booking['client_avatar_url'] }}" alt="" class="size-5 shrink-0 rounded-full object-cover" loading="lazy">@else<span class="inline-flex size-5 shrink-0 items-center justify-center rounded-full bg-orange-100 text-[9px] font-semibold text-orange-800 dark:bg-orange-950/40 dark:text-orange-200">{{ $booking['client_avatar_initials'] }}</span>@endif
+                                                        <span class="min-w-0 truncate">@if ($booking['client_url'])<a href="{{ $booking['client_url'] }}" class="pointer-events-auto relative z-20 crm-entity-link">{{ $booking['client'] }}</a>@else{{ $booking['client'] }}@endif</span>
+                                                    </span>
                                                     <span class="shrink-0 text-xs">{{ $booking['time_range'] }}</span>
                                                     @if ($booking['released_for_rebooking'] && $booking['specialist_is_active'])
                                                         <a

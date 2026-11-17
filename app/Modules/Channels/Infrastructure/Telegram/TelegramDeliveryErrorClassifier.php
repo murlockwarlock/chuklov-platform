@@ -17,6 +17,7 @@ final class TelegramDeliveryErrorClassifier
             $this->containsAny($description, ['user is deactivated', 'account is deactivated']) => 'telegram_user_deactivated',
             $this->containsAny($description, ["can't parse entities", 'cannot parse entities', 'cant parse entities']) => 'telegram_formatting_rejected',
             $this->containsAny($description, ['message is too long', 'caption is too long', 'text is too long']) => 'telegram_message_too_long',
+            $this->containsAny($description, ['file is too big', 'file is too large', 'document is too big']) => 'telegram_file_too_large',
             $message->mode->includesImage() && $this->containsAny($description, [
                 'show_caption_above_media must be the same for all messages',
             ]) => 'telegram_media_group_caption_conflict',
@@ -27,7 +28,6 @@ final class TelegramDeliveryErrorClassifier
                 'photo_invalid',
                 'image_process_failed',
                 'photo is too big',
-                'file is too big',
             ]) => 'telegram_media_unavailable',
             default => 'telegram_provider_rejected',
         };

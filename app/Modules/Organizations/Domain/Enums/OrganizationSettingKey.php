@@ -32,6 +32,8 @@ enum OrganizationSettingKey: string
     case AnalyticsLtvPercentFormulaReference = 'analytics_ltv_percent_formula_reference';
     case MedicalAudioAllowedMimeTypes = 'medical_audio_allowed_mime_types';
     case MedicalAudioBusinessMaxBytes = 'medical_audio_business_max_bytes';
+    case MedicalVitalsThresholds = 'medical_vitals_thresholds';
+    case MedicalGeneralFileBusinessMaxBytes = 'medical_general_file_business_max_bytes';
     case AnalyticsAiNewTagCandidatesEnabled = 'analytics_ai_new_tag_candidates_enabled';
     case AnalyticsAiAutomaticTagSuggestionsEnabled = 'analytics_ai_automatic_tag_suggestions_enabled';
     case AnalyticsAgeRanges = 'analytics_age_ranges';
@@ -53,7 +55,8 @@ enum OrganizationSettingKey: string
             self::ClientSegmentRegularCompletedVisits,
             self::ClientSegmentDormantDays,
             self::ClientSegmentSleepingDays => OrganizationSettingType::Integer,
-            self::MedicalAudioBusinessMaxBytes => OrganizationSettingType::Integer,
+            self::MedicalAudioBusinessMaxBytes,
+            self::MedicalGeneralFileBusinessMaxBytes => OrganizationSettingType::Integer,
             self::B2bZoomHostLicensed,
             self::TrackerFreeMode,
             self::TrackerEnabled,

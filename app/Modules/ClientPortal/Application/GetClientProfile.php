@@ -39,12 +39,14 @@ final class GetClientProfile
     public function __construct(
         private readonly ClientPortalContext $clientContext,
         private readonly ListPublishedLegalDocuments $legalDocuments,
+        private readonly GetClientTemporaryAttachmentUrl $attachmentUrls,
     ) {}
 
     /** @return array<string, mixed> */
     public function handle(): array
     {
         $client = $this->clientContext->client();
+        $client->loadMissing('avatarProfile.attachment');
         $documents = $this->legalDocuments->handle($this->locale($client->language));
         $consents = $this->consents($client, $documents);
         $marketingDocument = $documents->first(fn (LegalDocument $document): bool => $document->document_type === ConsentSubject::Marketing->value);
@@ -74,6 +76,12 @@ final class GetClientProfile
                     ->where('channel', 'email')
                     ->where('verification_status', ChannelIdentityStatus::Verified)
                     ->exists(),
+                'avatar' => [
+                    'url' => $client->avatarProfile?->attachment === null
+                        ? null
+                        : $this->attachmentUrls->handle($client->avatarProfile->attachment, 15, 'preview'),
+                    'initials' => $this->initials($client),
+                ],
             ],
             'b2bSpecialistAnswer' => $b2bAnswer,
             'legalDocuments' => $documents->map(function (LegalDocument $document) use ($consents): array {
@@ -109,6 +117,7 @@ final class GetClientProfile
                 'update' => route('portal.profile.update'),
                 'consents' => route('portal.profile.consents'),
                 'b2bAnswer' => route('portal.profile.b2b-answer'),
+                'avatarUpload' => route('portal.profile.avatar'),
             ],
         ];
     }
@@ -116,6 +125,16 @@ final class GetClientProfile
     private function locale(?string $language): string
     {
         return SupportedLocale::normalize($language, (string) config('portal.default_locale', 'ru'));
+    }
+
+    private function initials(Client $client): string
+    {
+        $parts = preg_split('/\s+/u', trim((string) $client->full_name)) ?: [];
+        $initials = collect(array_slice($parts, 0, 2))
+            ->map(fn (string $part): string => mb_strtoupper(mb_substr($part, 0, 1)))
+            ->implode('');
+
+        return $initials === '' ? '?' : $initials;
     }
 
     /** @return list<array{value: string, label: string}> */

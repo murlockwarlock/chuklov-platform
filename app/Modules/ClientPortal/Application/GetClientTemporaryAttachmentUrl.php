@@ -41,7 +41,7 @@ final readonly class GetClientTemporaryAttachmentUrl
         foreach ($materials as $attachment) {
             if ((int) $attachment->organization_id !== (int) $subject->organization_id
                 || (int) $attachment->client_id !== (int) $subject->getKey()
-                || ! in_array($attachment->attachment_type, [AttachmentType::MedicalReport, AttachmentType::PosturePhoto], true)) {
+                || $attachment->attachment_type !== AttachmentType::MedicalReport) {
                 throw new AuthorizationException;
             }
             $result[(int) $attachment->getKey()] = [
@@ -67,8 +67,16 @@ final readonly class GetClientTemporaryAttachmentUrl
     {
         $client = $this->clientContext->client();
 
-        if ((int) $attachment->organization_id !== (int) $client->organization_id
-            || ! in_array($attachment->attachment_type, [AttachmentType::MedicalReport, AttachmentType::PosturePhoto], true)) {
+        if ((int) $attachment->organization_id !== (int) $client->organization_id) {
+            throw new AuthorizationException('This material is not available in the client portal.');
+        }
+
+        if ($attachment->attachment_type === AttachmentType::ClientAvatar
+            && (int) $attachment->client_id === (int) $client->getKey()) {
+            return;
+        }
+
+        if ($attachment->attachment_type !== AttachmentType::MedicalReport) {
             throw new AuthorizationException('This material is not available in the client portal.');
         }
         $subject = Client::query()->where('organization_id', $client->organization_id)->whereKey($attachment->client_id)->firstOrFail();

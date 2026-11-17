@@ -7,6 +7,7 @@ use App\Filament\Resources\Clients\ClientResource;
 use App\Filament\Resources\Clients\Resources\Sessions\MedicalSessionResource;
 use App\Filament\Resources\Clients\Resources\Sessions\Schemas\ClinicalTestProtocol;
 use App\Filament\Resources\Clients\Resources\Sessions\Schemas\MedicalComplaintSelect;
+use App\Filament\Resources\Clients\Resources\Sessions\Schemas\MedicalMeasurementForm;
 use App\Filament\Resources\Clients\Resources\Sessions\Schemas\SessionForm;
 use App\Filament\Support\FormValidationFeedback;
 use App\Filament\Support\InteractsWithFormValidationFeedback;
@@ -42,6 +43,7 @@ use App\Modules\Sessions\Application\SendSessionRecommendation;
 use App\Modules\Sessions\Application\UpdateSession;
 use App\Modules\Sessions\Application\UploadSessionPhoto;
 use App\Modules\Sessions\Domain\Enums\MedicalSessionAttachmentGallery;
+use App\Modules\Sessions\Domain\Enums\MedicalSessionAttachmentPlane;
 use App\Modules\Sessions\Domain\Models\MedicalSession;
 use App\Modules\Sessions\Domain\Models\MedicalSessionPain;
 use App\Support\Images\SupportedImageTypes;
@@ -391,10 +393,7 @@ class EditMedicalSession extends LocalizedEditRecord
                     ->content(__('Сохраняем изменения…'))
                     ->extraAttributes(['wire:loading' => ''])
                     ->columnSpanFull(),
-                Section::make(__('0. Показатели до сеанса'))
-                    ->schema([
-                        Placeholder::make('vitals_stage1c')->hiddenLabel()->content(__('Измерения до и после сеанса подключаются в этапе 1C. Пока заполните доступные данные в следующих блоках.')),
-                    ])->collapsible()->columnSpanFull(),
+                MedicalMeasurementForm::section(),
                 Placeholder::make('session_lifecycle')
                     ->hiddenLabel()
                     ->content(fn (): string => $this->lifecycleSummary())
@@ -806,6 +805,12 @@ class EditMedicalSession extends LocalizedEditRecord
                     ->maxSize((int) ceil((int) config('medical.attachment_max_bytes', 20_971_520) / 1024))
                     ->storeFiles(false)
                     ->required(),
+                Select::make('plane')
+                    ->label(__('Направление'))
+                    ->options(collect(MedicalSessionAttachmentPlane::cases())->mapWithKeys(
+                        static fn (MedicalSessionAttachmentPlane $plane): array => [$plane->value => $plane->label()],
+                    )->all())
+                    ->required(),
             ])
             ->modalSubmitActionLabel(__('Загрузить'))
             ->action(function (Action $action, array $data) use ($gallery): void {
@@ -818,6 +823,7 @@ class EditMedicalSession extends LocalizedEditRecord
                         $this->parentClient(),
                         $file,
                         $gallery,
+                        MedicalSessionAttachmentPlane::from((string) $data['plane']),
                     );
                     Notification::make()->success()->title(__('Фото загружено в галерею'))->send();
                 } catch (ValidationException $exception) {
@@ -860,6 +866,7 @@ class EditMedicalSession extends LocalizedEditRecord
             'observations' => $decrypted->observations,
             'subjective_feelings' => $decrypted->subjectiveFeelings,
             'visual_posture_diagnostics' => $decrypted->visualPostureDiagnostics,
+            'measurements' => $decrypted->measurements,
             'root_cause_hypothesis' => $decrypted->rootCauseHypothesis,
             'protocol' => $decrypted->protocol,
             'result' => $decrypted->result,
@@ -1376,6 +1383,7 @@ class EditMedicalSession extends LocalizedEditRecord
             'observations',
             'subjective_feelings',
             'visual_posture_diagnostics',
+            'measurements',
             'root_cause_hypothesis',
             'protocol',
             'result',

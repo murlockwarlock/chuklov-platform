@@ -25,6 +25,7 @@ final class MedicalSessionSnapshotHasher
             'therapist_notes' => $session->getRawOriginal('therapist_notes'),
             'subjective_feelings' => $session->getRawOriginal('subjective_feelings'),
             'visual_posture_diagnostics' => $session->getRawOriginal('visual_posture_diagnostics'),
+            'measurements' => $session->getRawOriginal('measurements'),
             'root_cause_hypothesis' => $session->getRawOriginal('root_cause_hypothesis'),
             'protocol' => $session->getRawOriginal('protocol'),
             'result' => $session->getRawOriginal('result'),

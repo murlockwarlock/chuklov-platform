@@ -7,12 +7,15 @@ use App\Filament\Support\CrmEntityLinks;
 use App\Filament\Support\TimezoneOptions;
 use App\Modules\Analytics\Application\ClientSegmentQuery;
 use App\Modules\Analytics\Domain\Enums\ClientSegment;
+use App\Modules\Identity\Application\ClientAvatarPresentation;
 use App\Modules\Identity\Application\ClientSearch;
 use App\Modules\Identity\Domain\Models\Client;
+use App\Models\User;
 use Filament\Actions\EditAction;
 use Filament\Actions\ViewAction;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\IconColumn;
+use Filament\Tables\Columns\ImageColumn;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Filters\TernaryFilter;
@@ -36,6 +39,19 @@ class ClientsTable
                 app(ClientSearch::class)->apply($query, $search);
             })
             ->columns([
+                ImageColumn::make('avatarProfile.attachment')
+                    ->label(__('Фото'))
+                    ->getStateUsing(function (Client $record): ?string {
+                        $actor = auth()->user();
+
+                        return $actor instanceof User
+                            ? app(ClientAvatarPresentation::class)->forCrm($actor, $record)['url']
+                            : null;
+                    })
+                    ->defaultImageUrl(fn (Client $record): string => app(ClientAvatarPresentation::class)->fallbackDataUri($record))
+                    ->alt(fn (Client $record): string => (string) ($record->full_name ?: __('Клиент')))
+                    ->imageSize(40)
+                    ->circular(),
                 TextColumn::make('id')
                     ->label('ID')
                     ->formatStateUsing(fn (int|string $state): string => '#'.$state)

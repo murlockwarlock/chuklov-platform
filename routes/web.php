@@ -6,11 +6,14 @@ use App\Http\Controllers\AdminCompanionController;
 use App\Http\Controllers\AdminFinanceReceiptController;
 use App\Http\Controllers\AdminKnowledgeRevisionDownloadController;
 use App\Http\Controllers\AdminMedicalAttachmentController;
+use App\Http\Controllers\AdminClientMedicalPdfController;
+use App\Http\Controllers\AdminClientSessionPhotoArchiveController;
 use App\Http\Controllers\AdminNotificationTemplateMediaController;
 use App\Http\Controllers\AiRunExportController;
 use App\Http\Controllers\CompanionExportController;
 use App\Http\Controllers\HealthController;
 use App\Http\Controllers\LavaWebhookController;
+use App\Http\Controllers\MedicalAudioDownloadController;
 use App\Http\Controllers\Portal\AttributionController;
 use App\Http\Controllers\Portal\AvailabilityController;
 use App\Http\Controllers\Portal\B2bController;
@@ -70,6 +73,16 @@ Route::middleware(ResolveOrganization::class)->group(function (): void {
     Route::get('/admin/attachments/{uuid}', AdminMedicalAttachmentController::class)
         ->middleware([Authenticate::class, EnsurePrivilegedSessionIsCurrent::class])
         ->name('admin.attachments.download');
+    Route::get('/admin/clients/{client}/medical-pdf', AdminClientMedicalPdfController::class)
+        ->middleware([Authenticate::class, EnsurePrivilegedSessionIsCurrent::class])
+        ->whereNumber('client')
+        ->name('admin.clients.medical-pdf');
+    Route::get('/admin/clients/{client}/session-photos.zip', AdminClientSessionPhotoArchiveController::class)
+        ->middleware([Authenticate::class, EnsurePrivilegedSessionIsCurrent::class])
+        ->whereNumber('client')
+        ->name('admin.clients.session-photo-archive');
+    Route::get('/portal/medical-audio/{uuid}', MedicalAudioDownloadController::class)
+        ->name('portal.medical-audio.download');
     Route::get('/admin/broadcasts/{campaignId}/media/{mediaIndex}', AdminBroadcastMediaController::class)
         ->middleware([Authenticate::class, EnsurePrivilegedSessionIsCurrent::class])
         ->whereNumber(['campaignId', 'mediaIndex'])
@@ -239,6 +252,7 @@ Route::middleware(ResolveOrganization::class)->group(function (): void {
             Route::post('/portal/family/invitation/accept', [PatientInvitationController::class, 'accept'])->middleware('throttle:20,1')->name('portal.family.invitation.accept');
             Route::post('/portal/profile/cities', ProfileCitiesController::class)->middleware('throttle:60,1')->name('portal.profile.cities');
             Route::post('/portal/profile', [ProfileController::class, 'update'])->name('portal.profile.update');
+            Route::post('/portal/profile/avatar', [ProfileController::class, 'avatar'])->name('portal.profile.avatar');
             Route::post('/portal/profile/currency', [ProfileController::class, 'currency'])->name('portal.profile.currency');
             Route::post('/portal/profile/consents', [ProfileController::class, 'consents'])
                 ->name('portal.profile.consents');

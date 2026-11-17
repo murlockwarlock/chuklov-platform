@@ -54,7 +54,7 @@ final class ClientAttachmentsRelationManager extends LocalizedRelationManager
 
     protected static string $relationship = 'medicalAttachments';
 
-    protected static ?string $title = 'Файлы и МРТ';
+    protected static ?string $title = 'МРТ, УЗИ и выписки';
 
     public static function canViewForRecord(Model $ownerRecord, string $pageClass): bool
     {
@@ -85,13 +85,13 @@ final class ClientAttachmentsRelationManager extends LocalizedRelationManager
         );
 
         return $table
-            ->heading(__('Файлы и МРТ'))
+            ->heading(__('МРТ, УЗИ и выписки'))
             ->poll(fn (): ?string => $canViewAiRuns && $this->shouldPoll() ? '5s' : null)
             ->stackedOnMobile()
             ->modifyQueryUsing(
                 fn (Builder $query): Builder => app(ListClientAttachments::class)
                     ->query($actor, $client)
-                    ->where('attachment_type', '!=', AttachmentType::AudioRecording),
+                    ->where('attachment_type', AttachmentType::MedicalReport),
             )
             ->columns([
                 TextColumn::make('original_filename')
@@ -126,15 +126,8 @@ final class ClientAttachmentsRelationManager extends LocalizedRelationManager
                     ->label(__('Загрузить файл'))
                     ->icon('heroicon-o-arrow-up-tray')
                     ->schema([
-                        Select::make('attachment_type')
-                            ->label(__('Тип файла'))
-                            ->options([
-                                AttachmentType::MedicalReport->value => CrmLabel::enum(AttachmentType::MedicalReport) ?? __('Медицинский документ'),
-                                AttachmentType::PosturePhoto->value => CrmLabel::enum(AttachmentType::PosturePhoto) ?? __('Фото осанки'),
-                            ])
-                            ->required(),
                         FileUpload::make('file')
-                            ->label(__('Файл'))
+                            ->label(__('МРТ, УЗИ или выписка'))
                             ->acceptedFileTypes([
                                 'application/pdf',
                                 'text/plain',
@@ -142,7 +135,7 @@ final class ClientAttachmentsRelationManager extends LocalizedRelationManager
                             ])
                             ->mimeTypeMap(SupportedImageTypes::mimeTypeMap())
                             ->extraInputAttributes(['accept' => 'application/pdf,text/plain,'.SupportedImageTypes::browserAccept()])
-                            ->helperText(__('Загрузите документ или фотографию.'))
+                            ->helperText(__('Загрузите медицинский документ или изображение исследования.'))
                             ->maxSize((int) ceil((int) config('medical.attachment_max_bytes', 20_971_520) / 1024))
                             ->storeFiles(false)
                             ->required(),
@@ -155,7 +148,7 @@ final class ClientAttachmentsRelationManager extends LocalizedRelationManager
                                 actor: $actor,
                                 command: new AttachmentUploadCommand(
                                     file: $data['file'],
-                                    attachmentType: AttachmentType::from((string) $data['attachment_type']),
+                                    attachmentType: AttachmentType::MedicalReport,
                                     clientId: (int) $client->getKey(),
                                 ),
                             );
@@ -217,14 +210,14 @@ final class ClientAttachmentsRelationManager extends LocalizedRelationManager
                         ->icon('heroicon-o-trash')
                         ->color('danger')
                         ->requiresConfirmation()
-                        ->visible(fn (MedicalAttachment $record): bool => $this->isPosturePhoto($record)
+                        ->visible(fn (MedicalAttachment $record): bool => $record->attachment_type === AttachmentType::MedicalReport
                             && app(AttachmentAuthorization::class)->allowsUpload($actor, $client))
-                        ->authorize(fn (MedicalAttachment $record): bool => $this->isPosturePhoto($record)
+                        ->authorize(fn (MedicalAttachment $record): bool => $record->attachment_type === AttachmentType::MedicalReport
                             && app(AttachmentAuthorization::class)->allowsUpload($actor, $client))
                         ->action(function (MedicalAttachment $record) use ($actor): void {
                             app(DeleteMedicalAttachment::class)->handle($actor, $record);
                             $this->flushCachedTableRecords();
-                            Notification::make()->title(__('Фото удалено'))->success()->send();
+                            Notification::make()->title(__('Медицинский файл удалён'))->success()->send();
                         }),
                     Action::make('startDocumentAnalysis')
                         ->label(__('Запустить анализ'))
@@ -330,7 +323,7 @@ final class ClientAttachmentsRelationManager extends LocalizedRelationManager
             ])
             ->paginated([10, 25])
             ->emptyStateHeading(__('Файлов пока нет'))
-            ->emptyStateDescription(__('Загрузите медицинское заключение или фото осанки.'));
+            ->emptyStateDescription(__('Загрузите результаты МРТ, УЗИ или медицинские выписки.'));
     }
 
     private function shouldPoll(): bool

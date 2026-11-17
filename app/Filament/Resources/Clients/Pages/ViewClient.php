@@ -21,6 +21,7 @@ use App\Modules\Identity\Application\BlockClientSelfBooking;
 use App\Modules\Identity\Application\GetLatestClientMarketingConsent;
 use App\Modules\Identity\Application\RecordClientConsent;
 use App\Modules\Identity\Application\ResetStagingClientAccount;
+use App\Modules\Identity\Application\SetClientAvatar;
 use App\Modules\Identity\Application\UnblockClientBlacklist;
 use App\Modules\Identity\Application\UnblockClientSelfBooking;
 use App\Modules\Identity\Domain\Enums\ConsentSubject;
@@ -63,6 +64,7 @@ use Filament\Actions\EditAction;
 use Filament\Forms\Components\Checkbox;
 use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\DateTimePicker;
+use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
@@ -71,6 +73,7 @@ use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Components\Utilities\Set;
 use Filament\Schemas\Schema;
 use Illuminate\Contracts\Support\Htmlable;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
@@ -126,6 +129,14 @@ class ViewClient extends LocalizedViewRecord
                 ->label(__('Редактировать клиента'))
                 ->icon('heroicon-o-pencil-square')
                 ->color('primary'),
+            Action::make('downloadMedicalPdf')
+                ->label(__('Скачать PDF анкеты'))
+                ->icon('heroicon-o-document-arrow-down')
+                ->url(fn (): string => route('admin.clients.medical-pdf', ['client' => $this->clientRecord()->getKey()]))
+                ->openUrlInNewTab()
+                ->authorize(fn (): bool => $this->canViewClients())
+                ->visible(fn (): bool => $this->canViewClients()),
+            $this->replaceAvatarAction(),
             Action::make('companionHistory')
                 ->label(__('Сообщения'))
                 ->icon('heroicon-o-chat-bubble-left-right')
@@ -239,6 +250,50 @@ class ViewClient extends LocalizedViewRecord
                 ->button()
                 ->color('gray'),
         ];
+    }
+
+    private function replaceAvatarAction(): Action
+    {
+        return Action::make('replaceAvatar')
+            ->label(__('Заменить фото профиля'))
+            ->icon('heroicon-o-camera')
+            ->schema([
+                FileUpload::make('avatar')
+                    ->label(__('Фото профиля'))
+                    ->helperText(__('JPG, PNG или WebP, до 10 МБ.'))
+                    ->image()
+                    ->acceptedFileTypes(['image/jpeg', 'image/png', 'image/webp'])
+                    ->maxSize(10240)
+                    ->storeFiles(false)
+                    ->required(),
+            ])
+            ->authorize(fn (): bool => $this->canManageClients())
+            ->visible(fn (): bool => $this->canManageClients())
+            ->action(function (array $data): void {
+                $file = $data['avatar'] ?? null;
+                abort_unless($file instanceof UploadedFile, 422);
+
+                app(SetClientAvatar::class)->handle(
+                    actor: $this->actor(),
+                    client: $this->clientRecord(),
+                    file: $file,
+                    uploadKey: (string) Str::uuid(),
+                    source: 'specialist_upload',
+                );
+                $this->clientRecord()->load('avatarProfile.attachment');
+                Notification::make()->success()->title(__('Фото профиля сохранено'))->send();
+            });
+    }
+
+    private function canManageSettings(): bool
+    {
+        $actor = auth()->user();
+
+        return $actor instanceof User && app(OrganizationAuthorizer::class)->allows(
+            $actor,
+            app(OrganizationContext::class)->organization(),
+            OrganizationPermission::ManageSettings,
+        );
     }
 
     private function editMedicalSafetyMarkerAction(): Action

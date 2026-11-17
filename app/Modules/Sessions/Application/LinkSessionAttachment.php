@@ -9,6 +9,7 @@ use App\Modules\Attachments\Domain\Models\MedicalAttachment;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Security\Application\RecordAuditEvent;
 use App\Modules\Sessions\Domain\Enums\MedicalSessionAttachmentGallery;
+use App\Modules\Sessions\Domain\Enums\MedicalSessionAttachmentPlane;
 use App\Modules\Sessions\Domain\Models\MedicalSession;
 use App\Modules\Sessions\Domain\Models\MedicalSessionAttachment;
 use Illuminate\Support\Facades\DB;
@@ -28,6 +29,7 @@ final readonly class LinkSessionAttachment
         Client $client,
         int $attachmentId,
         MedicalSessionAttachmentGallery $gallery = MedicalSessionAttachmentGallery::General,
+        ?MedicalSessionAttachmentPlane $plane = null,
     ): MedicalSessionAttachment {
         $organization = $this->sessionAuthorization->authorizeManageSession($actor, $session, $client);
         $this->attachmentAuthorization->authorizeManage($actor, $client);
@@ -46,14 +48,22 @@ final readonly class LinkSessionAttachment
 
         if ($gallery !== MedicalSessionAttachmentGallery::General && (
             $attachment->attachment_type !== AttachmentType::PosturePhoto
-            || ! in_array(strtolower((string) $attachment->mime_type), ['image/jpeg', 'image/png', 'image/webp'], true)
+            || ! in_array(strtolower((string) $attachment->mime_type), [
+                'image/jpeg',
+                'image/png',
+                'image/webp',
+                'image/heic',
+                'image/heif',
+                'image/x-heic',
+                'image/x-heif',
+            ], true)
         )) {
             throw ValidationException::withMessages([
                 'gallery' => 'В галереи «До» и «После» можно добавить только фото осанки.',
             ]);
         }
 
-        return DB::transaction(function () use ($actor, $organization, $client, $session, $attachment, $gallery): MedicalSessionAttachment {
+        return DB::transaction(function () use ($actor, $organization, $client, $session, $attachment, $gallery, $plane): MedicalSessionAttachment {
             $link = MedicalSessionAttachment::query()
                 ->where('organization_id', $organization->getKey())
                 ->where('client_id', $client->getKey())
@@ -70,7 +80,10 @@ final readonly class LinkSessionAttachment
                 'medical_attachment_id' => $attachment->getKey(),
                 'gallery' => $gallery,
             ]);
-            $changed = $created || $link->isDirty('gallery');
+            if ($plane !== null || $created) {
+                $link->plane = $plane;
+            }
+            $changed = $created || $link->isDirty(['gallery', 'plane']);
             $link->save();
 
             if ($changed) {
@@ -83,6 +96,7 @@ final readonly class LinkSessionAttachment
                     metadata: [
                         'attachment_id' => $attachment->getKey(),
                         'gallery' => $gallery->value,
+                        'plane' => $plane?->value,
                     ],
                 );
             }

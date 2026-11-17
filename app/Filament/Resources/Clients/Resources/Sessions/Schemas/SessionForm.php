@@ -75,10 +75,7 @@ final class SessionForm
                             ->extraAttributes(['wire:loading' => ''])
                             ->columnSpanFull(),
                     ])->columns(2)->columnSpanFull(),
-                Section::make(__('0. Показатели до сеанса'))
-                    ->schema([
-                        Placeholder::make('vitals_stage1c')->hiddenLabel()->content(__('Измерения до и после сеанса подключаются в этапе 1C. Пока заполните доступные данные в следующих блоках.')),
-                    ])->collapsible()->columnSpanFull(),
+                MedicalMeasurementForm::section(),
                 Section::make(__('1. Жалобы (боли)'))
                     ->schema([
                         Repeater::make('pains')

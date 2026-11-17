@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Portal;
 
 use App\Http\Controllers\Controller;
 use App\Modules\Attachments\Application\GetTemporaryAttachmentUrl;
+use App\Modules\Attachments\Domain\Enums\AttachmentType;
 use App\Modules\Attachments\Domain\Models\MedicalAttachment;
 use App\Modules\ClientPortal\Application\ClientPortalContext;
 use App\Modules\ClientPortal\Application\DownloadClientMedicalAttachment;
@@ -40,9 +41,17 @@ final class MedicalAttachmentController extends Controller
             $client = $context->client();
             $attachment = MedicalAttachment::query()
                 ->where('organization_id', $client->organization_id)
-                ->where(fn ($query) => $query->where('client_id', $client->getKey())->orWhereIn('client_id',
-                    PatientProfile::query()->select('clinical_client_id')
-                        ->where('organization_id', $client->organization_id)->where('linked_account_client_id', $client->getKey())))
+                ->where(function ($query) use ($client): void {
+                    $query->where(function ($own) use ($client): void {
+                        $own->where('client_id', $client->getKey())
+                            ->whereIn('attachment_type', [AttachmentType::MedicalReport->value, AttachmentType::ClientAvatar->value]);
+                    })->orWhere(function ($patient) use ($client): void {
+                        $patient->where('attachment_type', AttachmentType::MedicalReport->value)
+                            ->whereIn('client_id', PatientProfile::query()->select('clinical_client_id')
+                                ->where('organization_id', $client->organization_id)
+                                ->where('linked_account_client_id', $client->getKey()));
+                    });
+                })
                 ->where('uuid', $uuid)
                 ->first();
         } catch (Throwable $exception) {

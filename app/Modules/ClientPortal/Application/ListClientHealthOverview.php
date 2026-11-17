@@ -8,12 +8,10 @@ use App\Modules\AI\Domain\Enums\AiRunStatus;
 use App\Modules\AI\Domain\Enums\ClinicalSynthesizerWorkflow;
 use App\Modules\AI\Domain\Enums\HumanReviewStatus;
 use App\Modules\AI\Domain\Models\AiRun;
-use App\Modules\Attachments\Domain\Enums\AttachmentType;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\MedicalProfiles\Domain\Contracts\MedicalEncryptorInterface;
 use App\Modules\MedicalProfiles\Domain\Models\MedicalProfile;
 use App\Modules\Sessions\Domain\Models\MedicalSession;
-use App\Modules\Sessions\Domain\Models\MedicalSessionAttachment;
 use App\Modules\Surveys\Application\SurveyComparisonPresentation;
 use App\Modules\Surveys\Domain\Models\SurveyAttempt;
 use App\Modules\Surveys\Domain\Models\SurveyComparison;
@@ -68,18 +66,7 @@ final readonly class ListClientHealthOverview
             ->orderByDesc('id')
             ->limit(50)
             ->get();
-        $sessionIds = $sessions->modelKeys();
-        $attachments = $sessionIds === []
-            ? collect()
-            : MedicalSessionAttachment::query()
-                ->where('organization_id', $organizationId)
-                ->where('client_id', $clientId)
-                ->whereIn('medical_session_id', $sessionIds)
-                ->with('attachment:id,organization_id,client_id,attachment_type,original_filename,mime_type,size_bytes,created_at')
-                ->orderByDesc('id')
-                ->get();
-
-        return $sessions->map(function (MedicalSession $session) use ($organizationId, $locale, $attachments): array {
+        return $sessions->map(function (MedicalSession $session) use ($organizationId, $locale): array {
             $result = null;
             try {
                 $result = $this->safeText($this->encryptor->decryptField(
@@ -100,17 +87,7 @@ final readonly class ListClientHealthOverview
                 'service' => $service === null ? null : $this->localizedServiceName($service, $locale),
                 'specialist' => $session->specialist?->display_name,
                 'result' => $result,
-                'attachments' => $attachments
-                    ->where('medical_session_id', $session->getKey())
-                    ->filter(fn (MedicalSessionAttachment $link): bool => $link->attachment?->attachment_type === AttachmentType::PosturePhoto)
-                    ->map(fn (MedicalSessionAttachment $link): array => [
-                        'filename' => $link->attachment->original_filename,
-                        'mimeType' => $link->attachment->mime_type,
-                        'sizeBytes' => (int) $link->attachment->size_bytes,
-                        'createdAt' => $link->attachment->created_at?->toIso8601String(),
-                    ])
-                    ->values()
-                    ->all(),
+                'attachments' => [],
             ];
         })->values()->all();
     }

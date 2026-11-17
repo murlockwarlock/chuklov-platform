@@ -10,6 +10,7 @@ use App\Modules\Attachments\Domain\Enums\AttachmentType;
 use App\Modules\Attachments\Domain\Models\MedicalAttachment;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Sessions\Domain\Enums\MedicalSessionAttachmentGallery;
+use App\Modules\Sessions\Domain\Enums\MedicalSessionAttachmentPlane;
 use App\Modules\Sessions\Domain\Models\MedicalSession;
 use App\Modules\Sessions\Domain\Models\MedicalSessionAttachment;
 use Illuminate\Http\UploadedFile;
@@ -28,6 +29,7 @@ final readonly class UploadSessionPhoto
         Client $client,
         UploadedFile $file,
         MedicalSessionAttachmentGallery $gallery,
+        ?MedicalSessionAttachmentPlane $plane = null,
     ): MedicalSessionAttachment {
         $attachment = $this->uploader->handle(
             $actor,
@@ -45,6 +47,7 @@ final readonly class UploadSessionPhoto
                 $client,
                 (int) $attachment->getKey(),
                 $gallery,
+                $plane,
             );
         } catch (\Throwable $exception) {
             $this->deleteUploadedAttachment($actor, $attachment);

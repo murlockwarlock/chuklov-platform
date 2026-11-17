@@ -8,6 +8,9 @@ use App\Filament\Resources\Clients\Pages\EditClient;
 use App\Filament\Resources\Clients\Pages\ListClients;
 use App\Filament\Resources\Clients\Pages\ViewClient;
 use App\Filament\Resources\Clients\RelationManagers\ClientAttachmentsRelationManager;
+use App\Filament\Resources\Clients\RelationManagers\ClientAnthropometryRelationManager;
+use App\Filament\Resources\Clients\RelationManagers\ClientGeneralFilesRelationManager;
+use App\Filament\Resources\Clients\RelationManagers\ClientSessionPhotosRelationManager;
 use App\Filament\Resources\Clients\RelationManagers\ClientAudioRecordingsRelationManager;
 use App\Filament\Resources\Clients\RelationManagers\ClientBookingsRelationManager;
 use App\Filament\Resources\Clients\RelationManagers\ClientClinicalAiRelationManager;
@@ -15,6 +18,7 @@ use App\Filament\Resources\Clients\RelationManagers\ClientNotesRelationManager;
 use App\Filament\Resources\Clients\RelationManagers\ClientPatientsRelationManager;
 use App\Filament\Resources\Clients\RelationManagers\ClientSessionsRelationManager;
 use App\Filament\Resources\Clients\RelationManagers\ClientSurveysRelationManager;
+use App\Filament\Resources\Clients\RelationManagers\ClientVitalsRelationManager;
 use App\Filament\Resources\Clients\Resources\Sessions\Pages\ManageClientSessions;
 use App\Filament\Resources\Clients\Schemas\ClientForm;
 use App\Filament\Resources\Clients\Schemas\ClientWorkspaceInfolist;
@@ -74,9 +78,13 @@ class ClientResource extends LocalizedResource
     {
         return [
             ClientSessionsRelationManager::class,
+            ClientVitalsRelationManager::class,
+            ClientAnthropometryRelationManager::class,
             ClientBookingsRelationManager::class,
             ClientSurveysRelationManager::class,
             ClientAttachmentsRelationManager::class,
+            ClientGeneralFilesRelationManager::class,
+            ClientSessionPhotosRelationManager::class,
             ClientAudioRecordingsRelationManager::class,
             ClientClinicalAiRelationManager::class,
             ClientNotesRelationManager::class,
@@ -129,6 +137,7 @@ class ClientResource extends LocalizedResource
             ->with('activeBlacklistRestriction')
             ->with('referralPartnerProfile')
             ->with('referralRelationship.referrer')
+            ->with('avatarProfile.attachment')
             ->withCount('channelIdentities');
     }
 

@@ -10,6 +10,7 @@ use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
 use App\Modules\Organizations\Domain\Enums\OrganizationSettingKey;
 use App\Modules\Organizations\Domain\Enums\OrganizationSettingType;
 use App\Modules\Organizations\Domain\Models\OrganizationSetting;
+use App\Modules\Sessions\Application\MedicalMeasurementCalculator;
 use App\Modules\Organizations\Domain\ValueObjects\IanaTimezone;
 use App\Modules\Security\Application\RecordAuditEvent;
 use Illuminate\Support\Facades\DB;
@@ -188,6 +189,39 @@ class SetOrganizationSetting
             $hardCap = (int) config('medical.audio_attachment_max_bytes', 67_108_864);
             if (! is_int($value) || $value < 1 || $value > $hardCap) {
                 throw new InvalidArgumentException('The medical audio size policy exceeds the server safety limit.');
+            }
+        }
+
+        if ($key === OrganizationSettingKey::MedicalGeneralFileBusinessMaxBytes) {
+            $hardCap = (int) config('medical.attachment_max_bytes', 20_971_520);
+            if (! is_int($value) || $value < 1 || $value > $hardCap) {
+                throw new InvalidArgumentException('The medical file size policy exceeds the server safety limit.');
+            }
+        }
+
+        if ($key === OrganizationSettingKey::MedicalVitalsThresholds) {
+            $decoded = is_string($value) ? json_decode($value, true) : null;
+            $allowed = MedicalMeasurementCalculator::VITAL_KEYS;
+            if (! is_array($decoded) || array_diff(array_keys($decoded), $allowed) !== []) {
+                throw new InvalidArgumentException('The medical vitals threshold policy is invalid.');
+            }
+            foreach ($decoded as $keyName => $threshold) {
+                if (! is_array($threshold)
+                    || ! is_string($threshold['label'] ?? null)
+                    || trim($threshold['label']) === ''
+                    || ! is_string($threshold['unit'] ?? null)) {
+                    throw new InvalidArgumentException('The medical vitals threshold policy is invalid.');
+                }
+                foreach (['red_low', 'red_high', 'attention_low', 'attention_high'] as $bound) {
+                    if (($threshold[$bound] ?? null) !== null && ! is_int($threshold[$bound]) && ! is_float($threshold[$bound])) {
+                        throw new InvalidArgumentException('The medical vitals threshold policy is invalid.');
+                    }
+                }
+                foreach (['red_low_inclusive', 'red_high_inclusive'] as $flag) {
+                    if (array_key_exists($flag, $threshold) && ! is_bool($threshold[$flag])) {
+                        throw new InvalidArgumentException('The medical vitals threshold policy is invalid.');
+                    }
+                }
             }
         }
 
