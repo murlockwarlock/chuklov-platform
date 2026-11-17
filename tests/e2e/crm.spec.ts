@@ -3809,6 +3809,14 @@ test('staff can create, view, and edit a client session from the CRM client flow
         expect(positions).toEqual([...positions].sort((left, right) => left - right));
         await expect(page.getByLabel('Гипотеза первопричины', { exact: true })).toHaveCount(0);
         await expect(page.getByLabel('Шкала интенсивности боли (ВАШ):', { exact: true })).toHaveCount(0);
+        for (const label of [
+            'Субъективные ощущения клиента после сеанса',
+            'Визуальные изменения в осанке после сеанса',
+            'Результат после сеанса',
+            'Заметки терапевта',
+        ]) {
+            await expect(page.getByLabel(label, { exact: true })).toHaveCount(1);
+        }
     };
     await assertSessionBlockOrder();
 

@@ -699,15 +699,16 @@ class EditMedicalSession extends LocalizedEditRecord
                     ])->collapsible()->columnSpanFull(),
                 Section::make(__('5. Субъективные ощущения клиента после сеанса'))
                     ->schema([
-                        Textarea::make('subjective_feelings')->hiddenLabel()->rows(4)->placeholder(__('Что клиент почувствовал после сеанса'))->live(onBlur: true),
+                        Textarea::make('subjective_feelings')->label(__('Субъективные ощущения клиента после сеанса'))->hiddenLabel()->rows(4)->placeholder(__('Что клиент почувствовал после сеанса'))->live(onBlur: true),
                     ])->collapsible()->columnSpanFull(),
                 Section::make(__('6. Визуальные изменения в осанке после сеанса'))
                     ->schema([
-                        Textarea::make('visual_posture_diagnostics')->hiddenLabel()->rows(4)->placeholder(__('Изменения линии плеч, таза и позвоночника'))->live(onBlur: true),
+                        Textarea::make('visual_posture_diagnostics')->label(__('Визуальные изменения в осанке после сеанса'))->hiddenLabel()->rows(4)->placeholder(__('Изменения линии плеч, таза и позвоночника'))->live(onBlur: true),
                     ])->collapsible()->columnSpanFull(),
                 Section::make(__('7. Результат после сеанса'))
                     ->schema([
                         Textarea::make('result')
+                            ->label(__('Результат после сеанса'))
                             ->hiddenLabel()
                             ->rows(4)
                             ->placeholder(__('Итог, который специалист вводит вручную'))
@@ -720,7 +721,7 @@ class EditMedicalSession extends LocalizedEditRecord
                     ])->collapsible()->columnSpanFull(),
                 Section::make(__('8. Заметки терапевта'))
                     ->schema([
-                        Textarea::make('therapist_notes')->hiddenLabel()->rows(4)->placeholder(__('Внутренние заметки специалиста. Клиент их не увидит.'))->live(onBlur: true),
+                        Textarea::make('therapist_notes')->label(__('Заметки терапевта'))->hiddenLabel()->rows(4)->placeholder(__('Внутренние заметки специалиста. Клиент их не увидит.'))->live(onBlur: true),
                     ])->collapsible()->columnSpanFull(),
                 Section::make(__('9. Эффективность проведённого сеанса'))
                     ->schema([
