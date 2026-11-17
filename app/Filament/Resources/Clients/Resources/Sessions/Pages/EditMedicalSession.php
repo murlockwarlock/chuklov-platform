@@ -286,13 +286,13 @@ class EditMedicalSession extends LocalizedEditRecord
             ->schema([
                 Hidden::make('run_id')->dehydrated(),
                 Hidden::make('expected_snapshot')->dehydrated(),
-                Placeholder::make('ai_version')
+                TextInput::make('ai_version')
                     ->label(__('Версия AI'))
-                    ->content(fn (Get $get): string => (string) $get('ai_version'))
+                    ->disabled()
                     ->dehydrated(false),
-                Placeholder::make('specialist_version')
+                TextInput::make('specialist_version')
                     ->label(__('Версия специалиста'))
-                    ->content(fn (Get $get): string => (string) $get('specialist_version'))
+                    ->disabled()
                     ->dehydrated(false),
                 Textarea::make('edited_output')
                     ->label(__('Черновик для проверки и исправления'))
