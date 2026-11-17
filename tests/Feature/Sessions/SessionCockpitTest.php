@@ -1198,6 +1198,7 @@ final class SessionCockpitTest extends TestCase
             ->test(EditMedicalSession::class, ['parentRecord' => $client, 'record' => $session->getKey()])
             ->call('mountAction', 'openClinicalSessionAiDraft', [], ['schemaComponent' => 'form'])
             ->call('refreshClinicalSessionAiPanel')
+            ->assertDontSee('wire:poll.5s', false)
             ->assertActionMounted([
                 'name' => 'openClinicalSessionAiDraft',
                 'context' => ['schemaComponent' => 'form'],

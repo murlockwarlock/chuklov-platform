@@ -850,7 +850,9 @@ class EditMedicalSession extends LocalizedEditRecord
                             ->content(fn (): string => $this->sessionAiHistory())
                             ->columnSpanFull(),
                     ])
-                    ->extraAttributes(['wire:poll.5s' => 'refreshClinicalSessionAiPanel'])
+                    ->extraAttributes(fn (): array => $this->getMountedAction() === null
+                        ? ['wire:poll.5s' => 'refreshClinicalSessionAiPanel']
+                        : [])
                     ->columnSpanFull(),
                 Section::make(__('Маркер безопасности'))
                     ->schema([
