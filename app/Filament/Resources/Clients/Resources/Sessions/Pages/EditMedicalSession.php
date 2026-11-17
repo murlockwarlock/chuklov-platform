@@ -784,6 +784,10 @@ class EditMedicalSession extends LocalizedEditRecord
             $this->save(false, false);
             Notification::make()->success()->title(__('Изменения сохранены'))->send();
         } catch (ValidationException $exception) {
+            if ($this->retryAutosaveAfterSnapshotConflict($exception)) {
+                return;
+            }
+
             Notification::make()->danger()->title(__('Изменения не сохранены'))->body((string) collect($exception->errors())->flatten()->first())->send();
         } catch (Throwable $exception) {
             $mapped = $this->unexpectedAutosaveFailure($exception, $this->data, [
@@ -795,6 +799,42 @@ class EditMedicalSession extends LocalizedEditRecord
         } finally {
             $this->autosaveInProgress = false;
         }
+    }
+
+    private function retryAutosaveAfterSnapshotConflict(ValidationException $exception): bool
+    {
+        $message = (string) collect($exception->errors()['session'] ?? [])->first();
+        if (! str_contains($message, 'Медицинский сеанс изменился в другой вкладке.')) {
+            return false;
+        }
+
+        $fresh = MedicalSession::query()
+            ->where('organization_id', $this->session()->organization_id)
+            ->whereKey($this->session()->getKey())
+            ->first();
+        if ($fresh === null) {
+            return false;
+        }
+
+        $this->record = $fresh;
+        $this->form->model($fresh);
+        $this->data['expected_snapshot'] = app(MedicalSessionSnapshotHasher::class)->forSession($fresh);
+
+        try {
+            $this->save(false, false);
+            Notification::make()->success()->title(__('Изменения сохранены'))->send();
+        } catch (ValidationException $retryException) {
+            Notification::make()->danger()->title(__('Изменения не сохранены'))->body((string) collect($retryException->errors())->flatten()->first())->send();
+        } catch (Throwable $retryException) {
+            $mapped = $this->unexpectedAutosaveFailure($retryException, $this->data, [
+                'organization_id' => app(OrganizationContext::class)->id(),
+                'actor_user_id' => $this->actor()->getKey(),
+                'entity_id' => (int) $this->session()->getKey(),
+            ]);
+            Notification::make()->danger()->title(__('Изменения не сохранены'))->body((string) collect($mapped->errors())->flatten()->first())->send();
+        }
+
+        return true;
     }
 
     private function uploadPhotoFormAction(MedicalSessionAttachmentGallery $gallery): Action
