@@ -1178,7 +1178,7 @@ final class SessionCockpitTest extends TestCase
             ->assertFormFieldExists('sources');
     }
 
-    public function test_filament_session_ai_poll_preserves_a_mounted_review_action(): void
+    public function test_filament_session_ai_review_action_has_no_background_polling(): void
     {
         [$organization, $admin, $client, $specialist] = $this->fixture();
         $this->resolveFilamentContext($admin, $organization);
@@ -1197,7 +1197,6 @@ final class SessionCockpitTest extends TestCase
         Livewire::actingAs($admin)
             ->test(EditMedicalSession::class, ['parentRecord' => $client, 'record' => $session->getKey()])
             ->call('mountAction', 'openClinicalSessionAiDraft', [], ['schemaComponent' => 'form'])
-            ->call('refreshClinicalSessionAiPanel')
             ->assertDontSee('wire:poll.5s', false)
             ->assertActionMounted([
                 'name' => 'openClinicalSessionAiDraft',
