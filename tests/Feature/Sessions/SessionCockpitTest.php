@@ -847,6 +847,8 @@ final class SessionCockpitTest extends TestCase
                     'key' => 'otto',
                     'label' => 'Отто',
                     'unit_options' => ['cm'],
+                    'phase_options' => ['flexion', 'extension'],
+                    'fixed_movement_phase' => 'flexion',
                 ]],
                 'measurement_units' => ['cm'],
                 'rules' => ['index_violation' => [1, 2, 3], 'classification_enabled' => false],
@@ -884,6 +886,7 @@ final class SessionCockpitTest extends TestCase
         $structured['before']['rows'][0]['unit'] = 'cm';
         $structured['after']['rows'][0]['measurement'] = 13;
         $structured['after']['rows'][0]['unit'] = 'cm';
+        unset($structured['before']['rows'][0]['movement_phase'], $structured['after']['rows'][0]['movement_phase']);
 
         $component
             ->callFormComponentAction('test_results', 'editMedicalTest', [
@@ -900,6 +903,8 @@ final class SessionCockpitTest extends TestCase
         self::assertIsArray($updated);
         self::assertEquals(12, $updated['structured']['before']['rows'][0]['measurement'] ?? null);
         self::assertEquals(13, $updated['structured']['after']['rows'][0]['measurement'] ?? null);
+        self::assertSame('flexion', $updated['structured']['before']['rows'][0]['movement_phase'] ?? null);
+        self::assertSame('flexion', $updated['structured']['after']['rows'][0]['movement_phase'] ?? null);
         self::assertTrue((bool) ($updated['priority'] ?? false));
         self::assertSame(['otto'], $updated['priority_regions'] ?? null);
 
