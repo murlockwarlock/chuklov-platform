@@ -91,7 +91,7 @@ final class MedicalStage1CRegressionTest extends TestCase
 
         self::assertInstanceOf(MedicalAnthropometricMeasurement::class, $measurement);
         self::assertStringNotContainsString('180', $measurement->payload);
-        self::assertSame(25.0, app(MedicalAnthropometryReader::class)->values($measurement->fresh())['bmi']);
+        self::assertSame(25.0, (float) app(MedicalAnthropometryReader::class)->values($measurement->fresh())['bmi']);
         self::assertSame(1, MedicalAnthropometricMeasurement::query()->where('client_id', $client->getKey())->count());
 
         $calculator = app(MedicalMeasurementCalculator::class);
