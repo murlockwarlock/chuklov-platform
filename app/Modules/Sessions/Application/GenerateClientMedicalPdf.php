@@ -8,6 +8,7 @@ use App\Modules\MedicalProfiles\Application\GetMedicalProfile;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
+use App\Modules\Sessions\Domain\Enums\MedicalSessionStatus;
 use Dompdf\Dompdf;
 use Dompdf\Options;
 
@@ -42,7 +43,7 @@ final readonly class GenerateClientMedicalPdf
                 'date' => $data->occurredAt?->setTimezone($organization->defaultTimezone())->format('d.m.Y H:i')
                     ?? __('Дата не указана'),
                 'specialist' => trim((string) $session->specialist?->display_name) ?: __('Не указан'),
-                'status' => $data->status,
+                'status' => MedicalSessionStatus::tryFrom($data->status)?->label() ?? __('Неизвестный статус'),
                 'result' => $this->cleanText($data->result),
                 'tests' => array_map(static fn ($test): array => [
                     'name' => $test->testName,

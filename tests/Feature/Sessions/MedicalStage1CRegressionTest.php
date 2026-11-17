@@ -255,6 +255,9 @@ final class MedicalStage1CRegressionTest extends TestCase
             ->implode("\n");
 
         self::assertStringContainsString('РЕЗУЛЬТАТ_В_АНКЕТЕ', $text);
+        self::assertStringContainsString('Статус: Черновик', $text);
+        self::assertStringNotContainsString('Статус: draft', $text);
+        self::assertStringNotContainsString('Статус: completed', $text);
         self::assertStringContainsString('PD', $text);
         self::assertStringContainsString('MAP', $text);
         self::assertStringContainsString('120', $text);
