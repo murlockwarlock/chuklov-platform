@@ -69,6 +69,10 @@ final class ClinicalTestProtocol
                 if (is_array($current) && filled($previous['previous_after'] ?? null)) {
                     $current['previous_after'] = (string) $previous['previous_after'];
                     $current['review_again'] = true;
+                    $current['priority'] = (bool) ($current['priority'] ?? false) || (bool) ($previous['priority'] ?? false);
+                    if (($current['priority_regions'] ?? []) === [] && is_array($previous['priority_regions'] ?? null)) {
+                        $current['priority_regions'] = array_values($previous['priority_regions']);
+                    }
                     $currentById->put($testId, $current);
                 }
 
@@ -78,6 +82,8 @@ final class ClinicalTestProtocol
                 'test_id' => $testId,
                 'previous_after' => $previous['previous_after'] ?? null,
                 'review_again' => true,
+                'priority' => (bool) ($previous['priority'] ?? false),
+                'priority_regions' => is_array($previous['priority_regions'] ?? null) ? array_values($previous['priority_regions']) : [],
             ]);
         }
         $results = $currentById->values()->all();
@@ -124,6 +130,8 @@ final class ClinicalTestProtocol
                     'review_again' => (bool) ($structured['review_again'] ?? false),
                     'previous_after' => $result['previous_after'] ?? null,
                     'cause_ids' => is_array($result['cause_ids'] ?? null) ? array_values($result['cause_ids']) : [],
+                'priority' => (bool) ($result['priority'] ?? false),
+                'priority_regions' => is_array($result['priority_regions'] ?? null) ? array_values($result['priority_regions']) : [],
                 ];
             })
             ->values()
@@ -238,7 +246,7 @@ final class ClinicalTestProtocol
                     ? $catalog->sessionCounters(app(OrganizationContext::class)->id(), $results)
                     : [...$catalog->abnormalCounts(app(OrganizationContext::class)->id(), $results), 'resolved' => 0, 'new' => 0, 'unique_causes' => 0];
 
-                return __('До: :before · После: :after · Устранено: :resolved · Новых: :new · Причин: :unique_causes', $counts);
+                return __('До: :before · После: :after · Устранено: :resolved · Новых: :new · Причин: :unique_causes · Стабилизировано: :stabilized · Сложных случаев: :complex', $counts);
             })
             ->live()
             ->columnSpanFull();
@@ -273,8 +281,16 @@ final class ClinicalTestProtocol
     private static function typedSchema(MedicalTestDefinition $test): array
     {
         return [
+            Hidden::make('test_id')->dehydrated(),
             Hidden::make('review_again')->dehydrated(),
             Hidden::make('previous_after')->dehydrated(),
+            Toggle::make('priority')->label(__('Перепроверить в следующем сеансе'))->helperText(__('Тест поднимется выше в следующем сеансе.')),
+            Select::make('priority_regions')
+                ->label(__('Приоритетные регионы'))
+                ->options(fn (Get $get): array => self::priorityRegionOptions((int) $get('test_id')))
+                ->multiple()
+                ->searchable()
+                ->helperText(__('Можно отметить конкретные стороны или регионы для повторной проверки.')),
             Placeholder::make('test_type_hint')
                 ->label(__('Тип ввода'))
                 ->content(fn (): string => self::typeLabel($test->type()))
@@ -290,6 +306,14 @@ final class ClinicalTestProtocol
                 ->content(fn (Get $get): string => self::previousAfterLabel($get('previous_after')))
                 ->extraAttributes(['class' => 'text-gray-500'])
                 ->visible(fn (Get $get): bool => filled($get('previous_after')))
+                ->columnSpanFull(),
+            Section::make(__('Общий индекс теста'))
+                ->schema([
+                    ToggleButtons::make('structured.general_index.before')->label(__('До сеанса'))->options([0 => '0', 1 => '1', 2 => '2', 3 => '3'])->inline(),
+                    ToggleButtons::make('structured.general_index.after')->label(__('После сеанса'))->options([0 => '0', 1 => '1', 2 => '2', 3 => '3'])->inline(),
+                ])
+                ->columns(2)
+                ->visible(fn (): bool => $test->type() !== MedicalTestType::T2)
                 ->columnSpanFull(),
             self::phaseGroup('before', __('До сеанса'), $test),
             self::phaseGroup('after', __('После сеанса'), $test),
@@ -317,6 +341,8 @@ final class ClinicalTestProtocol
     {
         return [
             Hidden::make('test_id')->dehydrated(false),
+            Toggle::make('priority')->label(__('Перепроверить в следующем сеансе'))->helperText(__('Тест поднимется выше в следующем сеансе.')),
+            TextInput::make('priority_regions')->label(__('Приоритетные регионы'))->helperText(__('Укажите стороны или регионы через запятую.')),
             Select::make('before_value_id')
                 ->label(__('До сеанса'))
                 ->options(fn (Get $get): array => app(MedicalClinicalCatalog::class)->valueOptionsForSelection(app(OrganizationContext::class)->id(), (int) $get('test_id'), [$get('before_value_id')]))
@@ -384,11 +410,12 @@ final class ClinicalTestProtocol
                 ->searchable()
                 ->live()
                 ->visible(fn (Get $get): bool => (int) ($get('index') ?? 0) > 0);
-            $schema[] = Select::make('primary_cause_id')
-                ->label(__('Основная причина'))
+            $schema[] = Select::make('primary_cause_ids')
+                ->label(__('Главные причины'))
                 ->options(fn (Get $get): array => self::allowedCauseOptions($get))
+                ->multiple()
                 ->searchable()
-                ->nullable()
+                ->helperText(__('До шести причин на регион.'))
                 ->visible(fn (Get $get): bool => (int) ($get('index') ?? 0) > 0 && (array) $get('cause_ids') !== []);
         }
 
@@ -484,11 +511,12 @@ final class ClinicalTestProtocol
                     ->searchable()
                     ->live()
                     ->visible(fn (Get $get): bool => $get('type') === MedicalTestType::T2->value && (bool) ($get('index_enabled') ?? true) && (int) ($get('index') ?? 0) > 0),
-                Select::make('primary_cause_id')
-                    ->label(__('Основная причина'))
+                Select::make('primary_cause_ids')
+                    ->label(__('Главные причины'))
                     ->options(fn (Get $get): array => self::allowedCauseOptions($get))
+                    ->multiple()
                     ->searchable()
-                    ->nullable()
+                    ->helperText(__('До шести причин на регион.'))
                     ->visible(fn (Get $get): bool => $get('type') === MedicalTestType::T2->value && (bool) ($get('index_enabled') ?? true) && (int) ($get('index') ?? 0) > 0 && (array) $get('cause_ids') !== []),
                 TextInput::make('energy')->label(__('Энергетический потенциал'))->numeric()->minValue(0)->maxValue(1000)->visible(fn (Get $get): bool => (bool) $get('enabled') && (bool) $get('energy_enabled')),
                 ToggleButtons::make('tor_direction')->label(__('Тор-поле'))->options(['R' => __('Вправо'), 'L' => __('Влево')])->inline()->visible(fn (Get $get): bool => (bool) $get('enabled') && (bool) $get('tor_enabled')),
@@ -716,7 +744,9 @@ final class ClinicalTestProtocol
                     return;
                 }
                 $state[$itemKey]['cause_ids'] = is_array($previous['cause_ids'] ?? null) ? array_values($previous['cause_ids']) : [];
-                $state[$itemKey]['primary_cause_id'] = $previous['primary_cause_id'] ?? null;
+                $state[$itemKey]['primary_cause_ids'] = is_array($previous['primary_cause_ids'] ?? null)
+                    ? array_values($previous['primary_cause_ids'])
+                    : (($previous['primary_cause_id'] ?? null) === null ? [] : [(int) $previous['primary_cause_id']]);
                 $component->state($state);
             });
     }
@@ -729,6 +759,8 @@ final class ClinicalTestProtocol
             Hidden::make('label')->dehydrated(),
             Hidden::make('dedupe_key')->dehydrated(),
             Hidden::make('side')->dehydrated(),
+            Hidden::make('linked_segment')->dehydrated(),
+            Hidden::make('method')->dehydrated(),
             Hidden::make('input_mode')->dehydrated(),
             Hidden::make('index_enabled')->dehydrated(),
             Hidden::make('allowed_cause_ids')->dehydrated(),
@@ -737,7 +769,11 @@ final class ClinicalTestProtocol
             Hidden::make('finding_options')->dehydrated(),
             Hidden::make('answer_options')->dehydrated(),
             Hidden::make('angle_enabled')->dehydrated(),
+            Hidden::make('unit_options')->dehydrated(),
+            Hidden::make('phase_options')->dehydrated(),
+            Hidden::make('fixed_movement_phase')->dehydrated(),
             Placeholder::make('label_display')->hiddenLabel()->content(fn (Get $get): string => (string) $get('label'))->columnSpanFull(),
+            Placeholder::make('linked_segment_display')->hiddenLabel()->content(fn (Get $get): string => filled($get('linked_segment')) ? __('Связанный сегмент: :segment', ['segment' => $get('linked_segment')]) : '')->visible(fn (Get $get): bool => filled($get('linked_segment')))->columnSpanFull(),
             ToggleButtons::make('index')->label(__('Индекс'))->options([0 => '0', 1 => '1', 2 => '2', 3 => '3'])->inline()->live()->afterStateUpdated(static function (Set $set, mixed $state): void {
                 if ((int) $state === 0) {
                     self::clearCauses($set);
@@ -767,10 +803,15 @@ final class ClinicalTestProtocol
                 ->visible(fn (Get $get): bool => $get('input_mode') === 'visual')
                 ->live(),
             TextInput::make('angle')->label(__('Угол, °'))->numeric()->minValue(0)->maxValue(180)->visible(fn (Get $get): bool => $get('input_mode') === 'mobility' && (bool) ($get('angle_enabled') ?? true)),
+            TextInput::make('measurement')->label(__('Замер'))->numeric()->visible(fn (Get $get): bool => $get('input_mode') === 'measurement'),
+            Select::make('unit')->label(__('Единица'))->options(fn (Get $get): array => self::simpleOptions($get('unit_options')))->nullable()->visible(fn (Get $get): bool => $get('input_mode') === 'measurement'),
+            Select::make('movement_phase')->label(__('Фаза движения'))->options(fn (Get $get): array => self::simpleOptions($get('phase_options')))->nullable()->visible(fn (Get $get): bool => $get('input_mode') === 'measurement' && ! filled($get('fixed_movement_phase'))),
+            TextInput::make('degrees')->label(__('Градусы'))->numeric()->visible(fn (Get $get): bool => $get('input_mode') === 'measurement'),
+            Textarea::make('additional_answers')->label(__('Дополнительные ответы'))->rows(2)->maxLength(2000)->visible(fn (Get $get): bool => $get('input_mode') === 'measurement'),
             TextInput::make('pain_point')->label(__('Болевая точка'))->maxLength(255)->visible(fn (Get $get): bool => $get('input_mode') === 'pain_point'),
             Select::make('violation_type')->label(__('Тип нарушения'))->options(['механическое' => __('Механическое'), 'информационное' => __('Информационное')])->visible(fn (Get $get): bool => $get('input_mode') === 'violation_type'),
             Select::make('cause_ids')->label(__('Причины'))->options(fn (Get $get): array => self::allowedCauseOptions($get))->multiple()->searchable()->visible(fn (Get $get): bool => self::rowNeedsCauses($get))->live(),
-            Select::make('primary_cause_id')->label(__('Основная причина'))->options(fn (Get $get): array => self::allowedCauseOptions($get))->searchable()->nullable()->visible(fn (Get $get): bool => self::rowNeedsCauses($get) && is_array($get('cause_ids')) && $get('cause_ids') !== []),
+            Select::make('primary_cause_ids')->label(__('Главные причины'))->options(fn (Get $get): array => self::allowedCauseOptions($get))->multiple()->searchable()->helperText(__('До шести причин на регион.'))->visible(fn (Get $get): bool => self::rowNeedsCauses($get) && is_array($get('cause_ids')) && $get('cause_ids') !== []),
         ];
     }
 
@@ -789,6 +830,7 @@ final class ClinicalTestProtocol
     {
         $set('cause_ids', []);
         $set('primary_cause_id', null);
+        $set('primary_cause_ids', []);
     }
 
     /** @return array<string, mixed> */
@@ -856,8 +898,10 @@ final class ClinicalTestProtocol
         return [
             'before' => self::blankPhase($configuration, $type),
             'after' => self::blankPhase($configuration, $type),
+            'general_index' => ['before' => null, 'after' => null],
             'cause_ids' => [],
             'primary_cause_id' => null,
+            'primary_cause_ids' => [],
             'correction_point' => null,
             'violation_type' => null,
             'review_again' => false,
@@ -902,6 +946,7 @@ final class ClinicalTestProtocol
                 'allowed_cause_ids' => is_array($subtest['cause_ids'] ?? null) ? array_values($subtest['cause_ids']) : [],
                 'cause_ids' => [],
                 'primary_cause_id' => null,
+                'primary_cause_ids' => [],
                 'rows' => $subtestRows,
                 'provoking_points' => $provokingPoints,
                 'feelings' => array_map(
@@ -963,6 +1008,7 @@ final class ClinicalTestProtocol
             MedicalTestType::T9 => 'mobility',
             MedicalTestType::T10 => 'visual',
             MedicalTestType::T12 => 'energy_chakra',
+            MedicalTestType::T13 => 'measurement',
             default => 'index',
         };
         if (is_string($row['input_mode'] ?? null) && trim($row['input_mode']) !== '') {
@@ -973,6 +1019,8 @@ final class ClinicalTestProtocol
             'key' => (string) ($row['key'] ?? ''),
             'label' => (string) ($row['label'] ?? ''),
             'side' => $row['side'] ?? null,
+            'linked_segment' => $row['linked_segment'] ?? null,
+            'method' => $row['method'] ?? null,
             'dedupe_key' => $row['dedupe_key'] ?? null,
             'index_enabled' => (bool) ($row['index_enabled'] ?? ! in_array($type, [MedicalTestType::T4, MedicalTestType::T5, MedicalTestType::T11, MedicalTestType::T12], true)),
             'input_mode' => $inputMode,
@@ -985,6 +1033,12 @@ final class ClinicalTestProtocol
             'answer_options' => is_array($row['answer_options'] ?? ($configuration['answer_options'] ?? null))
                 ? array_values($row['answer_options'] ?? $configuration['answer_options'])
                 : [],
+            'unit_options' => is_array($row['unit_options'] ?? ($configuration['measurement_units'] ?? null))
+                ? array_values($row['unit_options'] ?? $configuration['measurement_units'])
+                : [],
+            'phase_options' => is_array($row['phase_options'] ?? ($configuration['movement_phases'] ?? null))
+                ? array_values($row['phase_options'] ?? $configuration['movement_phases'])
+                : [],
             'allowed_cause_ids' => is_array($row['cause_ids'] ?? null) ? array_values($row['cause_ids']) : [],
             'deviation_options' => is_array($row['deviation_options'] ?? null) ? array_values($row['deviation_options']) : [],
             'angle_enabled' => (bool) ($row['angle_enabled'] ?? true),
@@ -996,6 +1050,13 @@ final class ClinicalTestProtocol
             'deviation' => null,
             'angle' => null,
             'pain_point' => null,
+            'measurement' => null,
+            'measurement_value' => null,
+            'degrees' => null,
+            'movement_phase' => $row['fixed_movement_phase'] ?? null,
+            'fixed_movement_phase' => $row['fixed_movement_phase'] ?? null,
+            'unit' => null,
+            'additional_answers' => null,
             'violation_type' => null,
             'cause_ids' => [],
             'primary_cause_id' => null,
@@ -1036,6 +1097,10 @@ final class ClinicalTestProtocol
                 $phases[] = __($label.' заполнено');
             }
         }
+        if (is_array($structured['general_index'] ?? null)
+            && collect($structured['general_index'])->contains(static fn (mixed $value): bool => $value !== null && $value !== '')) {
+            $phases[] = __('Общий индекс заполнен');
+        }
 
         return $phases === [] ? __('Не заполнено') : implode(' · ', $phases);
     }
@@ -1046,7 +1111,7 @@ final class ClinicalTestProtocol
             return false;
         }
 
-        foreach (['index', 'tone', 'finding', 'answer', 'deviation', 'angle', 'pain_point', 'energy', 'tor_direction', 'method', 'movement', 'pain_intensity', 'tl_reduction_percent'] as $field) {
+        foreach (['index', 'tone', 'finding', 'answer', 'deviation', 'angle', 'pain_point', 'measurement', 'measurement_value', 'degrees', 'unit', 'movement_phase', 'additional_answers', 'energy', 'tor_direction', 'method', 'movement', 'pain_intensity', 'tl_reduction_percent'] as $field) {
             if (array_key_exists($field, $value) && $value[$field] !== null && $value[$field] !== '') {
                 return true;
             }
@@ -1227,6 +1292,41 @@ final class ClinicalTestProtocol
         return $result;
     }
 
+    /** @return array<string, string> */
+    private static function priorityRegionOptions(int $testId): array
+    {
+        $test = self::definition($testId);
+        if (! $test instanceof MedicalTestDefinition) {
+            return [];
+        }
+        $configuration = self::sessionConfiguration($test);
+        $options = [];
+        $addRows = static function (mixed $rows, string $prefix = '') use (&$options): void {
+            if (! is_array($rows)) {
+                return;
+            }
+            foreach ($rows as $row) {
+                if (! is_array($row) || ! filled($row['key'] ?? null)) {
+                    continue;
+                }
+                $key = trim((string) $row['key']);
+                $label = trim((string) ($row['label'] ?? $key));
+                $options[$prefix.$key] = $label;
+            }
+        };
+        $addRows($configuration['rows'] ?? null);
+        foreach (is_array($configuration['subtests'] ?? null) ? $configuration['subtests'] : [] as $subtest) {
+            if (! is_array($subtest)) {
+                continue;
+            }
+            $prefix = trim((string) ($subtest['key'] ?? '')).':';
+            $addRows($subtest['rows'] ?? null, $prefix);
+            $addRows($subtest['provoking_points'] ?? null, $prefix);
+        }
+
+        return $options;
+    }
+
     /** @return array<int, string> */
     private static function allowedCauseOptions(Get $get): array
     {
@@ -1279,6 +1379,7 @@ final class ClinicalTestProtocol
             MedicalTestType::T10 => __('Визуальная карта'),
             MedicalTestType::T11 => __('Список находок'),
             MedicalTestType::T12 => __('Энергетические структуры'),
+            MedicalTestType::T13 => __('Замеры и ортопедические пробы'),
             null => __('Исторический формат'),
         };
     }

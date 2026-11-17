@@ -13,6 +13,7 @@ final readonly class MedicalClinicalEvaluation
      * @param  list<string>  $afterViolationKeys
      * @param  list<int>  $causeIds
      * @param  list<string>  $warnings
+     * @param  list<string>  $linkedSegments
      */
     public function __construct(
         public int $beforeCount = 0,
@@ -22,6 +23,7 @@ final readonly class MedicalClinicalEvaluation
         public array $causeIds = [],
         public array $warnings = [],
         public bool $failClosed = false,
+        public array $linkedSegments = [],
     ) {
         $before = array_fill_keys($this->beforeViolationKeys, true);
         $after = array_fill_keys($this->afterViolationKeys, true);

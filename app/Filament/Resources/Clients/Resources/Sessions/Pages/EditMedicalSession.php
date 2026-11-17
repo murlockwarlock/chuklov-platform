@@ -615,6 +615,12 @@ class EditMedicalSession extends LocalizedEditRecord
                             ->schema([
                                 Select::make('cause_id')->label(__('Причина из сеанса'))->options(fn (Get $get): array => $this->rootCauseOptions($get))->searchable()->nullable()->live(),
                                 Toggle::make('is_primary')->label(__('Главная причина'))->default(false)->live(),
+                                Select::make('status')
+                                    ->label(__('Статус по клиенту'))
+                                    ->options(['новая' => __('Новая'), 'в работе' => __('В работе'), 'устранена' => __('Устранена')])
+                                    ->default('новая')
+                                    ->required(),
+                                TextInput::make('region')->label(__('Регион'))->maxLength(255),
                                 Select::make('influences')
                                     ->label(__('На это влияет'))
                                     ->options(fn (Get $get): array => $this->rootCauseOptions($get))
@@ -874,12 +880,16 @@ class EditMedicalSession extends LocalizedEditRecord
                 'cause_ids' => array_map(static fn (array $cause): int => $cause['id'], $test->causes),
                 'structured' => $test->structuredPayload,
                 'review_again' => $test->reviewAgain,
+                'priority' => $test->priority,
+                'priority_regions' => $test->priorityRegions,
             ], $decrypted->testResults), app(MedicalSessionTestHistoryReader::class)->previousForClient($parent, $record->occurred_at, (int) $record->getKey())),
             'root_causes' => array_map(static fn ($cause): array => [
                 'cause_id' => $cause->causeId,
                 'free_text' => $cause->freeText,
                 'is_primary' => $cause->isPrimary,
                 'influences' => $cause->influences,
+                'status' => $cause->status,
+                'region' => $cause->region,
             ], $decrypted->rootCauses),
             'cause_ids' => array_map(static fn (array $cause): int => $cause['id'], $decrypted->causes),
             'causes_manual_override' => $decrypted->causesManualOverride,

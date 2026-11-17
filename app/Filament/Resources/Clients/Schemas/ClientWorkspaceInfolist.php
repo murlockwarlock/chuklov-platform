@@ -28,6 +28,7 @@ use App\Modules\MedicalProfiles\Application\GetMedicalProfile;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Referrals\Domain\Models\ReferralCampaignLink;
 use App\Modules\Sessions\Application\ListClientSessionRecommendations;
+use App\Modules\Sessions\Application\MedicalClientRootCauseReader;
 use App\Modules\Sessions\Application\MedicalSafetyMarkerReader;
 use App\Modules\Tracker\Application\ResolveTrackerAccess;
 use App\Modules\Tracker\Domain\Models\TrackerCheckIn;
@@ -609,6 +610,27 @@ final class ClientWorkspaceInfolist
                     ])
                     ->columns(1)
                     ->extraAttributes(['class' => 'h-fit']),
+                Section::make(__('Первопричины клиента'))
+                    ->description(__('Единый список, который переносится между сеансами'))
+                    ->schema([
+                        RepeatableEntry::make('client_root_causes')
+                            ->hiddenLabel()
+                            ->schema([
+                                TextEntry::make('cause_name')->label(__('Причина'))->placeholder(__('Свободное описание')),
+                                TextEntry::make('status')->label(__('Статус')),
+                                TextEntry::make('region')->label(__('Регион'))->placeholder(__('Не указан')),
+                                TextEntry::make('free_text')->label(__('Описание'))->placeholder(__('Нет описания'))->wrap()->columnSpanFull(),
+                            ])
+                            ->columns(3)
+                            ->state(function (Client $record): array {
+                                $actor = auth()->user();
+
+                                return $actor instanceof User ? app(MedicalClientRootCauseReader::class)->forClient($actor, $record) : [];
+                            })
+                            ->placeholder(__('Первопричины ещё не зафиксированы'))
+                            ->columnSpanFull(),
+                    ])
+                    ->columnSpanFull(),
             ]);
     }
 

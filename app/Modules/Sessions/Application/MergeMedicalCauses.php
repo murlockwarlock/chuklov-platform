@@ -59,6 +59,7 @@ final readonly class MergeMedicalCauses
             $this->reassignSessionCauses($organizationId, $sourceId, $targetId);
             $this->reassignTestCauses($organizationId, $sourceId, $targetId);
             $this->reassignRootCauses($organizationId, $sourceId, $targetId);
+            $this->reassignClientRootCauses($organizationId, $sourceId, $targetId);
             $this->reassignTestLinks($organizationId, $sourceId, $targetId);
             $this->rewriteEncryptedCauseReferences($organizationId, $sourceId, $targetId);
 
@@ -171,6 +172,37 @@ final readonly class MergeMedicalCauses
             ]);
     }
 
+    private function reassignClientRootCauses(int $organizationId, int $sourceId, int $targetId): void
+    {
+        $rows = DB::table('medical_client_root_causes')
+            ->where('organization_id', $organizationId)
+            ->where('medical_cause_definition_id', $sourceId)
+            ->lockForUpdate()
+            ->get(['id', 'client_id']);
+        foreach ($rows as $row) {
+            $target = DB::table('medical_client_root_causes')
+                ->where('organization_id', $organizationId)
+                ->where('client_id', $row->client_id)
+                ->where('medical_cause_definition_id', $targetId)
+                ->lockForUpdate()
+                ->first(['id']);
+            if ($target !== null) {
+                DB::table('medical_client_root_cause_history')
+                    ->where('organization_id', $organizationId)
+                    ->where('medical_client_root_cause_id', $row->id)
+                    ->update(['medical_client_root_cause_id' => $target->id]);
+                DB::table('medical_client_root_causes')->where('id', $row->id)->delete();
+
+                continue;
+            }
+            DB::table('medical_client_root_causes')->where('id', $row->id)->update([
+                'medical_cause_definition_id' => $targetId,
+                'identity_key' => 'cause:'.$targetId,
+                'updated_at' => now(),
+            ]);
+        }
+    }
+
     private function reassignTestLinks(int $organizationId, int $sourceId, int $targetId): void
     {
         $rows = DB::table('medical_test_cause_links')
@@ -255,6 +287,25 @@ final readonly class MergeMedicalCauses
                     'influences' => $this->encodeEncryptedJson($organizationId, $influences, $keyVersion),
                     'updated_at' => now(),
                 ]);
+        }
+
+        foreach (['medical_client_root_causes' => 'relations', 'medical_client_root_cause_history' => 'relations'] as $table => $column) {
+            $rows = DB::table($table)
+                ->where('organization_id', $organizationId)
+                ->whereNotNull($column)
+                ->lockForUpdate()
+                ->get(['id', $column, 'relations_key_version']);
+            foreach ($rows as $row) {
+                $keyVersion = (int) ($row->relations_key_version ?? 1);
+                $relations = $this->decodeEncryptedJson($organizationId, (string) $row->{$column}, $keyVersion);
+                if (! $this->replaceCauseReferences($relations, $sourceId, $targetId)) {
+                    continue;
+                }
+                DB::table($table)->where('organization_id', $organizationId)->where('id', $row->id)->update([
+                    $column => $this->encodeEncryptedJson($organizationId, $relations, $keyVersion),
+                    'updated_at' => now(),
+                ]);
+            }
         }
     }
 

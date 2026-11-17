@@ -16,4 +16,5 @@ enum MedicalTestType: string
     case T10 = 'T10';
     case T11 = 'T11';
     case T12 = 'T12';
+    case T13 = 'T13';
 }

@@ -61,6 +61,7 @@ final class MedicalStage1BCatalogPreset
                 'rules' => [
                     'allowed_sequences' => [['L', 'R', 'L', 'R'], ['R', 'L', 'R', 'L']],
                     'broken_transition_count' => true,
+                    'myozonal_max_regions' => 2,
                 ],
                 'source_cause_slots' => 0,
             ]),
@@ -84,18 +85,18 @@ final class MedicalStage1BCatalogPreset
             self::definition(15, 'Body diaphragms', MedicalTestType::T1, 'specialized', [
                 'subtests' => [
                     ['key' => '15.1', 'label' => 'Тазовая диафрагма', 'rows' => self::sideRows('Тазовая диафрагма', 'pelvic')],
-                    ['key' => '15.2', 'label' => 'ГБД и ноги', 'rows' => self::rows(['ГБД, L', 'ГБД, R', 'Ноги'], 'abdomen'), 'method_options' => ['A', 'B', 'C']],
+                    ['key' => '15.2', 'label' => 'ГБД и ноги', 'type' => MedicalTestType::T5->value, 'rows' => self::methodYesNoRows()],
                     ['key' => '15.3', 'label' => 'Грудная диафрагма', 'rows' => self::sideRows('Грудная диафрагма', 'thoracic')],
                 ],
                 'source_cause_slots' => 0,
             ]),
             self::definition(16, 'Lumbar/sacral nerve compression', MedicalTestType::T7, 'specialized', [
-                'rows' => self::sideRowsForLabels(['L1-L2', 'L2-L4', 'L5-S1', 'L5', 'S1-S2'], 'muscle'),
+                'rows' => self::muscleRows(['L1-L2', 'L2-L4', 'L5-S1', 'L5', 'S1-S2']),
                 'rules' => ['index_violation' => [1, 2, 3], 'zero_is_normal' => true],
                 'source_cause_slots' => 0,
             ]),
             self::definition(17, 'Neck nerve compression', MedicalTestType::T7, 'specialized', [
-                'rows' => self::sideRowsForLabels(['C1-C3', 'C4', 'C5', 'C6', 'C7', 'C8', 'Th1'], 'muscle'),
+                'rows' => self::muscleRows(['C1-C3', 'C4', 'C5', 'C6', 'C7', 'C8', 'Th1']),
                 'rules' => ['index_violation' => [1, 2, 3], 'zero_is_normal' => true],
                 'source_cause_slots' => 0,
             ]),
@@ -151,8 +152,8 @@ final class MedicalStage1BCatalogPreset
                     ['key' => '25.3', 'label' => 'Плечи', 'type' => MedicalTestType::T9->value, 'rows' => self::sideRows('Плечи', 'shoulders')],
                     ['key' => '25.4', 'label' => 'Локти', 'type' => MedicalTestType::T9->value, 'rows' => self::sideRows('Локти', 'elbows')],
                     ['key' => '25.5', 'label' => 'Лопатки', 'type' => MedicalTestType::T9->value, 'rows' => self::sideRows('Лопатки', 'scapulae')],
-                    ['key' => '25.6', 'label' => 'Наклон поясницы', 'type' => MedicalTestType::T9->value, 'rows' => self::rows(['Наклон поясницы'], 'lumbar_bend', ['angle_enabled' => true])],
-                    ['key' => '25.7', 'label' => 'Голеностоп', 'type' => MedicalTestType::T9->value, 'rows' => array_map(static fn (array $row): array => [...$row, 'angle_enabled' => false], self::sideRows('Голеностоп', 'ankle'))],
+                    ['key' => '25.6', 'label' => 'Наклон поясницы', 'type' => MedicalTestType::T9->value, 'rows' => self::rows(['Наклон вперёд', 'Наклон назад', 'Наклон вправо', 'Наклон влево'], 'lumbar_bend', ['angle_enabled' => true])],
+                    ['key' => '25.7', 'label' => 'Голеностоп', 'type' => MedicalTestType::T9->value, 'rows' => array_map(static fn (array $row): array => [...$row, 'input_mode' => 'yesno', 'answer_options' => ['normal' => 'Норма', 'abnormal' => 'Не норма'], 'angle_enabled' => false], self::sideRows('Голеностоп', 'ankle'))],
                 ],
                 'rules' => ['index_violation' => [1, 2, 3], 'zero_is_normal' => true, 'angle_min' => 0, 'angle_max' => 180, 'ankle_sides' => true, 'forward_bend_without_side' => true],
                 'source_cause_slots' => 0,
@@ -185,8 +186,36 @@ final class MedicalStage1BCatalogPreset
                     ['key' => '31.2', 'label' => 'Чакры', 'type' => MedicalTestType::T12->value, 'rows' => self::rows(array_map(static fn (int $n): string => 'Чакра '.$n, range(1, 7)), 'chakra')],
                     ['key' => '31.3', 'label' => 'Тор-поле', 'type' => MedicalTestType::T12->value, 'choices' => ['R', 'L']],
                 ],
-                'rules' => ['energy_threshold' => null, 'normal_tor_direction' => null, 'chakra_violation' => true],
+                'rules' => ['energy_threshold' => null, 'normal_tor_direction' => 'R', 'chakra_violation' => true],
                 'source_cause_slots' => 5,
+            ]),
+            self::definition(32, 'Orthopedic mobility probes', MedicalTestType::T13, 'specialized', [
+                'subtests' => [
+                    ['key' => '32.1', 'label' => 'Отто', 'type' => MedicalTestType::T13->value, 'rows' => self::measurementPhaseRows('otto', 'Отто', 'cm')],
+                    ['key' => '32.2', 'label' => 'Шобер', 'type' => MedicalTestType::T13->value, 'rows' => self::measurementPhaseRows('schober', 'Шобер', 'cm')],
+                    ['key' => '32.3', 'label' => 'Томайер', 'type' => MedicalTestType::T13->value, 'rows' => self::measurementRows('tomayer', 'Томайер', [], ['cm'], [])],
+                    ['key' => '32.4', 'label' => 'Ласег', 'type' => MedicalTestType::T13->value, 'rows' => self::measurementRows('lasegue', 'Ласег', ['R', 'L'], ['degree'], [])],
+                    ['key' => '32.5', 'label' => 'Патрик', 'type' => MedicalTestType::T13->value, 'rows' => self::measurementRows('patrick', 'Патрик', ['R', 'L'], ['degree'], [])],
+                ],
+                'measurement_units' => ['cm', 'degree'],
+                'movement_phases' => ['flexion', 'extension'],
+                'answer_options' => ['yes', 'no'],
+                'rules' => [
+                    'index_violation' => [1, 2, 3],
+                    'classification_enabled' => false,
+                ],
+                'knowledge' => [
+                    'technique' => null,
+                    'norms' => [
+                        'Отто, сгибание: норма, прирост 4 см и больше; индекс 1-2, прирост 2-3 см; индекс 3, прирост меньше 2 см.',
+                        'Шобер, сгибание: норма, прирост 4-5 см; индекс 1-2, прирост 2-3 см; индекс 3, прирост меньше 2 см.',
+                        'Томайер: норма, 0 см; индекс 1-2, 1-10 см; индекс 3, больше 10 см. Отрицательное значение отмечается как повышенная гибкость.',
+                        'Ласег: норма, угол больше 60 градусов; индекс 1-2, 30-60 градусов; индекс 3, меньше 30 градусов.',
+                        'Патрик: числовая норма не задана, индекс подтверждает мастер.',
+                    ],
+                    'interpretation' => null,
+                ],
+                'source_cause_slots' => 0,
             ]),
         ];
     }
@@ -215,6 +244,7 @@ final class MedicalStage1BCatalogPreset
     {
         $configuration = [
             'version' => 1,
+            'general_index_enabled' => true,
             'rules' => $configuration['rules'] ?? [],
             ...$configuration,
         ];
@@ -283,6 +313,26 @@ final class MedicalStage1BCatalogPreset
     }
 
     /** @param list<string> $labels
+     * @return list<array<string, mixed>>
+     */
+    private static function muscleRows(array $labels): array
+    {
+        $rows = [];
+        foreach ($labels as $label) {
+            foreach (['R' => 'правая сторона', 'L' => 'левая сторона'] as $side => $sideLabel) {
+                $rows[] = [
+                    'key' => 'muscle_'.strtolower($side).'_'.count($rows),
+                    'label' => $label.', '.$sideLabel,
+                    'side' => $side,
+                    'linked_segment' => $label,
+                ];
+            }
+        }
+
+        return $rows;
+    }
+
+    /** @param list<string> $labels
      * @param  array<string, mixed>  $extra
      * @return list<array<string, mixed>>
      */
@@ -297,5 +347,74 @@ final class MedicalStage1BCatalogPreset
             $labels,
             array_keys($labels),
         );
+    }
+
+    /** @param list<string> $sides
+     * @return list<array<string, mixed>>
+     */
+    private static function measurementRows(string $key, string $label, array $sides, array $units = ['cm', 'degree'], array $phases = ['flexion', 'extension']): array
+    {
+        if ($sides === []) {
+            return [[
+                'key' => $key,
+                'label' => $label,
+                'unit_options' => $units,
+                'phase_options' => $phases,
+            ]];
+        }
+
+        return array_map(
+            static fn (string $side): array => [
+                'key' => $key.'_'.strtolower($side),
+                'label' => $label.', '.($side === 'R' ? 'правая сторона' : 'левая сторона'),
+                'side' => $side,
+                'unit_options' => $units,
+                'phase_options' => $phases,
+            ],
+            $sides,
+        );
+    }
+
+    /** @return list<array<string, mixed>> */
+    private static function measurementPhaseRows(string $key, string $label, string $unit): array
+    {
+        return array_map(
+            static fn (string $phase, string $phaseLabel): array => [
+                'key' => $key.'_'.strtolower($phase),
+                'label' => $label.', '.$phaseLabel,
+                'unit_options' => [$unit],
+                'phase_options' => ['flexion', 'extension'],
+                'fixed_movement_phase' => $phase,
+            ],
+            ['flexion', 'extension'],
+            ['сгибание', 'разгибание'],
+        );
+    }
+
+    /** @return list<array<string, mixed>> */
+    private static function methodYesNoRows(): array
+    {
+        $rows = [];
+        foreach ([
+            'A' => 'Толчковый способ',
+            'B' => 'Способ со вдохом',
+            'C' => 'Растирание',
+        ] as $method => $methodLabel) {
+            foreach ([
+                'dome_l' => 'Купол L',
+                'dome_r' => 'Купол R',
+                'legs' => 'Ноги',
+            ] as $key => $label) {
+                $rows[] = [
+                    'key' => 'method_'.strtolower($method).'_'.$key,
+                    'label' => $method.'. '.$methodLabel.': '.$label,
+                    'method' => $method,
+                    'input_mode' => 'yesno',
+                    'answer_options' => ['no' => 'Нет', 'yes' => 'Да'],
+                ];
+            }
+        }
+
+        return $rows;
     }
 }

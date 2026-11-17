@@ -38,6 +38,11 @@ final readonly class MedicalSessionTestReader
                 afterViolationCount: (int) ($result->after_violation_count ?? 0),
                 reviewAgain: (bool) ($result->review_again ?? false),
                 warnings: $this->structuredWarnings($session, $result),
+                priority: (bool) ($result->is_priority ?? false) || (bool) ($this->structuredPayload($session, $result)['priority'] ?? false),
+                priorityRegions: $this->priorityRegions($session, $result),
+                stabilized: (bool) ($result->is_stabilized ?? false) || (bool) ($this->structuredPayload($session, $result)['stabilization']['is_stabilized'] ?? false),
+                complexCase: (bool) ($result->is_complex_case ?? false) || (bool) ($this->structuredPayload($session, $result)['complex_case'] ?? false),
+                newCauseIds: $this->newCauseIds($session, $result),
             ))->all());
     }
 
@@ -57,6 +62,10 @@ final readonly class MedicalSessionTestReader
                     : $this->encryptor->decryptField((int) $session->organization_id, $rootCause->free_text, (int) $rootCause->encryption_key_version),
                 isPrimary: (bool) $rootCause->is_primary,
                 influences: $this->influences($session, $rootCause),
+                status: (string) ($rootCause->status ?? 'новая'),
+                region: $rootCause->region === null
+                    ? null
+                    : $this->encryptor->decryptField((int) $session->organization_id, $rootCause->region, (int) ($rootCause->region_key_version ?? $rootCause->encryption_key_version)),
             ))->all());
     }
 
@@ -128,6 +137,48 @@ final readonly class MedicalSessionTestReader
         $warnings = $payload['evaluation']['warnings'] ?? [];
 
         return is_array($warnings) ? array_values(array_filter($warnings, 'is_string')) : [];
+    }
+
+    /** @return list<string> */
+    private function priorityRegions(MedicalSession $session, MedicalSessionTestResult $result): array
+    {
+        $payload = $this->structuredPayload($session, $result);
+        if (is_array($payload['priority_regions'] ?? null)) {
+            return array_values(array_filter(array_map('strval', $payload['priority_regions']), static fn (string $value): bool => trim($value) !== ''));
+        }
+        if ($result->priority_regions === null) {
+            return [];
+        }
+        $decoded = json_decode((string) $this->encryptor->decryptField(
+            (int) $session->organization_id,
+            $result->priority_regions,
+            (int) ($result->priority_regions_key_version ?? $session->encryption_key_version),
+        ), true);
+
+        return is_array($decoded) && is_array($decoded['regions'] ?? null)
+            ? array_values(array_filter(array_map('strval', $decoded['regions']), static fn (string $value): bool => trim($value) !== ''))
+            : [];
+    }
+
+    /** @return list<int> */
+    private function newCauseIds(MedicalSession $session, MedicalSessionTestResult $result): array
+    {
+        $payload = $this->structuredPayload($session, $result);
+        if (is_array($payload['new_cause_ids'] ?? null)) {
+            return array_values(array_unique(array_filter(array_map('intval', $payload['new_cause_ids']), static fn (int $id): bool => $id > 0)));
+        }
+        if ($result->new_cause_ids === null) {
+            return [];
+        }
+        $decoded = json_decode((string) $this->encryptor->decryptField(
+            (int) $session->organization_id,
+            $result->new_cause_ids,
+            (int) ($result->new_cause_ids_key_version ?? $session->encryption_key_version),
+        ), true);
+
+        return is_array($decoded) && is_array($decoded['cause_ids'] ?? null)
+            ? array_values(array_unique(array_filter(array_map('intval', $decoded['cause_ids']), static fn (int $id): bool => $id > 0)))
+            : [];
     }
 
     /** @return list<int> */

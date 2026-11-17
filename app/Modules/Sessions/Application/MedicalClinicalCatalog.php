@@ -23,6 +23,7 @@ final class MedicalClinicalCatalog
         'T10' => 'Визуальная карта',
         'T11' => 'Признаки и находки',
         'T12' => 'Энергетические структуры',
+        'T13' => 'Замер и ортопедические пробы',
     ];
 
     /** @var array<string, string> */
@@ -238,7 +239,7 @@ final class MedicalClinicalCatalog
     }
 
     /** @param array<int, mixed> $results
-     * @return array{before:int,after:int,resolved:int,new:int,unique_causes:int}
+     * @return array{before:int,after:int,resolved:int,new:int,unique_causes:int,stabilized:int,complex:int}
      */
     public function sessionCounters(int $organizationId, array $results): array
     {
@@ -255,7 +256,7 @@ final class MedicalClinicalCatalog
             ->get()
             ->keyBy('id');
         $engine = app(MedicalClinicalTypeEngine::class);
-        $counts = ['before' => 0, 'after' => 0, 'resolved' => 0, 'new' => 0, 'unique_causes' => 0];
+        $counts = ['before' => 0, 'after' => 0, 'resolved' => 0, 'new' => 0, 'unique_causes' => 0, 'stabilized' => 0, 'complex' => 0];
         $causeIds = [];
 
         foreach ($results as $result) {
@@ -274,11 +275,14 @@ final class MedicalClinicalCatalog
                     : (is_array($result['structured_payload'] ?? null) ? $result['structured_payload'] : []);
                 $before = is_array($structured['before'] ?? null) ? $structured['before'] : null;
                 $after = is_array($structured['after'] ?? null) ? $structured['after'] : null;
-                $evaluation = $engine->evaluate($type, $definition->catalogConfiguration(), $before, $after);
+                $generalIndexes = is_array($structured['general_index'] ?? null) ? $structured['general_index'] : null;
+                $evaluation = $engine->evaluate($type, $definition->catalogConfiguration(), $before, $after, $generalIndexes);
                 $counts['before'] += $evaluation->beforeCount;
                 $counts['after'] += $evaluation->afterCount;
                 $counts['resolved'] += $evaluation->resolvedCount;
                 $counts['new'] += $evaluation->newCount;
+                $counts['stabilized'] += (int) (($structured['stabilization']['is_stabilized'] ?? false) === true);
+                $counts['complex'] += (int) (($structured['complex_case'] ?? false) === true);
                 foreach ($evaluation->causeIds as $causeId) {
                     $causeIds[(int) $causeId] = true;
                 }
@@ -299,6 +303,8 @@ final class MedicalClinicalCatalog
             $counts['after'] += (int) $afterViolation;
             $counts['resolved'] += (int) ($beforeViolation && ! $afterViolation);
             $counts['new'] += (int) (! $beforeViolation && $afterViolation);
+            $counts['stabilized'] += (int) (($result['stabilized'] ?? false) === true);
+            $counts['complex'] += (int) (($result['complex_case'] ?? false) === true);
             foreach (is_array($result['cause_ids'] ?? null) ? $result['cause_ids'] : [] as $causeId) {
                 if ((int) $causeId > 0) {
                     $causeIds[(int) $causeId] = true;

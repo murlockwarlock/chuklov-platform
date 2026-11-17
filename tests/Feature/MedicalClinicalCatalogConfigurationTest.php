@@ -109,7 +109,7 @@ final class MedicalClinicalCatalogConfigurationTest extends TestCase
             ->assertActionExists('prepareStage1BCatalog')
             ->callAction('prepareStage1BCatalog');
 
-        self::assertCount(31, MedicalTestDefinition::query()->where('organization_id', $organization->getKey())->whereNotNull('test_type')->get());
+        self::assertCount(32, MedicalTestDefinition::query()->where('organization_id', $organization->getKey())->whereNotNull('test_type')->get());
         self::assertTrue(MedicalTestDefinition::query()->where('organization_id', $organization->getKey())->where('key', 'legacy_test')->where('is_active', true)->exists());
         self::assertSame([
             '1', '2', '3', '4', '5', '6', '7', '9', '25', '31.1',

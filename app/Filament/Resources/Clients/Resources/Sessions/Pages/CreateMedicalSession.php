@@ -14,6 +14,7 @@ use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Sessions\Application\CreateSession;
 use App\Modules\Sessions\Application\DTOs\CreateSessionCommand;
+use App\Modules\Sessions\Application\MedicalClientRootCauseReader;
 use App\Modules\Sessions\Application\MedicalSessionPainInitializer;
 use App\Modules\Sessions\Application\MedicalSessionTestHistoryReader;
 use App\Modules\Sessions\Domain\Models\MedicalSession;
@@ -53,6 +54,14 @@ class CreateMedicalSession extends LocalizedCreateRecord
 
         $data = [
             'test_results' => ClinicalTestProtocol::defaultState(app(MedicalSessionTestHistoryReader::class)->previousForClient($this->parentClient())),
+            'root_causes' => array_map(static fn (array $cause): array => [
+                'cause_id' => $cause['cause_id'] ?? null,
+                'free_text' => $cause['free_text'] ?? null,
+                'status' => $cause['status'] ?? 'новая',
+                'region' => $cause['region'] ?? null,
+                'influences' => is_array($cause['relations'] ?? null) ? $cause['relations'] : [],
+                'is_primary' => false,
+            ], app(MedicalClientRootCauseReader::class)->forClient($this->actor(), $this->parentClient())),
             'pains' => array_map(
                 static fn (array $pain): array => [
                     ...$pain,
