@@ -26,18 +26,27 @@ final readonly class MedicalSessionTestHistoryReader
             return [];
         }
 
-        return array_values(array_filter(array_map(static function ($test): ?array {
+        $history = array_values(array_filter(array_map(static function ($test): ?array {
             $violated = $test->afterViolationCount > 0 || $test->afterAbnormal;
-            if (! $violated) {
+            if (! $violated && ! $test->priority) {
                 return null;
             }
 
             return [
                 'test_id' => $test->testId,
+                'priority' => $test->priority,
+                'priority_regions' => $test->priorityRegions,
+                'stabilized' => $test->stabilized,
                 'previous_after' => $test->structuredPayload !== null
                     ? __('Нарушений: :count', ['count' => $test->afterViolationCount])
                     : ($test->afterLabel ?? __('Нарушение')),
             ];
         }, $this->reader->tests($previous))));
+
+        usort($history, static function (array $left, array $right): int {
+            return ((int) $right['priority']) <=> ((int) $left['priority']);
+        });
+
+        return $history;
     }
 }

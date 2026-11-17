@@ -22,6 +22,13 @@ final readonly class MedicalSessionTestData
         public bool $reviewAgain = false,
         /** @var list<string> */
         public array $warnings = [],
+        public bool $priority = false,
+        /** @var list<string> */
+        public array $priorityRegions = [],
+        public bool $stabilized = false,
+        public bool $complexCase = false,
+        /** @var list<int> */
+        public array $newCauseIds = [],
     ) {}
 
     /** @return array<string, mixed> */
@@ -42,6 +49,11 @@ final readonly class MedicalSessionTestData
             'after_violation_count' => $this->afterViolationCount,
             'review_again' => $this->reviewAgain,
             'warnings' => $this->warnings,
+            'priority' => $this->priority,
+            'priority_regions' => $this->priorityRegions,
+            'stabilized' => $this->stabilized,
+            'complex_case' => $this->complexCase,
+            'new_cause_ids' => $this->newCauseIds,
         ];
     }
 }

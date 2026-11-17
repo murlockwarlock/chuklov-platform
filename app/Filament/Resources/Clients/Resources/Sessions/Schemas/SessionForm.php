@@ -299,6 +299,18 @@ final class SessionForm
                                     ->label(__('Главная причина'))
                                     ->default(false)
                                     ->live(),
+                                Select::make('status')
+                                    ->label(__('Статус по клиенту'))
+                                    ->options([
+                                        'новая' => __('Новая'),
+                                        'в работе' => __('В работе'),
+                                        'устранена' => __('Устранена'),
+                                    ])
+                                    ->default('новая')
+                                    ->required(),
+                                TextInput::make('region')
+                                    ->label(__('Регион'))
+                                    ->maxLength(255),
                                 Select::make('influences')
                                     ->label(__('На это влияет'))
                                     ->options(fn (Get $get): array => self::rootCauseOptions($get))

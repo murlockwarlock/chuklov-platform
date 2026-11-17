@@ -11,11 +11,11 @@ use Tests\TestCase;
 
 final class MedicalStage1BEngineTest extends TestCase
 {
-    public function test_preset_contains_all_31_tests_and_the_required_main_selection(): void
+    public function test_preset_contains_all_32_tests_and_the_required_main_selection(): void
     {
         $definitions = MedicalStage1BCatalogPreset::definitions();
 
-        self::assertCount(31, $definitions);
+        self::assertCount(32, $definitions);
         self::assertSame([
             'medical_test_001',
             'medical_test_002',
@@ -34,6 +34,15 @@ final class MedicalStage1BEngineTest extends TestCase
         self::assertSame('Energy structures', $definitions[30]['name']);
         self::assertSame(MedicalTestType::T12->value, $definitions[30]['type']);
         self::assertSame(['31.1'], $definitions[30]['configuration']['default_subtests']);
+        self::assertSame('Orthopedic mobility probes', $definitions[31]['name']);
+        self::assertSame(MedicalTestType::T13->value, $definitions[31]['type']);
+        self::assertSame('specialized', $definitions[31]['catalog_set']);
+        self::assertSame(
+            ['32.1', '32.2', '32.3', '32.4', '32.5'],
+            array_column($definitions[31]['configuration']['subtests'], 'key'),
+        );
+        self::assertCount(9, $definitions[14]['configuration']['subtests'][1]['rows']);
+        self::assertSame(['Наклон вперёд', 'Наклон назад', 'Наклон вправо', 'Наклон влево'], array_column($definitions[24]['configuration']['subtests'][5]['rows'], 'label'));
     }
 
     public function test_registry_has_an_explicit_rule_for_each_type(): void
@@ -62,6 +71,80 @@ final class MedicalStage1BEngineTest extends TestCase
         self::assertFalse($evaluation->failClosed);
     }
 
+    public function test_every_test_can_add_a_confirmed_general_index_to_row_evaluation(): void
+    {
+        $evaluation = (new MedicalClinicalTypeEngine)->evaluate(
+            MedicalTestType::T1,
+            ['rules' => ['index_violation' => [1, 2, 3]]],
+            ['rows' => [['key' => 'shoulder', 'side' => 'R', 'index' => 0]]],
+            ['rows' => [['key' => 'shoulder', 'side' => 'R', 'index' => 0]]],
+            ['before' => 2, 'after' => 0],
+        );
+
+        self::assertSame(1, $evaluation->beforeCount);
+        self::assertSame(0, $evaluation->afterCount);
+        self::assertContains('general_index', $evaluation->beforeViolationKeys);
+    }
+
+    public function test_t13_keeps_measurements_and_uses_only_manual_indexes_without_norms(): void
+    {
+        $configuration = [
+            'measurement_units' => ['cm', 'degree'],
+            'movement_phases' => ['flexion', 'extension'],
+            'answer_options' => ['yes', 'no'],
+            'rules' => ['index_violation' => [1, 2, 3], 'classification_enabled' => false],
+        ];
+
+        $evaluation = (new MedicalClinicalTypeEngine)->evaluate(
+            MedicalTestType::T13,
+            $configuration,
+            ['rows' => [[
+                'key' => 'otto',
+                'side' => 'R',
+                'unit' => 'cm',
+                'measurement' => 30,
+                'movement_phase' => 'flexion',
+                'answer' => 'yes',
+                'index' => 2,
+            ]]],
+            ['rows' => [[
+                'key' => 'otto',
+                'side' => 'R',
+                'unit' => 'cm',
+                'measurement' => 30,
+                'movement_phase' => 'extension',
+                'answer' => 'yes',
+                'index' => 0,
+            ]]],
+        );
+
+        self::assertSame(1, $evaluation->beforeCount);
+        self::assertSame(0, $evaluation->afterCount);
+        self::assertFalse($evaluation->failClosed);
+        self::assertSame([], $evaluation->warnings);
+    }
+
+    public function test_t13_rejects_an_invalid_measurement_unit_or_movement_phase(): void
+    {
+        $this->expectException(ValidationException::class);
+
+        (new MedicalClinicalTypeEngine)->validate(
+            MedicalTestType::T13,
+            [
+                'measurement_units' => ['cm'],
+                'movement_phases' => ['flexion'],
+                'rows' => [['key' => 'otto', 'unit_options' => ['cm'], 'phase_options' => ['flexion']]],
+            ],
+            ['rows' => [[
+                'key' => 'otto',
+                'unit' => 'degree',
+                'measurement' => 10,
+                'movement_phase' => 'extension',
+            ]]],
+            null,
+        );
+    }
+
     public function test_t2_and_t10_use_the_configured_index_rule(): void
     {
         $engine = new MedicalClinicalTypeEngine;
@@ -83,6 +166,20 @@ final class MedicalStage1BEngineTest extends TestCase
         self::assertSame(1, $methodComputer->afterCount);
         self::assertSame(0, $visualMap->beforeCount);
         self::assertSame(1, $visualMap->afterCount);
+    }
+
+    public function test_t7_adds_the_configured_linked_segment_for_a_weak_side(): void
+    {
+        $evaluation = (new MedicalClinicalTypeEngine)->evaluate(
+            MedicalTestType::T7,
+            ['rules' => ['index_violation' => [1, 2, 3]]],
+            ['rows' => [['key' => 'muscle_r', 'side' => 'R', 'linked_segment' => 'L5-S1', 'index' => 2]]],
+            null,
+        );
+
+        self::assertSame(1, $evaluation->beforeCount);
+        self::assertNotContains('linked_segment:L5-S1', $evaluation->beforeViolationKeys);
+        self::assertSame(['L5-S1'], $evaluation->linkedSegments);
     }
 
     public function test_t4_counts_broken_transitions_using_the_catalog_rule(): void

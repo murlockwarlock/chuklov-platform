@@ -9,7 +9,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 
-#[Fillable(['organization_id', 'client_id', 'medical_session_id', 'medical_test_definition_id', 'before_value_id', 'after_value_id', 'structured_payload', 'structured_payload_key_version', 'before_violation_count', 'after_violation_count', 'review_again'])]
+#[Fillable(['organization_id', 'client_id', 'medical_session_id', 'medical_test_definition_id', 'before_value_id', 'after_value_id', 'structured_payload', 'structured_payload_key_version', 'before_violation_count', 'after_violation_count', 'review_again', 'is_priority', 'priority_regions', 'priority_regions_key_version', 'is_stabilized', 'is_complex_case', 'new_cause_ids', 'new_cause_ids_key_version'])]
 class MedicalSessionTestResult extends Model
 {
     /** @return BelongsTo<Organization, $this> */
@@ -61,6 +61,11 @@ class MedicalSessionTestResult extends Model
             'before_violation_count' => 'integer',
             'after_violation_count' => 'integer',
             'review_again' => 'boolean',
+            'priority_regions_key_version' => 'integer',
+            'is_priority' => 'boolean',
+            'is_stabilized' => 'boolean',
+            'is_complex_case' => 'boolean',
+            'new_cause_ids_key_version' => 'integer',
         ];
     }
 }

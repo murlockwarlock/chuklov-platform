@@ -380,7 +380,7 @@ final readonly class SaveMedicalClinicalCatalog
             $configuration = $raw[$field];
         }
         $configuration ??= [];
-        foreach (['rows', 'subtests', 'rules', 'help_text', 'safety_marker_text', 'default_subtests'] as $field) {
+        foreach (['rows', 'subtests', 'rules', 'help_text', 'safety_marker_text', 'default_subtests', 'measurement_units', 'movement_phases', 'knowledge', 'priority_options', 'movement_options', 'tone_options', 'finding_options', 'answer_options', 'violation_types', 'index_enabled', 'general_index_enabled'] as $field) {
             if (array_key_exists($field, $raw)) {
                 $configuration[$field] = $raw[$field];
             }

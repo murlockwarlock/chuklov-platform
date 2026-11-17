@@ -19,6 +19,7 @@ use App\Modules\Referrals\Domain\Models\ReferralRelationship;
 use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Sessions\Domain\Models\MedicalSession;
 use App\Modules\Sessions\Domain\Models\MedicalSessionPain;
+use App\Modules\Sessions\Domain\Models\MedicalClientRootCause;
 use App\Modules\Surveys\Domain\Models\SurveyAttempt;
 use App\Modules\Tracker\Domain\Models\TrackerCheckIn;
 use App\Modules\Tracker\Domain\Models\TrackerEntitlement;
@@ -198,6 +199,14 @@ class Client extends Model
     public function sessions(): HasMany
     {
         return $this->hasMany(MedicalSession::class);
+    }
+
+    /** @return HasMany<MedicalClientRootCause, $this> */
+    public function medicalRootCauses(): HasMany
+    {
+        return $this->hasMany(MedicalClientRootCause::class, 'client_id')
+            ->orderBy('sort_order')
+            ->orderBy('id');
     }
 
     /** @return HasMany<MedicalProfilePain, $this> */

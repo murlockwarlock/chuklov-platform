@@ -9,6 +9,8 @@ final readonly class MedicalSessionRootCauseData
         public ?string $causeName,
         public ?string $freeText,
         public bool $isPrimary = false,
+        public string $status = 'новая',
+        public ?string $region = null,
         /** @var list<int> */
         public array $influences = [],
     ) {}
@@ -21,6 +23,8 @@ final readonly class MedicalSessionRootCauseData
             'cause_name' => $this->causeName,
             'free_text' => $this->freeText,
             'is_primary' => $this->isPrimary,
+            'status' => $this->status,
+            'region' => $this->region,
             'influences' => $this->influences,
         ];
     }

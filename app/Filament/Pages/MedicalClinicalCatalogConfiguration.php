@@ -440,6 +440,10 @@ final class MedicalClinicalCatalogConfiguration extends LocalizedPage
                     Toggle::make($path('rules.broken_transition_count'))->label(__('Считать повторяющиеся переходы')),
                     Toggle::make($path('rules.ankle_sides'))->label(__('Для голеностопа указывать стороны')),
                     Toggle::make($path('rules.forward_bend_without_side'))->label(__('Для наклона поясницы не указывать сторону')),
+                    TextInput::make($path('rules.myozonal_max_regions'))->label(__('Максимум зон миозонального теста'))->numeric()->minValue(1)->maxValue(6)->nullable(),
+                    Toggle::make($path('rules.classification_enabled'))->label(__('Разрешить автоматическую классификацию'))->helperText(__('Оставьте выключенным, пока норма не подтверждена владельцем.')),
+                    TagsInput::make($path('measurement_units'))->label(__('Единицы замера'))->placeholder(__('Добавьте единицу, например cm или degree')),
+                    TagsInput::make($path('movement_phases'))->label(__('Фазы движения'))->placeholder(__('Добавьте фазу движения')),
                     TagsInput::make($path('priority_options'))->label(__('Варианты приоритета'))->placeholder(__('Добавьте вариант')),
                     TagsInput::make($path('movement_options'))->label(__('Движения провокации'))->placeholder(__('Добавьте вариант движения')),
                     TagsInput::make($path('tone_options'))->label(__('Варианты тонуса'))->placeholder(__('Добавьте вариант тонуса')),
@@ -456,6 +460,9 @@ final class MedicalClinicalCatalogConfiguration extends LocalizedPage
                         ->columnSpanFull(),
                     Textarea::make($path('help_text'))->label(__('Подсказка для специалиста'))->rows(2)->maxLength(2000)->columnSpanFull(),
                     Textarea::make($path('safety_marker_text'))->label(__('Предупреждение по безопасности'))->rows(2)->maxLength(2000)->columnSpanFull(),
+                    Textarea::make($path('knowledge.technique'))->label(__('Знания: техника выполнения'))->rows(3)->maxLength(10000)->helperText(__('Хранится в каталоге CRM, клиентам не показывается.'))->columnSpanFull(),
+                    Textarea::make($path('knowledge.norms'))->label(__('Знания: нормы'))->rows(3)->maxLength(10000)->helperText(__('Не включает классификацию без подтверждённого правила.'))->columnSpanFull(),
+                    Textarea::make($path('knowledge.interpretation'))->label(__('Знания: интерпретации'))->rows(3)->maxLength(10000)->helperText(__('ИИ на этапе 1 не запускается.'))->columnSpanFull(),
                 ])
                 ->columns(2)
                 ->collapsible()
@@ -618,8 +625,8 @@ final class MedicalClinicalCatalogConfiguration extends LocalizedPage
                 ->color('gray')
                 ->authorize(fn (): bool => self::canAccess())
                 ->requiresConfirmation()
-                ->modalHeading(__('Подготовить 31 тест Stage 1B'))
-                ->modalDescription(__('Будет добавлен исходный безопасный набор из 31 настраиваемого теста. Существующие тесты, причины и история сохранятся. Списки причин останутся пустыми, пока их не настроят через CRM.'))
+                ->modalHeading(__('Подготовить 32 теста Stage 1B'))
+                ->modalDescription(__('Будет добавлен исходный безопасный набор из 32 настраиваемых тестов. Существующие тесты, причины и история сохранятся. Списки причин останутся пустыми, пока их не настроят через CRM.'))
                 ->visible(fn (): bool => self::canAccess() && ! $this->hasStage1BTests())
                 ->action(function (): void {
                     $actor = Auth::user();
@@ -810,6 +817,7 @@ final class MedicalClinicalCatalogConfiguration extends LocalizedPage
                     'mobility' => __('Подвижность и угол'),
                     'visual' => __('Визуальное отклонение'),
                     'energy_chakra' => __('Энергетическая отметка'),
+                    'measurement' => __('Замер: число, единица и фаза'),
                     'violation_type' => __('Тип нарушения'),
                 ])
                 ->nullable(),
@@ -819,6 +827,12 @@ final class MedicalClinicalCatalogConfiguration extends LocalizedPage
             TagsInput::make('deviation_options')
                 ->label(__('Варианты отклонения'))
                 ->placeholder(__('Добавьте вариант')),
+            TagsInput::make('unit_options')
+                ->label(__('Единицы замера строки'))
+                ->placeholder(__('Например, cm или degree')),
+            TagsInput::make('phase_options')
+                ->label(__('Фазы движения строки'))
+                ->placeholder(__('Например, flexion или extension')),
             Toggle::make('angle_enabled')
                 ->label(__('Показывать угол'))
                 ->default(true),
@@ -913,11 +927,20 @@ final class MedicalClinicalCatalogConfiguration extends LocalizedPage
             'tone_options' => is_array($configuration['tone_options'] ?? null) ? array_values($configuration['tone_options']) : [],
             'finding_options' => is_array($configuration['finding_options'] ?? null) ? array_values($configuration['finding_options']) : [],
             'answer_options' => is_array($configuration['answer_options'] ?? null) ? array_values($configuration['answer_options']) : [],
+            'measurement_units' => is_array($configuration['measurement_units'] ?? null) ? array_values($configuration['measurement_units']) : [],
+            'movement_phases' => is_array($configuration['movement_phases'] ?? null) ? array_values($configuration['movement_phases']) : [],
             'violation_types' => is_array($configuration['violation_types'] ?? null) ? array_values($configuration['violation_types']) : [],
             'default_subtests' => is_array($configuration['default_subtests'] ?? null) ? array_values($configuration['default_subtests']) : [],
             'rules' => $rules,
             'help_text' => $configuration['help_text'] ?? ($configuration['tooltip'] ?? null),
             'safety_marker_text' => $configuration['safety_marker_text'] ?? null,
+            'knowledge' => [
+                'technique' => $configuration['knowledge']['technique'] ?? null,
+                'norms' => is_array($configuration['knowledge']['norms'] ?? null)
+                    ? implode("\n", array_map('strval', $configuration['knowledge']['norms']))
+                    : ($configuration['knowledge']['norms'] ?? null),
+                'interpretation' => $configuration['knowledge']['interpretation'] ?? null,
+            ],
             'values' => $test->values->map(static fn (MedicalTestValue $value): array => [
                 'key' => $value->key,
                 'label' => $value->label,

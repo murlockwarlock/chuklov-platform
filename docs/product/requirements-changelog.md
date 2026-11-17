@@ -3,7 +3,7 @@
 ## 2026-11-14 — Medical Stage 1 canonical requirements
 
 - Added the canonical, source-traceable ledger in `docs/product/requirements/2026-11-14-medical-stage1.md` and `docs/product/requirements/2026-11-14-medical-test-catalog.md`.
-- `ТЗ для Ивана: этап 1 — диагностика, карта клиента и карта сеанса` dated 2026-11-14 replaces the medical TZ dated 2026-10-23. `Каталог тестов: как вносится результат` is the detailed authority for the 12 form types, 31 tests, and catalog questions; `Этапы реализации CRM Чуклова` defines the Stage 1–4 boundaries and later backlog.
+- The three 2026-11-16 source documents replace the 2026-11-14 medical snapshot for this Stage 1 delta. The catalog authority now covers 13 form types and 32 tests; confirmed owner decisions, Denis proposals, and open questions remain separated in the existing REQ files. `Этапы реализации CRM Чуклова` continues to define the Stage 1–4 boundaries and later backlog.
 - Existing compliant implementation is to be reused after verification; old medical data is retained. No functionality is marked implemented by the presence of this documentation.
 - New medical requirements are tracked by stable REQ IDs. Stage 1 is split into delivery packages 1A, 1B, and 1C; Stage 2–4 requirements are preserved as backlog and are not current implementation scope.
 

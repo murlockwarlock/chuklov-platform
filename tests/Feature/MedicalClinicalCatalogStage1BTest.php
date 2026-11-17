@@ -36,7 +36,7 @@ final class MedicalClinicalCatalogStage1BTest extends TestCase
         app(SaveMedicalClinicalCatalog::class)->handle($admin, $definitions, [$cause->toArray()]);
 
         $catalog = app(MedicalClinicalCatalog::class);
-        self::assertCount(31, $catalog->catalogRows((int) $organization->getKey()));
+        self::assertCount(32, $catalog->catalogRows((int) $organization->getKey()));
         self::assertSame([
             '1', '2', '3', '4', '5', '6', '7', '9', '25', '31.1',
         ], $catalog->defaultSessionSelection((int) $organization->getKey()));
@@ -73,6 +73,17 @@ final class MedicalClinicalCatalogStage1BTest extends TestCase
             ->whereNull('scope_key')
             ->where('is_active', true)
             ->exists());
+
+        $orthopedic = MedicalTestDefinition::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('key', 'medical_test_032')
+            ->sole();
+        self::assertSame('T13', $orthopedic->test_type);
+        self::assertSame('specialized', $orthopedic->catalog_set);
+        self::assertSame(
+            ['32.1', '32.2', '32.3', '32.4', '32.5'],
+            array_column($orthopedic->catalogConfiguration()['subtests'], 'key'),
+        );
     }
 
     public function test_catalog_rejects_unknown_types(): void

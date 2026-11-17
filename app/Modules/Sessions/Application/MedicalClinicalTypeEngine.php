@@ -22,7 +22,8 @@ final class MedicalClinicalTypeEngine
             MedicalTestType::T9,
             MedicalTestType::T10,
             MedicalTestType::T11,
-            MedicalTestType::T12 => true,
+            MedicalTestType::T12,
+            MedicalTestType::T13 => true,
         };
     }
 
@@ -44,6 +45,14 @@ final class MedicalClinicalTypeEngine
 
         if ($payload !== null) {
             $this->validatePayloadMetadata($configuration, $payload);
+            $generalIndex = $payload['general_index'] ?? null;
+            if ($generalIndex !== null) {
+                if (! is_array($generalIndex)) {
+                    $this->invalid('general_index', 'Общий индекс заполнен неверно.');
+                }
+                $this->validateIndex($generalIndex['before'] ?? null, $configuration['general_index_enabled'] ?? true, 'general_index.before');
+                $this->validateIndex($generalIndex['after'] ?? null, $configuration['general_index_enabled'] ?? true, 'general_index.after');
+            }
         }
 
         if ($type === MedicalTestType::T4) {
@@ -56,14 +65,16 @@ final class MedicalClinicalTypeEngine
      * @param  array<string, mixed>  $configuration
      * @param  array<string, mixed>|null  $before
      * @param  array<string, mixed>|null  $after
+     * @param  array<string, mixed>|null  $generalIndexes
      */
     public function evaluate(
         MedicalTestType $type,
         array $configuration,
         ?array $before,
         ?array $after,
+        ?array $generalIndexes = null,
     ): MedicalClinicalEvaluation {
-        return match ($type) {
+        $evaluation = match ($type) {
             MedicalTestType::T1 => $this->tone($configuration, $before, $after),
             MedicalTestType::T2 => $this->methodComputer($configuration, $before, $after),
             MedicalTestType::T3 => $this->palpation($configuration, $before, $after),
@@ -76,7 +87,66 @@ final class MedicalClinicalTypeEngine
             MedicalTestType::T10 => $this->visualMap($configuration, $before, $after),
             MedicalTestType::T11 => $this->findings($configuration, $before, $after),
             MedicalTestType::T12 => $this->energy($configuration, $before, $after),
+            MedicalTestType::T13 => $this->measurement($configuration, $before, $after),
         };
+
+        return $this->withGeneralIndex($evaluation, $configuration, $generalIndexes);
+    }
+
+    /**
+     * @param  array<string, mixed>  $configuration
+     * @param  array<string, mixed>|null  $before
+     * @param  array<string, mixed>|null  $after
+     */
+    private function measurement(array $configuration, ?array $before, ?array $after): MedicalClinicalEvaluation
+    {
+        $rules = is_array($configuration['rules'] ?? null) ? $configuration['rules'] : [];
+        $violationIndexes = is_array($rules['index_violation'] ?? null) ? $rules['index_violation'] : [1, 2, 3];
+
+        return $this->evaluationFromRows(
+            $this->findingRows($before),
+            $this->findingRows($after),
+            static fn (array $row): bool => in_array((int) ($row['index'] ?? 0), array_map('intval', $violationIndexes), true),
+        );
+    }
+
+    /**
+     * @param  array<string, mixed>  $configuration
+     * @param  array<string, mixed>|null  $generalIndexes
+     */
+    private function withGeneralIndex(
+        MedicalClinicalEvaluation $evaluation,
+        array $configuration,
+        ?array $generalIndexes,
+    ): MedicalClinicalEvaluation {
+        if ($generalIndexes === null || ! (bool) ($configuration['general_index_enabled'] ?? true)) {
+            return $evaluation;
+        }
+
+        $rules = is_array($configuration['rules'] ?? null) ? $configuration['rules'] : [];
+        $violationIndexes = is_array($rules['index_violation'] ?? null) ? $rules['index_violation'] : [1, 2, 3];
+        $violationIndexes = array_map('intval', $violationIndexes);
+        $beforeViolation = ($generalIndexes['before'] ?? null) !== null
+            && in_array((int) $generalIndexes['before'], $violationIndexes, true);
+        $afterViolation = ($generalIndexes['after'] ?? null) !== null
+            && in_array((int) $generalIndexes['after'], $violationIndexes, true);
+        $beforeKeys = $beforeViolation
+            ? array_values(array_unique([...$evaluation->beforeViolationKeys, 'general_index']))
+            : $evaluation->beforeViolationKeys;
+        $afterKeys = $afterViolation
+            ? array_values(array_unique([...$evaluation->afterViolationKeys, 'general_index']))
+            : $evaluation->afterViolationKeys;
+
+        return new MedicalClinicalEvaluation(
+            beforeCount: count($beforeKeys),
+            afterCount: count($afterKeys),
+            beforeViolationKeys: $beforeKeys,
+            afterViolationKeys: $afterKeys,
+            causeIds: $evaluation->causeIds,
+            warnings: $evaluation->warnings,
+            failClosed: $evaluation->failClosed,
+            linkedSegments: $evaluation->linkedSegments,
+        );
     }
 
     /**
@@ -208,7 +278,25 @@ final class MedicalClinicalTypeEngine
      */
     private function muscle(array $configuration, ?array $before, ?array $after): MedicalClinicalEvaluation
     {
-        return $this->rowIndexEvaluation($configuration, $before, $after);
+        $rules = is_array($configuration['rules'] ?? null) ? $configuration['rules'] : [];
+        $violationIndexes = is_array($rules['index_violation'] ?? null) ? $rules['index_violation'] : [1, 2, 3];
+        $isViolation = static fn (array $row): bool => in_array((int) ($row['index'] ?? 0), array_map('intval', $violationIndexes), true)
+            || ($row['marked'] ?? false) === true;
+
+        return $this->evaluationFromRows(
+            $this->muscleRows($before, $isViolation),
+            $this->muscleRows($after, $isViolation),
+            $isViolation,
+        );
+    }
+
+    /** @param array<string, mixed>|null $phase
+     * @param callable(array<string, mixed>): bool $isViolation
+     * @return list<array<string, mixed>>
+     */
+    private function muscleRows(?array $phase, callable $isViolation): array
+    {
+        return $this->findingRows($phase);
     }
 
     /**
@@ -362,16 +450,25 @@ final class MedicalClinicalTypeEngine
         $beforeKeys = [];
         $afterKeys = [];
         $causeIds = [];
+        $linkedSegments = [];
         foreach ($beforeRows as $row) {
             $causeIds = [...$causeIds, ...$this->causeIds($row)];
             if ($isViolation($row)) {
                 $beforeKeys[$this->rowKey($row)] = true;
+                $linkedSegment = trim((string) ($row['linked_segment'] ?? ''));
+                if ($linkedSegment !== '') {
+                    $linkedSegments[$linkedSegment] = true;
+                }
             }
         }
         foreach ($afterRows as $row) {
             $causeIds = [...$causeIds, ...$this->causeIds($row)];
             if ($isViolation($row)) {
                 $afterKeys[$this->rowKey($row)] = true;
+                $linkedSegment = trim((string) ($row['linked_segment'] ?? ''));
+                if ($linkedSegment !== '') {
+                    $linkedSegments[$linkedSegment] = true;
+                }
             }
         }
 
@@ -381,6 +478,7 @@ final class MedicalClinicalTypeEngine
             beforeViolationKeys: array_keys($beforeKeys),
             afterViolationKeys: array_keys($afterKeys),
             causeIds: array_values(array_unique(array_filter(array_map('intval', $causeIds), static fn (int $id): bool => $id > 0))),
+            linkedSegments: array_keys($linkedSegments),
         );
     }
 
@@ -481,7 +579,7 @@ final class MedicalClinicalTypeEngine
 
         $ids = [];
         $walk = function (mixed $value, ?string $key = null) use (&$walk, &$ids): void {
-            if ($key !== null && in_array($key, ['cause_ids', 'primary_cause_id'], true)) {
+            if ($key !== null && in_array($key, ['cause_ids', 'primary_cause_id', 'primary_cause_ids'], true)) {
                 foreach (is_array($value) ? $value : [$value] as $id) {
                     if (is_numeric($id) && (int) $id > 0) {
                         $ids[] = (int) $id;
@@ -705,6 +803,9 @@ final class MedicalClinicalTypeEngine
         $this->validateNumber($phase['pain_intensity'] ?? null, 0, 10, $name.'.pain_intensity');
         $this->validateNumber($phase['tl_reduction_percent'] ?? null, -100, 100, $name.'.tl_reduction_percent');
         $this->validateNumber($phase['energy'] ?? null, 0, 1000, $name.'.energy');
+        $this->validateNumber($phase['measurement'] ?? null, -1000000, 1000000, $name.'.measurement');
+        $this->validateNumber($phase['measurement_value'] ?? null, -1000000, 1000000, $name.'.measurement_value');
+        $this->validateNumber($phase['degrees'] ?? null, -360, 360, $name.'.degrees');
         $torDirection = $phase['tor_direction'] ?? null;
         if ($torDirection !== null && $torDirection !== '') {
             if (! in_array((string) $torDirection, ['R', 'L'], true)) {
@@ -739,6 +840,9 @@ final class MedicalClinicalTypeEngine
                 $this->invalid($name.'.violation_type', 'Выбранный тип нарушения отсутствует в настройке каталога.');
             }
         }
+        $this->validateChoice($phase['unit'] ?? null, $configuration['measurement_units'] ?? [], $name.'.unit');
+        $this->validateChoice($phase['measurement_unit'] ?? null, $configuration['measurement_units'] ?? [], $name.'.measurement_unit');
+        $this->validateChoice($phase['movement_phase'] ?? null, $configuration['movement_phases'] ?? [], $name.'.movement_phase');
     }
 
     /** @param array<string, mixed> $configuration
@@ -797,12 +901,27 @@ final class MedicalClinicalTypeEngine
         if (array_key_exists('side', $configuration) && ($row['side'] ?? null) !== ($configuration['side'] ?? null)) {
             $this->invalid($name.'.side', 'Сторона строки изменена вне настройки каталога.');
         }
+        if (array_key_exists('linked_segment', $configuration) && ($row['linked_segment'] ?? null) !== ($configuration['linked_segment'] ?? null)) {
+            $this->invalid($name.'.linked_segment', 'Связанный сегмент изменён вне настройки каталога.');
+        }
         $indexEnabled = array_key_exists('index_enabled', $configuration)
             ? (bool) $configuration['index_enabled']
             : ! in_array($type, [MedicalTestType::T5, MedicalTestType::T11, MedicalTestType::T12], true);
         $this->validateIndex($row['index'] ?? null, $indexEnabled, $name.'.index');
         $angle = $row['angle'] ?? null;
         $this->validateNumber($angle, 0, 180, $name.'.angle');
+        if ($type === MedicalTestType::T13) {
+            $this->validateNumber($row['measurement'] ?? null, -1000000, 1000000, $name.'.measurement');
+            $this->validateNumber($row['measurement_value'] ?? null, -1000000, 1000000, $name.'.measurement_value');
+            $this->validateNumber($row['degrees'] ?? null, -360, 360, $name.'.degrees');
+            $this->validateChoice($row['unit'] ?? null, $configuration['unit_options'] ?? $configuration['measurement_units'] ?? [], $name.'.unit');
+            $this->validateChoice($row['measurement_unit'] ?? null, $configuration['unit_options'] ?? $configuration['measurement_units'] ?? [], $name.'.measurement_unit');
+            $this->validateChoice($row['movement_phase'] ?? null, $configuration['phase_options'] ?? $configuration['movement_phases'] ?? [], $name.'.movement_phase');
+            if (array_key_exists('fixed_movement_phase', $configuration)
+                && ($row['movement_phase'] ?? null) !== ($configuration['fixed_movement_phase'] ?? null)) {
+                $this->invalid($name.'.movement_phase', 'Фаза движения изменена вне настройки каталога.');
+            }
+        }
         if ($angle !== null && $angle !== '' && ! (bool) ($configuration['angle_enabled'] ?? true)) {
             $this->invalid($name.'.angle', 'Угол отключён для этой строки в каталоге.');
         }

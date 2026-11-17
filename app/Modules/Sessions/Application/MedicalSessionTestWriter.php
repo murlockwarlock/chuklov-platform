@@ -4,6 +4,7 @@ namespace App\Modules\Sessions\Application;
 
 use App\Modules\MedicalProfiles\Domain\Contracts\MedicalEncryptorInterface;
 use App\Modules\Sessions\Domain\Models\MedicalCauseDefinition;
+use App\Modules\Sessions\Domain\Models\MedicalClientRootCause;
 use App\Modules\Sessions\Domain\Models\MedicalSession;
 use App\Modules\Sessions\Domain\Models\MedicalSessionRootCause;
 use App\Modules\Sessions\Domain\Models\MedicalSessionTestResult;
@@ -18,6 +19,7 @@ final readonly class MedicalSessionTestWriter
     public function __construct(
         private MedicalEncryptorInterface $encryptor,
         private MedicalClinicalTypeEngine $typeEngine,
+        private MedicalClientRootCauseSynchronizer $clientRootCauseSynchronizer,
     ) {}
 
     /**
@@ -43,7 +45,9 @@ final readonly class MedicalSessionTestWriter
             ->unique()
             ->values()
             ->all();
+        $previousSnapshots = $this->previousTestSnapshots($session);
         $normalizedTests = $this->normalizeTests($organizationId, $tests, $preservedTestIds, $preservedValueIds, $preservedCauseIds);
+        $normalizedTests = $this->annotateHistory($normalizedTests, $previousSnapshots);
         $existingRootCauseIds = $session->rootCauses()
             ->whereNotNull('medical_cause_definition_id')
             ->pluck('medical_cause_definition_id')
@@ -79,6 +83,17 @@ final readonly class MedicalSessionTestWriter
                 'before_violation_count' => $test['before_violation_count'],
                 'after_violation_count' => $test['after_violation_count'],
                 'review_again' => $test['review_again'],
+                'is_priority' => $test['is_priority'],
+                'priority_regions' => $test['priority_regions'] === []
+                    ? null
+                    : $this->encryptor->encryptField($organizationId, json_encode(['regions' => $test['priority_regions']], JSON_THROW_ON_ERROR), $keyVersion),
+                'priority_regions_key_version' => $test['priority_regions'] === [] ? null : $keyVersion,
+                'is_stabilized' => $test['is_stabilized'],
+                'is_complex_case' => $test['is_complex_case'],
+                'new_cause_ids' => $test['new_cause_ids'] === []
+                    ? null
+                    : $this->encryptor->encryptField($organizationId, json_encode(['cause_ids' => $test['new_cause_ids']], JSON_THROW_ON_ERROR), $keyVersion),
+                'new_cause_ids_key_version' => $test['new_cause_ids'] === [] ? null : $keyVersion,
             ]);
             $result->save();
             $result->causes()->syncWithPivotValues($test['cause_ids'], ['organization_id' => $organizationId]);
@@ -94,6 +109,7 @@ final readonly class MedicalSessionTestWriter
         foreach ($normalizedRoots as $root) {
             $this->persistRootCause($session, $root, $organizationId, $keyVersion);
         }
+        $this->clientRootCauseSynchronizer->sync($session, $normalizedRoots, $keyVersion);
     }
 
     /**
@@ -133,6 +149,7 @@ final readonly class MedicalSessionTestWriter
         foreach ($normalizedRoots as $root) {
             $this->persistRootCause($session, $root, $organizationId, $keyVersion);
         }
+        $this->clientRootCauseSynchronizer->sync($session, $normalizedRoots, $keyVersion);
     }
 
     /**
@@ -140,7 +157,7 @@ final readonly class MedicalSessionTestWriter
      * @param  array<int, int>  $preservedTestIds
      * @param  array<int, int>  $preservedValueIds
      * @param  array<int, int>  $preservedCauseIds
-     * @return array<int, array{test_id:int,before_value_id:int|null,after_value_id:int|null,cause_ids:array<int, int>,structured_payload:array<string,mixed>|null,before_violation_count:int,after_violation_count:int,review_again:bool}>
+     * @return array<int, array{test_id:int,before_value_id:int|null,after_value_id:int|null,cause_ids:array<int, int>,structured_payload:array<string,mixed>|null,before_violation_count:int,after_violation_count:int,review_again:bool,is_priority:bool,priority_regions:array<int,string>,is_stabilized:bool,is_complex_case:bool,new_cause_ids:array<int,int> }>
      */
     private function normalizeTests(int $organizationId, array $tests, array $preservedTestIds, array $preservedValueIds, array $preservedCauseIds): array
     {
@@ -208,6 +225,11 @@ final readonly class MedicalSessionTestWriter
                 'review_again' => $structuredPayload !== null
                     ? (bool) ($structuredPayload['review_again'] ?? false)
                     : ((bool) ($raw['review_again'] ?? false) && $after === null),
+                'is_priority' => (bool) ($raw['priority'] ?? $structuredPayload['priority'] ?? false),
+                'priority_regions' => $this->stringList($raw['priority_regions'] ?? $structuredPayload['priority_regions'] ?? []),
+                'is_stabilized' => false,
+                'is_complex_case' => (bool) ($structuredPayload['complex_case'] ?? false),
+                'new_cause_ids' => [],
             ];
         }
 
@@ -226,6 +248,104 @@ final readonly class MedicalSessionTestWriter
             ->map(static fn (mixed $id): int => (int) $id)
             ->values()
             ->all();
+    }
+
+    /** @return array<int, array{after_count:int,cause_ids:list<int>,session_id:int}> */
+    private function previousTestSnapshots(MedicalSession $session): array
+    {
+        $previous = MedicalSession::query()
+            ->where('organization_id', $session->organization_id)
+            ->where('client_id', $session->client_id)
+            ->where('occurred_at', '<', $session->occurred_at)
+            ->orderByDesc('occurred_at')
+            ->orderByDesc('id')
+            ->with(['testResults.causes'])
+            ->first();
+        if (! $previous instanceof MedicalSession) {
+            return [];
+        }
+
+        $snapshots = [];
+        foreach ($previous->testResults as $result) {
+            $payload = $this->decryptStructuredPayload($previous, $result);
+            $snapshots[(int) $result->medical_test_definition_id] = [
+                'after_count' => (int) ($result->after_violation_count ?? 0),
+                'cause_ids' => array_values(array_unique($result->causes->pluck('id')->map('intval')->all())),
+                'session_id' => (int) $previous->getKey(),
+                'payload' => $payload,
+            ];
+        }
+
+        return $snapshots;
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $tests
+     * @param  array<int, array<string, mixed>>  $snapshots
+     * @return array<int, array<string, mixed>>
+     */
+    private function annotateHistory(array $tests, array $snapshots): array
+    {
+        foreach ($tests as &$test) {
+            $previous = $snapshots[$test['test_id']] ?? null;
+            if (! is_array($previous)) {
+                continue;
+            }
+            if ($previous['after_count'] > 0 && $test['before_violation_count'] === 0) {
+                $test['is_stabilized'] = true;
+                if (is_array($test['structured_payload'])) {
+                    $test['structured_payload']['stabilization'] = [
+                        'is_stabilized' => true,
+                        'previous_session_id' => $previous['session_id'],
+                        'previous_after_count' => $previous['after_count'],
+                    ];
+                }
+            }
+            $newCauseIds = array_values(array_diff(
+                $test['cause_ids'],
+                is_array($previous['cause_ids'] ?? null) ? $previous['cause_ids'] : [],
+            ));
+            if ($newCauseIds !== []) {
+                $test['new_cause_ids'] = $newCauseIds;
+                if (is_array($test['structured_payload'])) {
+                    $test['structured_payload']['new_cause_ids'] = $newCauseIds;
+                }
+            }
+        }
+        unset($test);
+
+        return $tests;
+    }
+
+    /** @return array<string, mixed>|null */
+    private function decryptStructuredPayload(MedicalSession $session, MedicalSessionTestResult $result): ?array
+    {
+        if ($result->structured_payload === null) {
+            return null;
+        }
+        $decoded = json_decode((string) $this->encryptor->decryptField(
+            (int) $session->organization_id,
+            $result->structured_payload,
+            (int) ($result->structured_payload_key_version ?? $session->encryption_key_version),
+        ), true, 12);
+
+        return is_array($decoded) ? $decoded : null;
+    }
+
+    /** @return list<string> */
+    private function stringList(mixed $value): array
+    {
+        if (is_string($value)) {
+            $value = preg_split('/[,;\n]+/u', $value) ?: [];
+        }
+        if (! is_array($value)) {
+            return [];
+        }
+
+        return array_values(array_unique(array_filter(array_map(
+            static fn (mixed $item): string => trim((string) $item),
+            $value,
+        ), static fn (string $item): bool => $item !== '')));
     }
 
     /**
@@ -252,6 +372,7 @@ final readonly class MedicalSessionTestWriter
 
         $before = $this->structuredPhase($input['before'] ?? null);
         $after = $this->structuredPhase($input['after'] ?? null);
+        $generalIndexes = $this->generalIndexes($input);
         $causeIds = $this->structuredCauseIds($input);
         $topLevelCauseIds = collect(is_array($raw['cause_ids'] ?? null) ? $raw['cause_ids'] : [])
             ->map(static fn (mixed $id): int => (int) $id)
@@ -262,21 +383,35 @@ final readonly class MedicalSessionTestWriter
         $causeIds = array_values(array_unique([...$causeIds, ...$topLevelCauseIds]));
         $this->validateAllowedCauses($organizationId, $definition, $causeIds, $input, $preservedCauseIds);
 
-        $primaryCauseId = $input['primary_cause_id'] ?? ($raw['primary_cause_id'] ?? null);
-        $primaryCauseId = is_numeric($primaryCauseId) && (int) $primaryCauseId > 0 ? (int) $primaryCauseId : null;
-        if ($primaryCauseId !== null && ! in_array($primaryCauseId, $causeIds, true)) {
-            throw ValidationException::withMessages(['test_results' => 'Основная причина должна быть выбрана среди причин строки.']);
+        $primaryCauseIds = $this->primaryCauseIds($input, $raw);
+        if (array_diff($primaryCauseIds, $causeIds) !== []) {
+            throw ValidationException::withMessages(['test_results' => 'Основные причины должны быть выбраны среди причин строки.']);
         }
 
         $this->typeEngine->validate($type, $definition->catalogConfiguration(), $before, $after, $input);
-        $evaluation = $this->typeEngine->evaluate($type, $definition->catalogConfiguration(), $before, $after);
+        $this->validateCauseLimits($definition, $before, $after);
+        $evaluation = $this->typeEngine->evaluate($type, $definition->catalogConfiguration(), $before, $after, $generalIndexes);
+        $complexCaseKeys = $this->complexCaseKeys($before, $after);
+        if ($type === \App\Modules\Sessions\Domain\Enums\MedicalTestType::T4) {
+            $complexCaseKeys = array_values(array_unique([
+                ...$complexCaseKeys,
+                ...$this->myozonalComplexCaseKeys($before, $after),
+            ]));
+        }
+        $priorityRegions = $this->stringList($raw['priority_regions'] ?? $input['priority_regions'] ?? []);
         $payload = [
             'version' => 1,
             'type' => $type->value,
             'before' => $before ?? [],
             'after' => $after ?? [],
+            'general_index' => $generalIndexes,
             'cause_ids' => $causeIds,
-            'primary_cause_id' => $primaryCauseId,
+            'primary_cause_ids' => $primaryCauseIds,
+            'primary_cause_id' => $primaryCauseIds[0] ?? null,
+            'priority' => (bool) ($raw['priority'] ?? $input['priority'] ?? false),
+            'priority_regions' => $priorityRegions,
+            'complex_case' => $complexCaseKeys !== [],
+            'complex_case_keys' => $complexCaseKeys,
             'correction_point' => $this->optionalString($input['correction_point'] ?? $this->nestedString($input, 'correction_point')),
             'violation_type' => $this->optionalString($input['violation_type'] ?? $this->nestedString($input, 'violation_type')),
             'review_again' => (bool) ($raw['review_again'] ?? $input['review_again'] ?? false)
@@ -286,6 +421,7 @@ final readonly class MedicalSessionTestWriter
                 'after' => $evaluation->afterCount,
                 'before_keys' => $evaluation->beforeViolationKeys,
                 'after_keys' => $evaluation->afterViolationKeys,
+                'linked_segments' => $evaluation->linkedSegments,
                 'warnings' => $evaluation->warnings,
                 'fail_closed' => $evaluation->failClosed,
             ],
@@ -322,6 +458,37 @@ final readonly class MedicalSessionTestWriter
         return $phase;
     }
 
+    /** @param array<string, mixed> $input
+     * @return array<string, int>|null
+     */
+    private function generalIndexes(array $input): ?array
+    {
+        if (! array_key_exists('general_index', $input)) {
+            return null;
+        }
+        $value = $input['general_index'];
+        if (! is_array($value)) {
+            throw ValidationException::withMessages(['test_results' => 'Общий индекс заполнен неверно.']);
+        }
+
+        return [
+            'before' => $this->nullableIndex($value['before'] ?? null),
+            'after' => $this->nullableIndex($value['after'] ?? null),
+        ];
+    }
+
+    private function nullableIndex(mixed $value): ?int
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+        if (! is_numeric($value) || (float) $value !== (float) (int) $value || (int) $value < 0 || (int) $value > 3) {
+            throw ValidationException::withMessages(['test_results' => 'Общий индекс должен быть от 0 до 3.']);
+        }
+
+        return (int) $value;
+    }
+
     /** @param array<string, mixed>|null $phase */
     private function hasStructuredMeasurement(?array $phase): bool
     {
@@ -329,7 +496,7 @@ final readonly class MedicalSessionTestWriter
             return false;
         }
 
-        foreach (['index', 'tone', 'finding', 'answer', 'deviation', 'angle', 'pain_point', 'energy', 'tor_direction', 'method', 'movement', 'pain_intensity', 'tl_reduction_percent'] as $field) {
+        foreach (['index', 'tone', 'finding', 'answer', 'deviation', 'angle', 'pain_point', 'energy', 'tor_direction', 'method', 'movement', 'movement_phase', 'unit', 'measurement', 'measurement_value', 'degrees', 'pain_intensity', 'tl_reduction_percent'] as $field) {
             if (! array_key_exists($field, $phase)) {
                 continue;
             }
@@ -371,7 +538,7 @@ final readonly class MedicalSessionTestWriter
     {
         $ids = [];
         $walk = function (mixed $value, ?string $key = null) use (&$walk, &$ids): void {
-            if ($key !== null && in_array($key, ['cause_ids', 'primary_cause_id'], true)) {
+            if ($key !== null && in_array($key, ['cause_ids', 'primary_cause_id', 'primary_cause_ids'], true)) {
                 foreach (is_array($value) ? $value : [$value] as $id) {
                     if (is_numeric($id) && (int) $id > 0) {
                         $ids[] = (int) $id;
@@ -389,6 +556,135 @@ final readonly class MedicalSessionTestWriter
         $walk($payload);
 
         return array_values(array_unique($ids));
+    }
+
+    /** @param array<string, mixed> $input
+     * @param array<string, mixed> $raw
+     * @return list<int>
+     */
+    private function primaryCauseIds(array $input, array $raw): array
+    {
+        $value = $input['primary_cause_ids'] ?? $raw['primary_cause_ids'] ?? null;
+        if ($value === null) {
+            $value = $input['primary_cause_id'] ?? $raw['primary_cause_id'] ?? null;
+        }
+        if (! is_array($value)) {
+            $value = $value === null || $value === '' ? [] : [$value];
+        }
+
+        return array_values(array_unique(array_filter(array_map('intval', $value), static fn (int $id): bool => $id > 0)));
+    }
+
+    private function validateCauseLimits(MedicalTestDefinition $definition, ?array $before, ?array $after): void
+    {
+        foreach ([['phase' => $before, 'name' => 'before'], ['phase' => $after, 'name' => 'after']] as $item) {
+            foreach ($this->causeRows($item['phase']) as $row) {
+                $primary = $this->primaryCauseIds($row, []);
+                if (count($primary) > 6) {
+                    throw ValidationException::withMessages(['test_results' => 'Для одного региона можно указать не более шести главных причин.']);
+                }
+            }
+        }
+
+        if ($definition->type() !== \App\Modules\Sessions\Domain\Enums\MedicalTestType::T4) {
+            return;
+        }
+        $rules = $definition->catalogConfiguration()['rules'] ?? [];
+        $maxRegions = is_array($rules) && is_numeric($rules['myozonal_max_regions'] ?? null)
+            ? (int) $rules['myozonal_max_regions']
+            : null;
+        if ($maxRegions === null) {
+            return;
+        }
+        $regions = [];
+        foreach ([$before, $after] as $phase) {
+            foreach ($this->findingRows($phase) as $row) {
+                if ((int) ($row['index'] ?? 0) > 0) {
+                    $regions[$this->rowKey($row)] = true;
+                }
+            }
+        }
+        if (count($regions) > $maxRegions) {
+            throw ValidationException::withMessages(['test_results' => 'Для миозонального теста можно отметить не более двух зон вне нормы.']);
+        }
+    }
+
+    /** @param array<string, mixed>|null $phase
+     * @return list<array<string, mixed>>
+     */
+    private function causeRows(?array $phase): array
+    {
+        $rows = [];
+        $walk = function (mixed $value) use (&$walk, &$rows): void {
+            if (! is_array($value)) {
+                return;
+            }
+            if (array_key_exists('cause_ids', $value) || array_key_exists('primary_cause_id', $value) || array_key_exists('primary_cause_ids', $value)) {
+                $rows[] = $value;
+            }
+            foreach ($value as $child) {
+                if (is_array($child)) {
+                    $walk($child);
+                }
+            }
+        };
+        $walk($phase);
+
+        return $rows;
+    }
+
+    /** @param array<string, mixed>|null $before
+     * @param array<string, mixed>|null $after
+     * @return list<string>
+     */
+    private function complexCaseKeys(?array $before, ?array $after): array
+    {
+        $keys = [];
+        foreach ([$before, $after] as $phase) {
+            foreach ($this->causeRows($phase) as $row) {
+                $ids = $this->structuredCauseIds($row);
+                if (count($ids) >= 3) {
+                    $keys[$this->rowKey($row)] = true;
+                }
+            }
+        }
+
+        return array_keys($keys);
+    }
+
+    /** @param array<string, mixed>|null $before
+     * @param array<string, mixed>|null $after
+     */
+    private function complexCase(?array $before, ?array $after): bool
+    {
+        return $this->complexCaseKeys($before, $after) !== [];
+    }
+
+    /** @param array<string, mixed> $row */
+    private function rowKey(array $row): string
+    {
+        $key = trim((string) ($row['dedupe_key'] ?? $row['key'] ?? 'row'));
+        $side = trim((string) ($row['side'] ?? ''));
+
+        return $key.($side === '' ? '' : ':'.$side);
+    }
+
+    /** @param array<string, mixed>|null $before
+     * @param array<string, mixed>|null $after
+     * @return list<string>
+     */
+    private function myozonalComplexCaseKeys(?array $before, ?array $after): array
+    {
+        $keys = [];
+        foreach ([$before, $after] as $phase) {
+            foreach ($this->findingRows($phase) as $row) {
+                if ((int) ($row['index'] ?? 0) > 0) {
+                    $keys[$this->rowKey($row)] = true;
+                }
+            }
+        }
+
+        return count($keys) >= 2 ? array_map(static fn (string $key): string => 'myozonal:'.$key, array_keys($keys)) : [];
     }
 
     /** @param list<int> $causeIds
@@ -429,7 +725,7 @@ final readonly class MedicalSessionTestWriter
             $currentScope = is_string($value['key'] ?? null) && trim($value['key']) !== ''
                 ? trim($value['key'])
                 : $scope;
-            foreach (['cause_ids', 'primary_cause_id'] as $causeKey) {
+            foreach (['cause_ids', 'primary_cause_id', 'primary_cause_ids'] as $causeKey) {
                 if (! array_key_exists($causeKey, $value)) {
                     continue;
                 }
@@ -444,7 +740,7 @@ final readonly class MedicalSessionTestWriter
                 }
             }
             foreach ($value as $key => $child) {
-                if (is_array($child) && ! in_array($key, ['cause_ids', 'primary_cause_id'], true)) {
+                if (is_array($child) && ! in_array($key, ['cause_ids', 'primary_cause_id', 'primary_cause_ids'], true)) {
                     $walk($child, $currentScope);
                 }
             }
@@ -497,7 +793,7 @@ final readonly class MedicalSessionTestWriter
 
     /**
      * @param  list<int>  $availableCauseIds
-     * @return array{cause_id:int|null,free_text:string|null,influences:list<int>,sort_order:int,is_primary:bool}
+     * @return array{cause_id:int|null,free_text:string|null,influences:list<int>,region:string|null,status:string|null,sort_order:int,is_primary:bool}
      */
     private function normalizeRootCause(mixed $raw, int $sortOrder, array $availableCauseIds): array
     {
@@ -532,11 +828,25 @@ final readonly class MedicalSessionTestWriter
         if (array_diff($influences, $availableCauseIds) !== []) {
             throw ValidationException::withMessages(['root_causes' => 'Связь «На это влияет» содержит недоступную причину.']);
         }
+        $regionInput = $raw['region'] ?? null;
+        if ($regionInput !== null && ! is_string($regionInput)) {
+            throw ValidationException::withMessages(['root_causes' => 'Регион первопричины должен быть текстом.']);
+        }
+        $region = is_string($regionInput) ? trim($regionInput) : '';
+        if (mb_strlen($region) > 255) {
+            throw ValidationException::withMessages(['root_causes' => 'Регион первопричины слишком длинный.']);
+        }
+        $status = array_key_exists('status', $raw) ? trim((string) $raw['status']) : null;
+        if ($status !== null && ! in_array($status, [MedicalClientRootCause::STATUS_NEW, MedicalClientRootCause::STATUS_IN_PROGRESS, MedicalClientRootCause::STATUS_RESOLVED], true)) {
+            throw ValidationException::withMessages(['root_causes' => 'Статус первопричины выбран неверно.']);
+        }
 
         return [
             'cause_id' => $causeId,
             'free_text' => $freeText === '' ? null : $freeText,
             'influences' => $influences,
+            'region' => $region === '' ? null : $region,
+            'status' => $status,
             'sort_order' => $sortOrder,
             'is_primary' => filter_var($raw['is_primary'] ?? false, FILTER_VALIDATE_BOOLEAN),
         ];
@@ -545,7 +855,7 @@ final readonly class MedicalSessionTestWriter
     /**
      * @param  array<int, mixed>  $roots
      * @param  list<int>  $availableCauseIds
-     * @return array<int, array{cause_id:int|null,free_text:string|null,influences:list<int>,sort_order:int,is_primary:bool}>
+     * @return array<int, array{cause_id:int|null,free_text:string|null,influences:list<int>,region:string|null,status:string|null,sort_order:int,is_primary:bool}>
      */
     private function normalizeRootCauses(array $roots, array $availableCauseIds): array
     {
@@ -565,7 +875,7 @@ final readonly class MedicalSessionTestWriter
         return $normalized;
     }
 
-    /** @param array{cause_id:int|null,free_text:string|null,influences:list<int>,sort_order:int,is_primary:bool} $root */
+    /** @param array{cause_id:int|null,free_text:string|null,influences:list<int>,region:string|null,status:string|null,sort_order:int,is_primary:bool} $root */
     private function persistRootCause(MedicalSession $session, array $root, int $organizationId, int $keyVersion): void
     {
         $model = new MedicalSessionRootCause;
@@ -577,6 +887,9 @@ final readonly class MedicalSessionTestWriter
             'free_text' => $this->encryptor->encryptField($organizationId, $root['free_text'], $keyVersion),
             'encryption_key_version' => $keyVersion,
             'is_primary' => $root['is_primary'],
+            'status' => $root['status'] ?? MedicalClientRootCause::STATUS_NEW,
+            'region' => $root['region'] === null ? null : $this->encryptor->encryptField($organizationId, $root['region'], $keyVersion),
+            'region_key_version' => $root['region'] === null ? null : $keyVersion,
             'influences' => $root['influences'] === []
                 ? null
                 : $this->encryptor->encryptField($organizationId, json_encode(['cause_ids' => $root['influences']], JSON_THROW_ON_ERROR), $keyVersion),
