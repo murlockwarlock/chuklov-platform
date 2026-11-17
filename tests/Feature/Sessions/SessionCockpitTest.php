@@ -1153,7 +1153,7 @@ final class SessionCockpitTest extends TestCase
     {
         [$organization, $admin, $client, $specialist] = $this->fixture();
         $this->resolveFilamentContext($admin, $organization);
-        $session = $this->createSession($admin, $client, $specialist, result: 'Исходный результат');
+        $session = $this->createSession($admin, $client, $specialist);
         $run = $this->clinicalSynthesisRun(
             $organization->getKey(),
             $client->getKey(),
