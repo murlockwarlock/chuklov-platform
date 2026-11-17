@@ -60,6 +60,7 @@ use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
 use Filament\Notifications\Notification;
 use Filament\Schemas\Components\Actions;
+use Filament\Schemas\Components\Component;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Components\Utilities\Set;
@@ -187,6 +188,13 @@ class EditMedicalSession extends LocalizedEditRecord
             $this->suggestSessionPainTagsAction(),
             $this->acceptSessionPainTagsAction(),
         ];
+    }
+
+    public function getFormContentComponent(): Component
+    {
+        return parent::getFormContentComponent()->extraAttributes([
+            'wire:loading.attr' => 'inert',
+        ]);
     }
 
     private function collectResultAction(bool $inline = false): Action
