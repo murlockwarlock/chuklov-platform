@@ -877,17 +877,20 @@ final class SessionCockpitTest extends TestCase
             ->first();
 
         self::assertIsString($itemKey);
+        $item = $results[$itemKey];
+        $structured = $item['structured'];
+        $structured['general_index'] = ['before' => 2, 'after' => 0];
+        $structured['before']['rows'][0]['measurement'] = 12;
+        $structured['before']['rows'][0]['unit'] = 'cm';
+        $structured['after']['rows'][0]['measurement'] = 13;
+        $structured['after']['rows'][0]['unit'] = 'cm';
 
         $component
             ->callFormComponentAction('test_results', 'editMedicalTest', [
                 'test_id' => (string) $definition->getKey(),
                 'priority' => true,
                 'priority_regions' => ['otto'],
-                'structured' => [
-                    'general_index' => ['before' => 2, 'after' => 0],
-                    'before' => ['rows' => [['key' => 'otto', 'unit' => 'cm', 'measurement' => 12]]],
-                    'after' => ['rows' => [['key' => 'otto', 'unit' => 'cm', 'measurement' => 13]]],
-                ],
+                'structured' => $structured,
             ], ['item' => $itemKey])
             ->assertHasNoActionErrors();
 
