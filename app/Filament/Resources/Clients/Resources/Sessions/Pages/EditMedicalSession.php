@@ -340,7 +340,6 @@ class EditMedicalSession extends LocalizedEditRecord
                     $this->refreshAfterClinicalSessionAiAction();
                     Notification::make()->success()->title(__('Черновик принят и перенесён в сеанс'))->send();
                 } catch (ValidationException $exception) {
-                    $mapped = FormValidationFeedback::forAction($exception, $action);
                     $message = collect($exception->errors())->flatten()->first();
                     Notification::make()
                         ->danger()
@@ -349,11 +348,10 @@ class EditMedicalSession extends LocalizedEditRecord
                             ? __($message)
                             : __('Проверьте поля, отмеченные ошибкой.'))
                         ->send();
-                    throw $mapped;
+                    $action->halt();
                 } catch (Throwable $exception) {
-                    $mapped = FormValidationFeedback::unexpectedForAction($exception, $action);
-                    FormValidationFeedback::notifyValidation($mapped);
-                    throw $mapped;
+                    FormValidationFeedback::notifyValidation(FormValidationFeedback::unexpectedForAction($exception, $action));
+                    $action->halt();
                 }
             });
     }
@@ -400,13 +398,14 @@ class EditMedicalSession extends LocalizedEditRecord
                     );
                     Notification::make()->danger()->title(__('Черновик отклонён и сохранён в истории'))->send();
                 } catch (ValidationException $exception) {
-                    $mapped = FormValidationFeedback::forAction($exception, $action);
-                    FormValidationFeedback::notifyValidation($mapped, __('Черновик не отклонён.'));
-                    throw $mapped;
+                    FormValidationFeedback::notifyValidation(
+                        FormValidationFeedback::forAction($exception, $action),
+                        __('Черновик не отклонён.'),
+                    );
+                    $action->halt();
                 } catch (Throwable $exception) {
-                    $mapped = FormValidationFeedback::unexpectedForAction($exception, $action);
-                    FormValidationFeedback::notifyValidation($mapped);
-                    throw $mapped;
+                    FormValidationFeedback::notifyValidation(FormValidationFeedback::unexpectedForAction($exception, $action));
+                    $action->halt();
                 }
             });
     }
