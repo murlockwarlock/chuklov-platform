@@ -281,6 +281,7 @@ class EditMedicalSession extends LocalizedEditRecord
                     'ai_version' => ClinicalAiPresentation::aiVersion($run),
                     'specialist_version' => ClinicalAiPresentation::specialistVersion($run),
                     'sources' => $this->sessionAiSourcesForRun($run),
+                    'target' => ClinicalSessionAiDraftTarget::Result->value,
                 ];
             })
             ->schema([
@@ -340,7 +341,14 @@ class EditMedicalSession extends LocalizedEditRecord
                     Notification::make()->success()->title(__('Черновик принят и перенесён в сеанс'))->send();
                 } catch (ValidationException $exception) {
                     $mapped = FormValidationFeedback::forAction($exception, $action);
-                    FormValidationFeedback::notifyValidation($mapped, __('Черновик не перенесён.'));
+                    $message = collect($exception->errors())->flatten()->first();
+                    Notification::make()
+                        ->danger()
+                        ->title(__('Черновик не перенесён.'))
+                        ->body(is_string($message) && filled($message)
+                            ? __($message)
+                            : __('Проверьте поля, отмеченные ошибкой.'))
+                        ->send();
                     throw $mapped;
                 } catch (Throwable $exception) {
                     $mapped = FormValidationFeedback::unexpectedForAction($exception, $action);
@@ -375,6 +383,7 @@ class EditMedicalSession extends LocalizedEditRecord
             ])
             ->fillForm(fn (): array => [
                 'run_id' => $this->reviewableSessionAiRun()?->getKey(),
+                'reason_code' => HumanReviewReasonCode::IncorrectContent->value,
             ])
             ->modalHeading(__('Отклонить черновик AI'))
             ->modalDescription(__('Черновик останется в истории. Данные медицинского сеанса не изменятся.'))
