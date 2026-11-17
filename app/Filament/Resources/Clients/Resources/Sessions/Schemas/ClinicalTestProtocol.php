@@ -218,6 +218,7 @@ final class ClinicalTestProtocol
 
                 $state[$itemKey] = array_replace($state[$itemKey], $data);
                 $component->rawState($state);
+                $component->getChildSchema($itemKey)?->fill($data);
                 $component->callAfterStateUpdated();
                 Notification::make()->success()->title(__('Тест сохранён в сеансе'))->send();
             });
