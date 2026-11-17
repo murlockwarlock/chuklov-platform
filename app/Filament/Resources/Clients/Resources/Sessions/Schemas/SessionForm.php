@@ -75,10 +75,7 @@ final class SessionForm
                             ->extraAttributes(['wire:loading' => ''])
                             ->columnSpanFull(),
                     ])->columns(2)->columnSpanFull(),
-                Section::make(__('0. Показатели до сеанса'))
-                    ->schema([
-                        Placeholder::make('vitals_stage1c')->hiddenLabel()->content(__('Измерения до и после сеанса подключаются в этапе 1C. Пока заполните доступные данные в следующих блоках.')),
-                    ])->collapsible()->columnSpanFull(),
+                MedicalMeasurementForm::section(),
                 Section::make(__('1. Жалобы (боли)'))
                     ->schema([
                         Repeater::make('pains')
@@ -379,15 +376,16 @@ final class SessionForm
                     ])->collapsible()->columnSpanFull(),
                 Section::make(__('5. Субъективные ощущения клиента после сеанса'))
                     ->schema([
-                        Textarea::make('subjective_feelings')->hiddenLabel()->rows(4)->placeholder(__('Что клиент почувствовал после сеанса'))->live(onBlur: true),
+                        Textarea::make('subjective_feelings')->label(__('Субъективные ощущения клиента после сеанса'))->hiddenLabel()->rows(4)->placeholder(__('Что клиент почувствовал после сеанса'))->live(onBlur: true),
                     ])->collapsible()->columnSpanFull(),
                 Section::make(__('6. Визуальные изменения в осанке после сеанса'))
                     ->schema([
-                        Textarea::make('visual_posture_diagnostics')->hiddenLabel()->rows(4)->placeholder(__('Изменения линии плеч, таза и позвоночника'))->live(onBlur: true),
+                        Textarea::make('visual_posture_diagnostics')->label(__('Визуальные изменения в осанке после сеанса'))->hiddenLabel()->rows(4)->placeholder(__('Изменения линии плеч, таза и позвоночника'))->live(onBlur: true),
                     ])->collapsible()->columnSpanFull(),
                 Section::make(__('7. Результат после сеанса'))
                     ->schema([
                         Textarea::make('result')
+                            ->label(__('Результат после сеанса'))
                             ->hiddenLabel()
                             ->rows(4)
                             ->placeholder(__('Итог, который специалист вводит вручную'))
@@ -400,11 +398,14 @@ final class SessionForm
                     ])->collapsible()->columnSpanFull(),
                 Section::make(__('8. Заметки терапевта'))
                     ->schema([
-                        Textarea::make('therapist_notes')->hiddenLabel()->rows(4)->placeholder(__('Внутренние заметки специалиста. Клиент их не увидит.'))->live(onBlur: true),
+                        Textarea::make('therapist_notes')->label(__('Заметки терапевта'))->hiddenLabel()->rows(4)->placeholder(__('Внутренние заметки специалиста. Клиент их не увидит.'))->live(onBlur: true),
                     ])->collapsible()->columnSpanFull(),
                 Section::make(__('9. Эффективность проведённого сеанса'))
                     ->schema([
-                        Placeholder::make('effectiveness_stage1b')->hiddenLabel()->content(__('Показатели эффективности доступны после сохранения сеанса на странице редактирования.')),
+                        Placeholder::make('effectiveness_stage1b')
+                            ->label(__('Показатели эффективности'))
+                            ->hiddenLabel()
+                            ->content(__('Показатели эффективности доступны после сохранения сеанса на странице редактирования.')),
                     ])->collapsible()->columnSpanFull(),
                 Section::make(__('10. Рекомендации эксперта'))
                     ->schema([
@@ -421,6 +422,7 @@ final class SessionForm
                 Section::make(__('Исторические значения'))
                     ->schema([
                         Placeholder::make('session_history_fields')
+                            ->label(__('История полей'))
                             ->hiddenLabel()
                             ->content(__('Старые поля остаются доступными в истории и не показываются как активные поля новой формы.'))
                             ->columnSpanFull(),

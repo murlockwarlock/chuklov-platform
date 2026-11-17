@@ -15,6 +15,11 @@
                 class="max-h-[70vh] max-w-full object-contain"
             >
         </div>
+    @elseif (in_array($mimeType, ['video/mp4', 'video/quicktime', 'video/webm'], true))
+        <video controls class="max-h-[70vh] w-full rounded-lg bg-black" preload="metadata">
+            <source src="{{ $url }}" type="{{ $mimeType }}">
+            {{ __('Предпросмотр видео недоступен в этом браузере.') }}
+        </video>
     @elseif ($mimeType === 'text/plain')
         <iframe
             src="{{ $url }}"

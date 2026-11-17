@@ -56,6 +56,9 @@ final class GetSession
             therapistNotes: $this->encryptor->decryptField($orgId, $persisted->therapist_notes, $keyVersion),
             subjectiveFeelings: $persisted->subjective_feelings === null ? null : $this->encryptor->decryptField($orgId, $persisted->subjective_feelings, $keyVersion),
             visualPostureDiagnostics: $persisted->visual_posture_diagnostics === null ? null : $this->encryptor->decryptField($orgId, $persisted->visual_posture_diagnostics, $keyVersion),
+            measurements: $this->decodeMeasurements(
+                $this->encryptor->decryptField($orgId, $persisted->measurements, $keyVersion),
+            ),
             rootCauseHypothesis: $this->encryptor->decryptField($orgId, $persisted->root_cause_hypothesis, $keyVersion),
             protocol: $this->encryptor->decryptField($orgId, $persisted->protocol, $keyVersion),
             result: $this->encryptor->decryptField($orgId, $persisted->result, $keyVersion),
@@ -80,6 +83,18 @@ final class GetSession
     private function painVas(?string $value): ?int
     {
         return $value !== null && preg_match('/^-?\d+$/D', $value) === 1 ? (int) $value : null;
+    }
+
+    /** @return array<string, mixed>|null */
+    private function decodeMeasurements(?string $value): ?array
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        $decoded = json_decode($value, true);
+
+        return is_array($decoded) ? $decoded : null;
     }
 
     public function invalidate(?int $actorId = null, ?int $orgId = null, ?int $sessionId = null): void

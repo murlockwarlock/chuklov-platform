@@ -7,6 +7,7 @@ use App\Filament\Resources\Clients\ClientResource;
 use App\Filament\Resources\Clients\Resources\Sessions\MedicalSessionResource;
 use App\Filament\Resources\Clients\Resources\Sessions\Schemas\ClinicalTestProtocol;
 use App\Filament\Resources\Clients\Resources\Sessions\Schemas\MedicalComplaintSelect;
+use App\Filament\Resources\Clients\Resources\Sessions\Schemas\MedicalMeasurementForm;
 use App\Filament\Resources\Clients\Resources\Sessions\Schemas\SessionForm;
 use App\Filament\Support\FormValidationFeedback;
 use App\Filament\Support\InteractsWithFormValidationFeedback;
@@ -42,6 +43,7 @@ use App\Modules\Sessions\Application\SendSessionRecommendation;
 use App\Modules\Sessions\Application\UpdateSession;
 use App\Modules\Sessions\Application\UploadSessionPhoto;
 use App\Modules\Sessions\Domain\Enums\MedicalSessionAttachmentGallery;
+use App\Modules\Sessions\Domain\Enums\MedicalSessionAttachmentPlane;
 use App\Modules\Sessions\Domain\Models\MedicalSession;
 use App\Modules\Sessions\Domain\Models\MedicalSessionPain;
 use App\Support\Images\SupportedImageTypes;
@@ -58,6 +60,8 @@ use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
 use Filament\Notifications\Notification;
 use Filament\Schemas\Components\Actions;
+use Filament\Schemas\Components\Component;
+use Filament\Schemas\Components\Group;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Components\Utilities\Set;
@@ -185,6 +189,15 @@ class EditMedicalSession extends LocalizedEditRecord
             $this->suggestSessionPainTagsAction(),
             $this->acceptSessionPainTagsAction(),
         ];
+    }
+
+    public function getFormContentComponent(): Component
+    {
+        return Group::make([
+            parent::getFormContentComponent(),
+        ])->extraAttributes([
+            'wire:loading.attr' => 'inert',
+        ]);
     }
 
     private function collectResultAction(bool $inline = false): Action
@@ -391,10 +404,7 @@ class EditMedicalSession extends LocalizedEditRecord
                     ->content(__('Сохраняем изменения…'))
                     ->extraAttributes(['wire:loading' => ''])
                     ->columnSpanFull(),
-                Section::make(__('0. Показатели до сеанса'))
-                    ->schema([
-                        Placeholder::make('vitals_stage1c')->hiddenLabel()->content(__('Измерения до и после сеанса подключаются в этапе 1C. Пока заполните доступные данные в следующих блоках.')),
-                    ])->collapsible()->columnSpanFull(),
+                MedicalMeasurementForm::section(),
                 Placeholder::make('session_lifecycle')
                     ->hiddenLabel()
                     ->content(fn (): string => $this->lifecycleSummary())
@@ -689,15 +699,16 @@ class EditMedicalSession extends LocalizedEditRecord
                     ])->collapsible()->columnSpanFull(),
                 Section::make(__('5. Субъективные ощущения клиента после сеанса'))
                     ->schema([
-                        Textarea::make('subjective_feelings')->hiddenLabel()->rows(4)->placeholder(__('Что клиент почувствовал после сеанса'))->live(onBlur: true),
+                        Textarea::make('subjective_feelings')->label(__('Субъективные ощущения клиента после сеанса'))->hiddenLabel()->rows(4)->placeholder(__('Что клиент почувствовал после сеанса'))->live(onBlur: true),
                     ])->collapsible()->columnSpanFull(),
                 Section::make(__('6. Визуальные изменения в осанке после сеанса'))
                     ->schema([
-                        Textarea::make('visual_posture_diagnostics')->hiddenLabel()->rows(4)->placeholder(__('Изменения линии плеч, таза и позвоночника'))->live(onBlur: true),
+                        Textarea::make('visual_posture_diagnostics')->label(__('Визуальные изменения в осанке после сеанса'))->hiddenLabel()->rows(4)->placeholder(__('Изменения линии плеч, таза и позвоночника'))->live(onBlur: true),
                     ])->collapsible()->columnSpanFull(),
                 Section::make(__('7. Результат после сеанса'))
                     ->schema([
                         Textarea::make('result')
+                            ->label(__('Результат после сеанса'))
                             ->hiddenLabel()
                             ->rows(4)
                             ->placeholder(__('Итог, который специалист вводит вручную'))
@@ -710,11 +721,12 @@ class EditMedicalSession extends LocalizedEditRecord
                     ])->collapsible()->columnSpanFull(),
                 Section::make(__('8. Заметки терапевта'))
                     ->schema([
-                        Textarea::make('therapist_notes')->hiddenLabel()->rows(4)->placeholder(__('Внутренние заметки специалиста. Клиент их не увидит.'))->live(onBlur: true),
+                        Textarea::make('therapist_notes')->label(__('Заметки терапевта'))->hiddenLabel()->rows(4)->placeholder(__('Внутренние заметки специалиста. Клиент их не увидит.'))->live(onBlur: true),
                     ])->collapsible()->columnSpanFull(),
                 Section::make(__('9. Эффективность проведённого сеанса'))
                     ->schema([
                         Placeholder::make('effectiveness_stage1b')
+                            ->label(__('Показатели эффективности'))
                             ->hiddenLabel()
                             ->content(fn (): string => $this->effectivenessSummary())
                             ->columnSpanFull(),
@@ -732,6 +744,7 @@ class EditMedicalSession extends LocalizedEditRecord
                 Section::make(__('Фото до / после'))
                     ->schema([
                         Placeholder::make('session_photos_hint')
+                            ->label(__('Подсказка по фотографиям'))
                             ->hiddenLabel()
                             ->content(__('Добавьте фотографии в нужную галерею. Файлы сохраняются в приватном хранилище.'))
                             ->columnSpanFull(),
@@ -743,7 +756,10 @@ class EditMedicalSession extends LocalizedEditRecord
                     ->columnSpanFull(),
                 Section::make(__('Исторические значения'))
                     ->schema([
-                        Placeholder::make('session_history_fields')->hiddenLabel()->content(__('Старые поля остаются доступными в истории и не показываются как активные поля новой формы.')),
+                        Placeholder::make('session_history_fields')
+                            ->label(__('История полей'))
+                            ->hiddenLabel()
+                            ->content(__('Старые поля остаются доступными в истории и не показываются как активные поля новой формы.')),
                     ])->columnSpanFull(),
             ]);
     }
@@ -759,10 +775,10 @@ class EditMedicalSession extends LocalizedEditRecord
             return;
         }
 
-        $this->persistClinicalTestResults();
+        $this->persistClinicalTestResults($key, $value);
     }
 
-    public function persistClinicalTestResults(): void
+    public function persistClinicalTestResults(?string $changedKey = null, mixed $changedValue = null): void
     {
         if (! $this->autosaveReady || $this->autosaveInProgress) {
             return;
@@ -774,6 +790,10 @@ class EditMedicalSession extends LocalizedEditRecord
             $this->save(false, false);
             Notification::make()->success()->title(__('Изменения сохранены'))->send();
         } catch (ValidationException $exception) {
+            if ($this->retryAutosaveAfterSnapshotConflict($exception, $changedKey, $changedValue)) {
+                return;
+            }
+
             Notification::make()->danger()->title(__('Изменения не сохранены'))->body((string) collect($exception->errors())->flatten()->first())->send();
         } catch (Throwable $exception) {
             $mapped = $this->unexpectedAutosaveFailure($exception, $this->data, [
@@ -785,6 +805,59 @@ class EditMedicalSession extends LocalizedEditRecord
         } finally {
             $this->autosaveInProgress = false;
         }
+    }
+
+    private function retryAutosaveAfterSnapshotConflict(
+        ValidationException $exception,
+        ?string $changedKey,
+        mixed $changedValue,
+    ): bool
+    {
+        if (! $this->isSnapshotConflict($exception)) {
+            return false;
+        }
+
+        $fresh = MedicalSession::query()
+            ->where('organization_id', $this->session()->organization_id)
+            ->whereKey($this->session()->getKey())
+            ->first();
+        if ($fresh === null) {
+            return false;
+        }
+
+        $this->record = $fresh;
+        $this->form->model($fresh);
+        $freshData = SessionForm::withStableLineageKeys($this->mutateFormDataBeforeFill([]));
+        if ($changedKey !== null) {
+            data_set($freshData, $changedKey, $changedValue);
+        }
+        $this->data = $freshData;
+        $this->form->fill($freshData);
+        $this->data['expected_snapshot'] = app(MedicalSessionSnapshotHasher::class)->forSession($fresh);
+
+        try {
+            $this->save(false, false);
+            Notification::make()->success()->title(__('Изменения сохранены'))->send();
+        } catch (ValidationException $retryException) {
+            Notification::make()->danger()->title(__('Изменения не сохранены'))->body((string) collect($retryException->errors())->flatten()->first())->send();
+        } catch (Throwable $retryException) {
+            $mapped = $this->unexpectedAutosaveFailure($retryException, $this->data, [
+                'organization_id' => app(OrganizationContext::class)->id(),
+                'actor_user_id' => $this->actor()->getKey(),
+                'entity_id' => (int) $this->session()->getKey(),
+            ]);
+            Notification::make()->danger()->title(__('Изменения не сохранены'))->body((string) collect($mapped->errors())->flatten()->first())->send();
+        }
+
+        return true;
+    }
+
+    private function isSnapshotConflict(ValidationException $exception): bool
+    {
+        return collect($exception->errors())
+            ->flatten()
+            ->contains(static fn (mixed $message): bool => is_string($message)
+                && str_contains($message, 'Медицинский сеанс изменился в другой вкладке.'));
     }
 
     private function uploadPhotoFormAction(MedicalSessionAttachmentGallery $gallery): Action
@@ -806,6 +879,12 @@ class EditMedicalSession extends LocalizedEditRecord
                     ->maxSize((int) ceil((int) config('medical.attachment_max_bytes', 20_971_520) / 1024))
                     ->storeFiles(false)
                     ->required(),
+                Select::make('plane')
+                    ->label(__('Направление'))
+                    ->options(collect(MedicalSessionAttachmentPlane::cases())->mapWithKeys(
+                        static fn (MedicalSessionAttachmentPlane $plane): array => [$plane->value => $plane->label()],
+                    )->all())
+                    ->required(),
             ])
             ->modalSubmitActionLabel(__('Загрузить'))
             ->action(function (Action $action, array $data) use ($gallery): void {
@@ -818,6 +897,7 @@ class EditMedicalSession extends LocalizedEditRecord
                         $this->parentClient(),
                         $file,
                         $gallery,
+                        MedicalSessionAttachmentPlane::from((string) $data['plane']),
                     );
                     Notification::make()->success()->title(__('Фото загружено в галерею'))->send();
                 } catch (ValidationException $exception) {
@@ -860,6 +940,7 @@ class EditMedicalSession extends LocalizedEditRecord
             'observations' => $decrypted->observations,
             'subjective_feelings' => $decrypted->subjectiveFeelings,
             'visual_posture_diagnostics' => $decrypted->visualPostureDiagnostics,
+            'measurements' => $decrypted->measurements,
             'root_cause_hypothesis' => $decrypted->rootCauseHypothesis,
             'protocol' => $decrypted->protocol,
             'result' => $decrypted->result,
@@ -927,6 +1008,10 @@ class EditMedicalSession extends LocalizedEditRecord
 
             return $fresh;
         } catch (ValidationException $exception) {
+            if ($this->autosaveInProgress && $this->isSnapshotConflict($exception)) {
+                throw $exception;
+            }
+
             throw $this->formValidationFailure($exception, $formState);
         } catch (Throwable $exception) {
             if ($this->autosaveInProgress) {
@@ -1376,6 +1461,7 @@ class EditMedicalSession extends LocalizedEditRecord
             'observations',
             'subjective_feelings',
             'visual_posture_diagnostics',
+            'measurements',
             'root_cause_hypothesis',
             'protocol',
             'result',

@@ -41,6 +41,8 @@ final readonly class MedicalSessionData
         public string $status = 'draft',
         public ?DateTimeInterface $completedAt = null,
         public ?DateTimeInterface $editedAt = null,
+        /** @var array<string, mixed>|null */
+        public ?array $measurements = null,
     ) {}
 
     public function occurredAtAtom(): ?string
@@ -71,6 +73,7 @@ final readonly class MedicalSessionData
             'status' => $this->status,
             'completed_at' => $this->completedAt?->format(DateTimeInterface::ATOM),
             'edited_at' => $this->editedAt?->format(DateTimeInterface::ATOM),
+            'measurements' => $this->measurements,
             'tests' => $this->tests,
             'observations' => $this->observations,
             'root_cause_hypothesis' => $this->rootCauseHypothesis,

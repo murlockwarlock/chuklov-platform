@@ -37,6 +37,7 @@ use Illuminate\Support\Carbon;
  * @property-read Client|null $client
  * @property-read User|null $uploadedBy
  * @property-read Collection<int, MedicalSessionAttachment> $sessionLinks
+ * @property-read Collection<int, MedicalAttachmentDelivery> $deliveries
  */
 #[Fillable([
     'uuid',
@@ -84,6 +85,12 @@ class MedicalAttachment extends Model
     public function sessionLinks(): HasMany
     {
         return $this->hasMany(MedicalSessionAttachment::class, 'medical_attachment_id');
+    }
+
+    /** @return HasMany<MedicalAttachmentDelivery, $this> */
+    public function deliveries(): HasMany
+    {
+        return $this->hasMany(MedicalAttachmentDelivery::class, 'medical_attachment_id');
     }
 
     protected function casts(): array

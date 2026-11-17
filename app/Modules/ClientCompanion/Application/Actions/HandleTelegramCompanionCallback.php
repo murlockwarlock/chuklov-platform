@@ -61,7 +61,7 @@ final class HandleTelegramCompanionCallback
         }
         $this->context->set($organization);
         try {
-            $client = $this->refreshIdentity->handle($organization, $this->identityVerifier->handle($bot));
+            $client = $this->refreshIdentity->handle($organization, $this->identityVerifier->handle($bot), $bot);
         } catch (UnauthorizedHttpException) {
             $bot->answerCallbackQuery(text: 'Сначала подключите Telegram к порталу.');
 

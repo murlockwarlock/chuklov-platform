@@ -18,6 +18,7 @@ use App\Modules\Referrals\Domain\Models\ReferralPartnerProfile;
 use App\Modules\Referrals\Domain\Models\ReferralRelationship;
 use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Sessions\Domain\Models\MedicalSession;
+use App\Modules\Sessions\Domain\Models\MedicalAnthropometricMeasurement;
 use App\Modules\Sessions\Domain\Models\MedicalSessionPain;
 use App\Modules\Sessions\Domain\Models\MedicalClientRootCause;
 use App\Modules\Surveys\Domain\Models\SurveyAttempt;
@@ -189,6 +190,12 @@ class Client extends Model
         return $this->hasMany(MedicalAttachment::class);
     }
 
+    /** @return HasOne<ClientAvatarProfile, $this> */
+    public function avatarProfile(): HasOne
+    {
+        return $this->hasOne(ClientAvatarProfile::class);
+    }
+
     /** @return HasMany<AiRun, $this> */
     public function aiRuns(): HasMany
     {
@@ -199,6 +206,12 @@ class Client extends Model
     public function sessions(): HasMany
     {
         return $this->hasMany(MedicalSession::class);
+    }
+
+    /** @return HasMany<MedicalAnthropometricMeasurement, $this> */
+    public function medicalAnthropometricMeasurements(): HasMany
+    {
+        return $this->hasMany(MedicalAnthropometricMeasurement::class);
     }
 
     /** @return HasMany<MedicalClientRootCause, $this> */

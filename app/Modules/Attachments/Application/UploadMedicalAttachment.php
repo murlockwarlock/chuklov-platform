@@ -50,7 +50,7 @@ final readonly class UploadMedicalAttachment
             $storageUuid = (string) Str::uuid();
             $stored = $command->attachmentType === AttachmentType::AudioRecording
                 ? $this->storage->store($orgId, $command->file, $storageUuid, AttachmentType::AudioRecording)
-                : $this->storage->store($orgId, $command->file, $storageUuid);
+                : $this->storage->store($orgId, $command->file, $storageUuid, $command->attachmentType);
             $attachment = DB::transaction(function () use ($actor, $organization, $client, $command, $displayName, $uuid, $stored): MedicalAttachment {
                 $lockedClient = Client::query()->where('organization_id', $organization->getKey())->whereKey($client->getKey())->lockForUpdate()->firstOrFail();
                 $this->authorization->authorizeUpload($actor, $lockedClient, $command->attachmentType);

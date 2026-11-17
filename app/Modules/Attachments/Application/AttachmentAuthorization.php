@@ -33,12 +33,15 @@ final class AttachmentAuthorization
     {
         if ($actor instanceof Client) {
             $organization = $this->organization();
-            $this->features->authorize($organization, OrganizationFeature::ClientRecords);
             $this->assertClientOwned($actor, $organization);
             $this->assertClientOwned($client, $organization);
-            if ($type !== AttachmentType::MedicalReport) {
-                throw new AuthorizationException('This client may only upload their own medical reports.');
+            if (! in_array($type, [AttachmentType::MedicalReport, AttachmentType::ClientAvatar], true)) {
+                throw new AuthorizationException('This client may only upload their own medical reports or avatar.');
             }
+            if ($type === AttachmentType::ClientAvatar) {
+                return $organization;
+            }
+            $this->features->authorize($organization, OrganizationFeature::ClientRecords);
             app(PatientProfileAccess::class)->authorizeClinicalClient($actor, $client);
 
             return $organization;

@@ -49,7 +49,7 @@ final class HandleTelegramCompanionDocument
         $this->context->set($organization);
 
         try {
-            $client = $this->refreshIdentity->handle($organization, $this->identityVerifier->handle($bot));
+            $client = $this->refreshIdentity->handle($organization, $this->identityVerifier->handle($bot), $bot);
         } catch (UnauthorizedHttpException) {
             $this->sendLinkPath($bot);
 

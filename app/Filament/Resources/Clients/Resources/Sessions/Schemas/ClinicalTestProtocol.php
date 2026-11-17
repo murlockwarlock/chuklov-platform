@@ -216,7 +216,13 @@ final class ClinicalTestProtocol
                     return;
                 }
 
-                $state[$itemKey] = array_replace($state[$itemKey], $data);
+                $existingItem = $state[$itemKey];
+                $state[$itemKey] = array_replace($existingItem, $data);
+                if (is_array($existingItem['structured'] ?? null) && is_array($data['structured'] ?? null)) {
+                    $state[$itemKey]['structured'] = array_replace_recursive($existingItem['structured'], $data['structured']);
+                }
+                $component->rawState($state);
+                $component->getChildSchema($itemKey)?->fill($state[$itemKey], shouldFillStateWithNull: false);
                 $component->rawState($state);
                 $component->callAfterStateUpdated();
                 Notification::make()->success()->title(__('Тест сохранён в сеансе'))->send();
@@ -805,7 +811,18 @@ final class ClinicalTestProtocol
             TextInput::make('angle')->label(__('Угол, °'))->numeric()->minValue(0)->maxValue(180)->visible(fn (Get $get): bool => $get('input_mode') === 'mobility' && (bool) ($get('angle_enabled') ?? true)),
             TextInput::make('measurement')->label(__('Замер'))->numeric()->visible(fn (Get $get): bool => $get('input_mode') === 'measurement'),
             Select::make('unit')->label(__('Единица'))->options(fn (Get $get): array => self::simpleOptions($get('unit_options')))->nullable()->visible(fn (Get $get): bool => $get('input_mode') === 'measurement'),
-            Select::make('movement_phase')->label(__('Фаза движения'))->options(fn (Get $get): array => self::simpleOptions($get('phase_options')))->nullable()->visible(fn (Get $get): bool => $get('input_mode') === 'measurement' && ! filled($get('fixed_movement_phase'))),
+            Select::make('movement_phase')
+                ->label(__('Фаза движения'))
+                ->options(fn (Get $get): array => self::simpleOptions($get('phase_options')))
+                ->nullable()
+                ->dehydrated()
+                ->afterStateHydrated(function (Select $component, mixed $state, Get $get): void {
+                    $fixedPhase = $get('fixed_movement_phase');
+                    if (! filled($state) && filled($fixedPhase)) {
+                        $component->state((string) $fixedPhase);
+                    }
+                })
+                ->visible(fn (Get $get): bool => $get('input_mode') === 'measurement' && ! filled($get('fixed_movement_phase'))),
             TextInput::make('degrees')->label(__('Градусы'))->numeric()->visible(fn (Get $get): bool => $get('input_mode') === 'measurement'),
             Textarea::make('additional_answers')->label(__('Дополнительные ответы'))->rows(2)->maxLength(2000)->visible(fn (Get $get): bool => $get('input_mode') === 'measurement'),
             TextInput::make('pain_point')->label(__('Болевая точка'))->maxLength(255)->visible(fn (Get $get): bool => $get('input_mode') === 'pain_point'),

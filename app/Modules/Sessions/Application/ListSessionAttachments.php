@@ -28,7 +28,7 @@ final readonly class ListSessionAttachments
             ->with('attachment:id,organization_id,client_id,uuid,attachment_type,original_filename,display_name,mime_type,size_bytes,created_at')
             ->orderByDesc('id')
             ->limit(max(1, min($limit, 50)))
-            ->get(['id', 'organization_id', 'client_id', 'medical_session_id', 'medical_attachment_id', 'gallery'])
+            ->get(['id', 'organization_id', 'client_id', 'medical_session_id', 'medical_attachment_id', 'gallery', 'plane'])
             ->map(function (MedicalSessionAttachment $link) use ($actor, $organization): SessionAttachmentData {
                 $attachment = $link->attachment;
 
@@ -38,6 +38,7 @@ final readonly class ListSessionAttachments
                     type: $attachment->attachment_type->label(),
                     gallery: $link->gallery->label(),
                     galleryKey: $link->gallery->value,
+                    plane: $link->plane?->label(),
                     sizeBytes: (int) $attachment->size_bytes,
                     downloadUrl: $this->temporaryUrl->handle($actor, $attachment, 15),
                     previewUrl: $this->temporaryUrl->handlePreview($actor, $attachment, 15),

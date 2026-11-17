@@ -18,7 +18,7 @@ final readonly class ListClientMedicalMaterials
         $materials = MedicalAttachment::query()
             ->where('organization_id', $client->organization_id)
             ->where('client_id', $client->getKey())
-            ->whereIn('attachment_type', [AttachmentType::MedicalReport->value, AttachmentType::PosturePhoto->value])
+            ->where('attachment_type', AttachmentType::MedicalReport->value)
             ->orderByDesc('created_at')->orderByDesc('id')->limit(100)
             ->get(['id', 'uuid', 'organization_id', 'client_id', 'attachment_type', 'original_filename', 'mime_type', 'size_bytes', 'created_at']);
         $urls = $this->urls->forClientMaterials($client, $materials);

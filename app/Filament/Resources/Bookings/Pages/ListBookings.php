@@ -11,6 +11,8 @@ use App\Filament\Support\LocalizedListRecords;
 use App\Filament\Support\TimezoneOptions;
 use App\Models\User;
 use App\Modules\Finance\Application\GetOutstandingDebtByBookingIds;
+use App\Modules\Identity\Application\ClientAvatarPresentation;
+use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Scenarios\Application\HasQualifyingNextBooking;
 use App\Modules\Scenarios\Domain\Enums\ScenarioDelayUnit;
@@ -286,7 +288,7 @@ class ListBookings extends LocalizedListRecords
             ))
             ->where('starts_at', '>=', $start->startOfDay()->setTimezone('UTC'))
             ->where('starts_at', '<', $end->addDay()->startOfDay()->setTimezone('UTC'))
-            ->with(['client', 'service', 'specialist', 'patientProfile.clinicalClient'])
+            ->with(['client.avatarProfile.attachment', 'service', 'specialist', 'patientProfile.clinicalClient'])
             ->orderBy('starts_at')
             ->get();
         $canViewClients = ClientResource::canViewAny();
@@ -679,7 +681,7 @@ class ListBookings extends LocalizedListRecords
         ];
     }
 
-    /** @return array{id: int, event_version: int, specialist_id: int, specialist: string, specialist_is_active: bool, client: string, client_url: string|null, service: string, start_time: string, end_time: string, time_range: string, status: string, status_class: string, blocks_availability: bool, is_terminal: bool, released_for_rebooking: bool, format: string, location_label: string, party_size: int, party_size_label: string|null, has_debt: bool, retention_warning: bool, retention_label: string, is_online: bool, start_minutes: int, end_minutes: int, url: string} */
+    /** @return array{id: int, event_version: int, specialist_id: int, specialist: string, specialist_is_active: bool, client: string, client_url: string|null, client_avatar_url: string|null, client_avatar_initials: string, service: string, start_time: string, end_time: string, time_range: string, status: string, status_class: string, blocks_availability: bool, is_terminal: bool, released_for_rebooking: bool, format: string, location_label: string, party_size: int, party_size_label: string|null, has_debt: bool, retention_warning: bool, retention_label: string, is_online: bool, start_minutes: int, end_minutes: int, url: string} */
     private function bookingProjection(Booking $booking, CarbonImmutable $localStart, CarbonImmutable $localEnd, bool $canViewClients, bool $retentionWarning = false, bool $hasDebt = false): array
     {
         $startMinutes = ((int) $localStart->format('H')) * 60 + (int) $localStart->format('i');
@@ -687,6 +689,14 @@ class ListBookings extends LocalizedListRecords
         $status = $booking->status;
         $format = $booking->visit_format;
         $clientName = trim((string) ($booking->client->full_name ?? ''));
+        $clientAvatarUrl = null;
+        $clientAvatarInitials = '?';
+        $actor = auth()->user();
+        if ($canViewClients && $actor instanceof User && $booking->client instanceof Client) {
+            $avatar = app(ClientAvatarPresentation::class)->forCrm($actor, $booking->client);
+            $clientAvatarUrl = $avatar['url'];
+            $clientAvatarInitials = $avatar['initials'];
+        }
         if ($booking->clinicalClientId() !== (int) $booking->client_id) {
             $clientName = trim((string) $booking->patientProfile?->clinicalClient?->full_name).' • '.__('Заказчик').': '.$clientName;
         }
@@ -702,6 +712,8 @@ class ListBookings extends LocalizedListRecords
             'specialist_id' => (int) $booking->specialist_id,
             'client' => $clientName !== '' ? $clientName : __('Клиент'),
             'client_url' => CrmEntityLinks::clientUrl($booking->client, $canViewClients),
+            'client_avatar_url' => $clientAvatarUrl,
+            'client_avatar_initials' => $clientAvatarInitials,
             'service' => $serviceName !== '' ? $serviceName : __('Услуга'),
             'specialist' => $booking->specialist->display_name.($booking->specialist->is_active ? '' : ' ('.__('неактивен').')'),
             'specialist_is_active' => (bool) $booking->specialist->is_active,

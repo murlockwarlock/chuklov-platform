@@ -84,6 +84,26 @@ final class SessionInfolist
                     ])
                     ->visible(fn (MedicalSession $record, Section $section): bool => self::safetyMarker($record, $section) !== null)
                     ->columnSpanFull(),
+                Section::make(__('Показатели сеанса'))
+                    ->schema([
+                        RepeatableEntry::make('measurements')
+                            ->hiddenLabel()
+                            ->schema([
+                                TextEntry::make('phase')->label(__('Этап')),
+                                TextEntry::make('sys')->label(__('SYS'))->placeholder('—'),
+                                TextEntry::make('dia')->label(__('DIA'))->placeholder('—'),
+                                TextEntry::make('pd')->label(__('PD'))->suffix(' мм рт. ст.')->placeholder('—'),
+                                TextEntry::make('map')->label(__('MAP'))->suffix(' мм рт. ст.')->placeholder('—'),
+                                TextEntry::make('pulse')->label(__('Пульс'))->suffix(' уд/мин')->placeholder('—'),
+                                TextEntry::make('pi')->label(__('Индекс перфузии'))->suffix(' %')->placeholder('—'),
+                                TextEntry::make('spo2')->label(__('Сатурация'))->suffix(' %')->placeholder('—'),
+                            ])
+                            ->columns(4)
+                            ->state(fn (MedicalSession $record, RepeatableEntry $entry): array => self::measurementRows($record, $entry))
+                            ->columnSpanFull(),
+                    ])
+                    ->visible(fn (MedicalSession $record, Section $section): bool => self::measurementRows($record, $section) !== [])
+                    ->columnSpanFull(),
                 Section::make(__('Карта здоровья клиента'))
                     ->description(__('Актуальные данные медицинского профиля'))
                     ->schema(ClinicalProfileInfolist::profile())->columns(2)
@@ -291,6 +311,7 @@ final class SessionInfolist
                                     ->columnSpanFull(),
                                 TextEntry::make('type')->label(__('Тип')),
                                 TextEntry::make('gallery')->label(__('Раздел')),
+                                TextEntry::make('plane')->label(__('Направление'))->placeholder(__('Не указано')),
                                 TextEntry::make('size')->label(__('Размер')),
                                 TextEntry::make('uploaded_at')->label(__('Загружен')),
                                 TextEntry::make('status')->label(__('Состояние')),
@@ -548,6 +569,42 @@ final class SessionInfolist
     private static function hasPains(MedicalSession $record, Component $component): bool
     {
         return self::pains($record, $component) !== [];
+    }
+
+    /** @return list<array<string, mixed>> */
+    private static function measurementRows(MedicalSession $record, Component $component): array
+    {
+        $data = self::sessionData($record, $component);
+        $measurements = $data?->measurements;
+        if (! is_array($measurements)) {
+            return [];
+        }
+
+        $rows = [];
+        foreach ([
+            'before' => __('До сеанса'),
+            'after' => __('После сеанса'),
+        ] as $phase => $label) {
+            if ($phase === 'after' && ! ($measurements['after_enabled'] ?? false)) {
+                continue;
+            }
+            $vitals = $measurements[$phase]['vitals'] ?? null;
+            if (! is_array($vitals) || ! collect($vitals)->contains(static fn (mixed $value): bool => $value !== null)) {
+                continue;
+            }
+            $rows[] = [
+                'phase' => $label,
+                'sys' => $vitals['sys'] ?? null,
+                'dia' => $vitals['dia'] ?? null,
+                'pd' => $vitals['pd'] ?? null,
+                'map' => $vitals['map'] ?? null,
+                'pulse' => $vitals['pulse'] ?? null,
+                'pi' => $vitals['pi'] ?? null,
+                'spo2' => $vitals['spo2'] ?? null,
+            ];
+        }
+
+        return $rows;
     }
 
     /** @return array{attachments: list<array<string, mixed>>} */

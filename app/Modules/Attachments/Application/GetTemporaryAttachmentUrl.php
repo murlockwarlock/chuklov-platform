@@ -21,6 +21,9 @@ final readonly class GetTemporaryAttachmentUrl
         'audio/x-wav',
         'audio/ogg',
         'audio/webm',
+        'video/mp4',
+        'video/quicktime',
+        'video/webm',
     ];
 
     public function __construct(

@@ -37,6 +37,7 @@ type Profile = {
     timezone: string;
     locale: 'ru' | 'en';
     emailEditable: boolean;
+    avatar: { url: string | null; initials: string };
 };
 
 const props = defineProps<{
@@ -51,11 +52,13 @@ const props = defineProps<{
         referrals: string;
         cities: string;
         currency: string;
+        avatarUpload: string;
     };
     saved: boolean;
     currencySaved: boolean;
     currencyPreference: { selected: string | null; base: string | null; options: string[] };
     consentsSaved: boolean;
+    avatarSaved: boolean;
     b2bSpecialistAnswer: 'yes' | 'no' | null;
     marketingConsent: { documentId: number; accepted: boolean } | null;
     timezoneOptions: Array<{ value: string; label: string }>;
@@ -108,6 +111,10 @@ const consentValues = ref<Record<number, boolean>>(Object.fromEntries(
 const b2bAnswerForm = useForm<{ b2b_specialist_answer: 'yes' | 'no' | null }>({
     b2b_specialist_answer: props.b2bSpecialistAnswer,
 });
+const avatarForm = useForm<{ file: File | null; upload_key: string }>({ file: null, upload_key: '' });
+const avatarInput = ref<HTMLInputElement | null>(null);
+const avatarSaveState = ref<'idle' | 'saving' | 'saved' | 'error'>(props.avatarSaved ? 'saved' : 'idle');
+const avatarSaveError = ref<string | null>(null);
 const editingB2bAnswer = ref(false);
 const personalFields = [
     { key: 'last_name', label: 'profile.lastName', autocomplete: 'family-name' },
@@ -281,7 +288,55 @@ onBeforeUnmount(() => {
     if (profileSaveTimer) {
         clearTimeout(profileSaveTimer);
     }
+    avatarForm.cancel();
 });
+
+function chooseAvatar(): void {
+    if (!avatarForm.processing) {
+        avatarInput.value?.click();
+    }
+}
+
+function uploadAvatar(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0] ?? null;
+    input.value = '';
+    if (!file) {
+        return;
+    }
+    avatarForm.file = file;
+    avatarForm.upload_key = crypto.randomUUID();
+    avatarSaveState.value = 'saving';
+    avatarSaveError.value = null;
+    avatarForm.clearErrors();
+    avatarForm.post(props.urls.avatarUpload, {
+        forceFormData: true,
+        preserveScroll: true,
+        onSuccess: () => {
+            avatarSaveState.value = 'saved';
+        },
+        onError: (errors) => {
+            avatarSaveState.value = 'error';
+            avatarSaveError.value = errors.file ?? errors.upload_key ?? t('profile.avatarUploadFailed');
+        },
+        onHttpException: (response) => {
+            avatarSaveState.value = 'error';
+            avatarSaveError.value = response.status === 401 || response.status === 419
+                ? t('profile.saveSessionExpired')
+                : response.status === 403
+                    ? t('profile.saveAccessDenied')
+                    : t('profile.avatarUploadFailed');
+
+            return false;
+        },
+        onNetworkError: () => {
+            avatarSaveState.value = 'error';
+            avatarSaveError.value = t('profile.saveRetry');
+
+            return false;
+        },
+    });
+}
 
 function saveConsents(): void {
     consentForm.post(props.urls.consents, {
@@ -325,6 +380,66 @@ function saveB2bAnswer(): void {
   >
     <section class="portal-container portal-container--narrow portal-stack portal-stack--loose">
       <PortalPageHeader :title="t('profile.title')" />
+
+      <section class="portal-content-section portal-stack">
+        <div class="portal-section-heading">
+          <div class="portal-stack portal-stack--tight">
+            <h2 class="portal-heading portal-heading--card">
+              {{ t('profile.avatar') }}
+            </h2>
+            <p class="portal-copy portal-copy--small">
+              {{ t('profile.avatarDescription') }}
+            </p>
+          </div>
+        </div>
+        <div class="flex flex-wrap items-center gap-4">
+          <img
+            v-if="props.profile.avatar.url"
+            :src="props.profile.avatar.url"
+            :alt="props.profile.fullName ?? t('profile.avatar')"
+            class="size-20 rounded-full object-cover ring-2 ring-gray-200 dark:ring-gray-700"
+          >
+          <span
+            v-else
+            class="inline-flex size-20 items-center justify-center rounded-full bg-orange-100 text-xl font-semibold text-orange-800 ring-2 ring-orange-200 dark:bg-orange-950/40 dark:text-orange-200 dark:ring-orange-800"
+            aria-hidden="true"
+          >
+            {{ props.profile.avatar.initials }}
+          </span>
+          <div class="portal-stack portal-stack--tight">
+            <input
+              id="profile-avatar"
+              ref="avatarInput"
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              class="sr-only"
+              :disabled="avatarForm.processing"
+              @change="uploadAvatar"
+            >
+            <button
+              type="button"
+              class="portal-button portal-button--secondary self-start"
+              :disabled="avatarForm.processing"
+              @click="chooseAvatar"
+            >
+              {{ avatarForm.processing ? t('profile.avatarUploading') : t('profile.avatarChoose') }}
+            </button>
+            <p
+              class="portal-copy portal-copy--small"
+              role="status"
+            >
+              {{ avatarSaveState === 'saved' ? t('profile.avatarSaved') : t('profile.avatarFormats') }}
+            </p>
+            <p
+              v-if="avatarSaveError"
+              class="portal-error"
+              role="alert"
+            >
+              {{ avatarSaveError }}
+            </p>
+          </div>
+        </div>
+      </section>
 
       <section
         v-if="props.currencyPreference.options.length"

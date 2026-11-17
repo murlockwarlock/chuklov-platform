@@ -30,6 +30,8 @@ final readonly class UpdateSession
         private MedicalSessionTestReader $testReader,
         private MedicalSessionCauseWriter $causeWriter,
         private MedicalTest18SafetyMarker $test18SafetyMarker,
+        private MedicalMeasurementCalculator $measurementCalculator,
+        private MedicalVitalsSafetyMarker $vitalsSafetyMarker,
         private MedicalSessionProtocolStepWriter $protocolStepWriter,
         private MedicalSessionProtocolStepReader $protocolStepReader,
     ) {}
@@ -40,6 +42,10 @@ final readonly class UpdateSession
         $orgId = (int) $organization->getKey();
 
         $this->validateCommand($command);
+
+        $requestedMeasurements = $command->measurementsProvided
+            ? $this->measurementCalculator->normalizeSession($command->measurements)
+            : null;
 
         $keyVersion = $this->keyResolver->getCurrentKeyVersion($orgId);
 
@@ -55,7 +61,7 @@ final readonly class UpdateSession
             keyVersion: $keyVersion,
         );
 
-        $result = DB::transaction(function () use ($actor, $organization, $session, $command, $encrypted, $keyVersion, $orgId): MedicalSessionData {
+        $result = DB::transaction(function () use ($actor, $organization, $session, $command, $encrypted, $requestedMeasurements, $keyVersion, $orgId): MedicalSessionData {
             /** @var MedicalSession|null $existing */
             $existing = MedicalSession::query()
                 ->where('organization_id', $orgId)
@@ -84,6 +90,9 @@ final readonly class UpdateSession
             $existingTherapistNotes = $this->encryptor->decryptField($orgId, $existing->therapist_notes, $previousKeyVersion);
             $existingSubjectiveFeelings = $this->encryptor->decryptField($orgId, $existing->subjective_feelings, $previousKeyVersion);
             $existingVisualPostureDiagnostics = $this->encryptor->decryptField($orgId, $existing->visual_posture_diagnostics, $previousKeyVersion);
+            $existingMeasurements = $this->decodeMeasurements(
+                $this->encryptor->decryptField($orgId, $existing->measurements, $previousKeyVersion),
+            );
             $existingRootCauseHypothesis = $this->encryptor->decryptField($orgId, $existing->root_cause_hypothesis, $previousKeyVersion);
             $existingProtocol = $this->encryptor->decryptField($orgId, $existing->protocol, $previousKeyVersion);
             $existingResult = $this->encryptor->decryptField($orgId, $existing->result, $previousKeyVersion);
@@ -91,6 +100,7 @@ final readonly class UpdateSession
             $painVas = $command->shouldUpdatePainVas() ? $command->painVas : $existingPainVas;
             $subjectiveFeelings = $command->shouldUpdateSubjectiveFeelings() ? $command->subjectiveFeelings : $existingSubjectiveFeelings;
             $visualPostureDiagnostics = $command->shouldUpdateVisualPostureDiagnostics() ? $command->visualPostureDiagnostics : $existingVisualPostureDiagnostics;
+            $measurements = $command->measurementsProvided ? $requestedMeasurements : $existingMeasurements;
             $therapistNotes = $command->therapistNotesProvided ? $command->therapistNotes : $existingTherapistNotes;
             $encryptedPainVas = $this->encryptor->encryptField(
                 $orgId,
@@ -106,6 +116,7 @@ final readonly class UpdateSession
                     'therapist_notes' => $existingTherapistNotes,
                     'subjective_feelings' => $existingSubjectiveFeelings,
                     'visual_posture_diagnostics' => $existingVisualPostureDiagnostics,
+                    'measurements' => $existingMeasurements,
                     'root_cause_hypothesis' => $existingRootCauseHypothesis,
                     'protocol' => $existingProtocol,
                     'result' => $existingResult,
@@ -116,6 +127,9 @@ final readonly class UpdateSession
             );
             if ($command->therapistNotesProvided && $existingTherapistNotes !== $therapistNotes) {
                 $updatedFields[] = 'therapist_notes';
+            }
+            if ($command->measurementsProvided && $existingMeasurements !== $measurements) {
+                $updatedFields[] = 'measurements';
             }
             if ($command->protocolStepsProvided) {
                 $updatedFields[] = 'protocol_steps';
@@ -129,6 +143,11 @@ final readonly class UpdateSession
                 'therapist_notes' => $this->encryptor->encryptField($orgId, $therapistNotes, $keyVersion),
                 'subjective_feelings' => $this->encryptor->encryptField($orgId, $subjectiveFeelings, $keyVersion),
                 'visual_posture_diagnostics' => $this->encryptor->encryptField($orgId, $visualPostureDiagnostics, $keyVersion),
+                'measurements' => $this->encryptor->encryptField(
+                    $orgId,
+                    $measurements === null ? null : json_encode($measurements, JSON_THROW_ON_ERROR),
+                    $keyVersion,
+                ),
                 'root_cause_hypothesis' => $encrypted->encryptedRootCauseHypothesis,
                 'protocol' => $encrypted->encryptedProtocol,
                 'result' => $encrypted->encryptedResult,
@@ -178,6 +197,9 @@ final readonly class UpdateSession
                     $command->causesManualOverrideProvided ? $command->causesManualOverride : (bool) $existing->causes_manual_override,
                 );
             }
+            if ($command->measurementsProvided) {
+                $this->vitalsSafetyMarker->sync($actor, $existing, $measurements);
+            }
 
             $this->audit->handle(
                 organization: $organization,
@@ -212,6 +234,7 @@ final readonly class UpdateSession
                 pains: $this->painReader->forSession($existing),
                 subjectiveFeelings: $subjectiveFeelings,
                 visualPostureDiagnostics: $visualPostureDiagnostics,
+                measurements: $measurements,
                 testResults: $this->testReader->tests($existing),
                 rootCauses: $this->testReader->rootCauses($existing),
                 causes: $this->testReader->causes($existing),
@@ -313,6 +336,18 @@ final readonly class UpdateSession
     private function painVas(?string $value): ?int
     {
         return $value !== null && preg_match('/^-?\d+$/D', $value) === 1 ? (int) $value : null;
+    }
+
+    /** @return array<string, mixed>|null */
+    private function decodeMeasurements(?string $value): ?array
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        $decoded = json_decode($value, true);
+
+        return is_array($decoded) ? $decoded : null;
     }
 
     /** @param array<int, mixed> $testResults */

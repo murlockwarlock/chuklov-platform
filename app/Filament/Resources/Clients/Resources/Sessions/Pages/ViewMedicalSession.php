@@ -15,11 +15,13 @@ use App\Modules\Sessions\Application\SearchClientAttachments;
 use App\Modules\Sessions\Application\UnlinkSessionAttachment;
 use App\Modules\Sessions\Application\UploadSessionPhoto;
 use App\Modules\Sessions\Domain\Enums\MedicalSessionAttachmentGallery;
+use App\Modules\Sessions\Domain\Enums\MedicalSessionAttachmentPlane;
 use App\Modules\Sessions\Domain\Models\MedicalSession;
 use App\Support\Images\SupportedImageTypes;
 use Filament\Actions\Action;
 use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\Select;
+use Filament\Schemas\Components\Utilities\Get;
 use Filament\Notifications\Notification;
 use Illuminate\Http\UploadedFile;
 
@@ -67,7 +69,15 @@ class ViewMedicalSession extends LocalizedViewRecord
                             static fn (MedicalSessionAttachmentGallery $gallery): array => [$gallery->value => $gallery->label()],
                         )->all())
                         ->default(MedicalSessionAttachmentGallery::General->value)
+                        ->live()
                         ->required(),
+                    Select::make('plane')
+                        ->label(__('Направление'))
+                        ->options(collect(MedicalSessionAttachmentPlane::cases())->mapWithKeys(
+                            static fn (MedicalSessionAttachmentPlane $plane): array => [$plane->value => $plane->label()],
+                        )->all())
+                        ->required(fn (Get $get): bool => $get('gallery') !== MedicalSessionAttachmentGallery::General->value)
+                        ->visible(fn (Get $get): bool => $get('gallery') !== MedicalSessionAttachmentGallery::General->value),
                 ])
                 ->modalSubmitActionLabel(__('Связать'))
                 ->action(function (array $data): void {
@@ -77,6 +87,7 @@ class ViewMedicalSession extends LocalizedViewRecord
                         $this->client(),
                         (int) $data['attachment_id'],
                         MedicalSessionAttachmentGallery::from((string) $data['gallery']),
+                        filled($data['plane'] ?? null) ? MedicalSessionAttachmentPlane::from((string) $data['plane']) : null,
                     );
 
                     Notification::make()->success()->title(__('Файл связан с сеансом'))->send();
@@ -168,6 +179,12 @@ class ViewMedicalSession extends LocalizedViewRecord
                     ->getOptionLabelUsing(fn (mixed $value): ?string => is_numeric($value)
                         ? app(SearchClientAttachments::class)->label($this->actor(), $this->client(), (int) $value)
                         : null),
+                Select::make('plane')
+                    ->label(__('Направление'))
+                    ->options(collect(MedicalSessionAttachmentPlane::cases())->mapWithKeys(
+                        static fn (MedicalSessionAttachmentPlane $plane): array => [$plane->value => $plane->label()],
+                    )->all())
+                    ->required(),
             ])
             ->modalSubmitActionLabel(__('Добавить'))
             ->action(function (array $data) use ($gallery): void {
@@ -177,6 +194,7 @@ class ViewMedicalSession extends LocalizedViewRecord
                     $this->client(),
                     (int) $data['attachment_id'],
                     $gallery,
+                    MedicalSessionAttachmentPlane::from((string) $data['plane']),
                 );
 
                 Notification::make()->success()->title(__('Фото добавлено в галерею'))->send();
@@ -203,6 +221,12 @@ class ViewMedicalSession extends LocalizedViewRecord
                     ->maxSize((int) ceil((int) config('medical.attachment_max_bytes', 20_971_520) / 1024))
                     ->storeFiles(false)
                     ->required(),
+                Select::make('plane')
+                    ->label(__('Направление'))
+                    ->options(collect(MedicalSessionAttachmentPlane::cases())->mapWithKeys(
+                        static fn (MedicalSessionAttachmentPlane $plane): array => [$plane->value => $plane->label()],
+                    )->all())
+                    ->required(),
             ])
             ->modalSubmitActionLabel(__('Загрузить'))
             ->action(function (array $data) use ($gallery): void {
@@ -214,6 +238,7 @@ class ViewMedicalSession extends LocalizedViewRecord
                     $this->client(),
                     $file,
                     $gallery,
+                    MedicalSessionAttachmentPlane::from((string) $data['plane']),
                 );
 
                 Notification::make()->success()->title(__('Фото загружено в галерею'))->send();

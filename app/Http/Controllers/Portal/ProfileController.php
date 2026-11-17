@@ -14,6 +14,7 @@ use App\Modules\ClientPortal\Application\GetClientProfile;
 use App\Modules\ClientPortal\Application\UpdateClientCurrencyPreference;
 use App\Modules\Identity\Application\ListPublishedLegalDocuments;
 use App\Modules\Identity\Application\RecordPortalClientConsents;
+use App\Modules\Identity\Application\SetClientAvatar;
 use App\Modules\Identity\Application\UpdateClientProfileFromPortal;
 use App\Modules\Identity\Domain\Enums\ConsentSubject;
 use Illuminate\Http\RedirectResponse;
@@ -41,7 +42,28 @@ class ProfileController extends Controller
             'saved' => (bool) session()->pull('profile_saved', false),
             'consentsSaved' => (bool) session()->pull('consents_saved', false),
             'currencySaved' => (bool) session()->pull('currency_saved', false),
+            'avatarSaved' => (bool) session()->pull('avatar_saved', false),
         ]);
+    }
+
+    public function avatar(
+        Request $request,
+        ClientPortalContext $clientContext,
+        SetClientAvatar $setAvatar,
+    ): RedirectResponse {
+        $data = $request->validate([
+            'file' => ['required', 'file', 'image', 'mimes:jpg,jpeg,png,webp', 'max:10240'],
+            'upload_key' => ['required', 'uuid'],
+        ]);
+        $setAvatar->handle(
+            actor: $clientContext->client(),
+            client: $clientContext->client(),
+            file: $data['file'],
+            uploadKey: (string) $data['upload_key'],
+            source: 'client_upload',
+        );
+
+        return to_route('portal.profile')->with('avatar_saved', true);
     }
 
     public function update(

@@ -36,6 +36,8 @@ final readonly class CreateSession
         private MedicalSessionTestReader $testReader,
         private MedicalSessionCauseWriter $causeWriter,
         private MedicalTest18SafetyMarker $test18SafetyMarker,
+        private MedicalMeasurementCalculator $measurementCalculator,
+        private MedicalVitalsSafetyMarker $vitalsSafetyMarker,
         private MedicalSessionProtocolStepWriter $protocolStepWriter,
         private MedicalSessionProtocolStepReader $protocolStepReader,
         private UpdateSession $updateSession,
@@ -47,6 +49,8 @@ final readonly class CreateSession
         $orgId = (int) $organization->getKey();
 
         $this->validateCommand($command);
+
+        $measurements = $this->measurementCalculator->normalizeSession($command->measurements);
 
         $specialist = Specialist::query()
             ->where('organization_id', $orgId)
@@ -96,6 +100,11 @@ final readonly class CreateSession
             encryptedObservations: $this->encryptor->encryptField($orgId, $command->observations, $keyVersion),
             encryptedSubjectiveFeelings: $this->encryptor->encryptField($orgId, $command->subjectiveFeelings, $keyVersion),
             encryptedVisualPostureDiagnostics: $this->encryptor->encryptField($orgId, $command->visualPostureDiagnostics, $keyVersion),
+            encryptedMeasurements: $this->encryptor->encryptField(
+                $orgId,
+                $measurements === null ? null : json_encode($measurements, JSON_THROW_ON_ERROR),
+                $keyVersion,
+            ),
             encryptedRootCauseHypothesis: $this->encryptor->encryptField($orgId, $command->rootCauseHypothesis, $keyVersion),
             encryptedProtocol: $this->encryptor->encryptField($orgId, $command->protocol, $keyVersion),
             encryptedResult: $this->encryptor->encryptField($orgId, $command->result, $keyVersion),
@@ -110,7 +119,7 @@ final readonly class CreateSession
         $occurredAtUtc = $command->occurredAtUtc();
 
         try {
-            return DB::transaction(function () use ($actor, $organization, $client, $specialist, $booking, $command, $specialComplaints, $encrypted, $keyVersion, $occurredAtUtc, $orgId, $historicalPainValues): MedicalSessionData {
+            return DB::transaction(function () use ($actor, $organization, $client, $specialist, $booking, $command, $specialComplaints, $encrypted, $measurements, $keyVersion, $occurredAtUtc, $orgId, $historicalPainValues): MedicalSessionData {
                 $session = new MedicalSession;
                 $session->forceFill([
                     'organization_id' => $orgId,
@@ -127,6 +136,7 @@ final readonly class CreateSession
                     'therapist_notes' => $this->encryptor->encryptField($orgId, $command->therapistNotes, $keyVersion),
                     'subjective_feelings' => $encrypted->encryptedSubjectiveFeelings,
                     'visual_posture_diagnostics' => $encrypted->encryptedVisualPostureDiagnostics,
+                    'measurements' => $encrypted->encryptedMeasurements,
                     'root_cause_hypothesis' => $encrypted->encryptedRootCauseHypothesis,
                     'protocol' => $encrypted->encryptedProtocol,
                     'result' => $encrypted->encryptedResult,
@@ -159,6 +169,7 @@ final readonly class CreateSession
                 if ($command->causeIds !== null || $command->causesManualOverride) {
                     $this->causeWriter->replace($session, $command->causeIds ?? [], $command->causesManualOverride);
                 }
+                $this->vitalsSafetyMarker->sync($actor, $session, $measurements);
 
                 $this->audit->handle(
                     organization: $organization,
@@ -195,6 +206,7 @@ final readonly class CreateSession
                     pains: $this->painReader->forSession($session),
                     subjectiveFeelings: $command->subjectiveFeelings,
                     visualPostureDiagnostics: $command->visualPostureDiagnostics,
+                    measurements: $measurements,
                     testResults: $this->testReader->tests($session),
                     rootCauses: $this->testReader->rootCauses($session),
                     causes: $this->testReader->causes($session),
@@ -250,6 +262,8 @@ final readonly class CreateSession
             visualPostureDiagnostics: $command->visualPostureDiagnostics,
             subjectiveFeelingsProvided: true,
             visualPostureDiagnosticsProvided: true,
+            measurements: $command->measurements,
+            measurementsProvided: $command->measurements !== null,
             testResults: $command->testResults,
             testResultsProvided: $command->testResults !== null,
             rootCauses: $command->rootCauses,
