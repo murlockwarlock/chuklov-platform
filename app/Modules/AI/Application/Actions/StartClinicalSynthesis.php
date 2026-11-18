@@ -6,6 +6,7 @@ use App\Models\User;
 use App\Modules\AI\Application\Data\AiRunRequest;
 use App\Modules\AI\Application\Services\ClinicalSynthesizerMedicalProfileContext;
 use App\Modules\AI\Application\Services\FindLatestReviewedAiRun;
+use App\Modules\AI\Application\Services\ListClinicalSessionAiRuns;
 use App\Modules\AI\Application\Services\ListClinicalSessionDocumentAiRuns;
 use App\Modules\AI\Domain\Enums\AiCapability;
 use App\Modules\AI\Domain\Enums\AiExecutionMode;
@@ -36,6 +37,7 @@ final readonly class StartClinicalSynthesis
         private OrganizationAuthorizer $authorizer,
         private GetClinicalAiResult $resultReader,
         private FindLatestReviewedAiRun $findLatestReviewedAiRun,
+        private ListClinicalSessionAiRuns $sessionAiRuns,
         private ListClinicalSessionDocumentAiRuns $sessionDocumentRuns,
         private GetMedicalProfile $getMedicalProfile,
         private ClinicalSynthesizerMedicalProfileContext $medicalProfileContext,
@@ -89,6 +91,13 @@ final readonly class StartClinicalSynthesis
         bool $rerun,
     ): AiRun {
         $organization = $this->context->organization();
+        $latestSessionRun = $focusSession === null
+            ? null
+            : $this->sessionAiRuns->handle($actor, $focusSession, $client)->first();
+
+        if ($latestSessionRun instanceof AiRun && ! $latestSessionRun->status->isTerminal()) {
+            return $latestSessionRun;
+        }
 
         $documentSources = $this->documentSources($actor, $client, $focusSession, (int) $organization->getKey());
         $firstDocumentSource = $documentSources->first();
@@ -166,6 +175,7 @@ final readonly class StartClinicalSynthesis
             organizationId: (int) $organization->getKey(),
             baseKey: $baseKey,
             rerun: $rerun,
+            previousRunId: $latestSessionRun?->getKey(),
         );
 
         return $this->dispatcher->handle($actor, new AiRunRequest(
@@ -244,9 +254,18 @@ final readonly class StartClinicalSynthesis
         );
     }
 
-    private function idempotencyKey(int $organizationId, string $baseKey, bool $rerun): string
+    private function idempotencyKey(
+        int $organizationId,
+        string $baseKey,
+        bool $rerun,
+        ?int $previousRunId = null,
+    ): string
     {
         if ($rerun) {
+            if ($previousRunId !== null) {
+                return $baseKey.':rerun:'.$previousRunId;
+            }
+
             return $baseKey.':rerun:'.substr(hash('sha256', (string) Str::uuid()), 0, 16);
         }
 

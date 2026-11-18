@@ -390,6 +390,33 @@ final class ClinicalAiWorkflowTest extends TestCase
         self::assertNotContains($rejectedCurrentRun->id, $sourceRunIds);
     }
 
+    public function test_session_synthesis_replay_returns_the_active_run_and_rerun_is_single_flight(): void
+    {
+        Queue::fake();
+        $specialist = Specialist::factory()->forOrganization($this->organization)->create();
+        $session = MedicalSession::query()->findOrFail(app(CreateSession::class)->handle(
+            $this->staff,
+            $this->client,
+            new CreateSessionCommand(
+                specialistId: (int) $specialist->getKey(),
+                occurredAt: Carbon::parse('2026-11-18 10:00:00', 'UTC'),
+            ),
+        )->id);
+
+        $action = app(StartClinicalSynthesis::class);
+        $firstRun = $action->handleSession($this->staff, $this->client, $session);
+        $sameActiveRun = $action->handleSession($this->staff, $this->client, $session, true);
+
+        self::assertSame($firstRun->getKey(), $sameActiveRun->getKey());
+
+        $firstRun->update(['status' => AiRunStatus::Succeeded]);
+        $rerun = $action->handleSession($this->staff, $this->client, $session, true);
+        $sameRerun = $action->handleSession($this->staff, $this->client, $session, true);
+
+        self::assertNotSame($firstRun->getKey(), $rerun->getKey());
+        self::assertSame($rerun->getKey(), $sameRerun->getKey());
+    }
+
     public function test_synthesis_prompt_includes_the_complete_medical_profile_and_profile_changes_change_idempotency(): void
     {
         Queue::fake();
