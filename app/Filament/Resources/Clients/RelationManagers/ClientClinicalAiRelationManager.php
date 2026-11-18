@@ -100,6 +100,11 @@ final class ClientClinicalAiRelationManager extends LocalizedRelationManager
                                     ->where("{$table}.capability", AiCapability::ClinicalSynthesizer->value)
                                     ->where("{$table}.workflow_key", '!=', ClinicalSynthesizerWorkflow::SessionDraft->value);
                             });
+                    })
+                    ->where(function (Builder $query) use ($table): void {
+                        $query
+                            ->where("{$table}.capability", '!=', AiCapability::PostureAnalysis->value)
+                            ->orWhere("{$table}.workflow_key", 'posture_analysis');
                     });
             })
             ->columns([
@@ -337,6 +342,11 @@ final class ClientClinicalAiRelationManager extends LocalizedRelationManager
                             ->where('capability', AiCapability::ClinicalSynthesizer->value)
                             ->where('workflow_key', '!=', ClinicalSynthesizerWorkflow::SessionDraft->value);
                     });
+            })
+            ->where(function (Builder $query): void {
+                $query
+                    ->where('capability', '!=', AiCapability::PostureAnalysis->value)
+                    ->orWhere('workflow_key', 'posture_analysis');
             })
             ->whereIn('status', [AiRunStatus::Preparing, AiRunStatus::Queued, AiRunStatus::Running])
             ->exists();

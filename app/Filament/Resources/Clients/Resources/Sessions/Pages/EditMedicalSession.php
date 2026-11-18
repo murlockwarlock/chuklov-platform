@@ -17,7 +17,10 @@ use App\Filament\Support\LocalizedEditRecord;
 use App\Models\User;
 use App\Modules\AI\Application\Actions\GetClinicalAiResult;
 use App\Modules\AI\Application\Actions\StartClinicalSynthesis;
+use App\Modules\AI\Application\Actions\StartPostureAnalysis;
 use App\Modules\AI\Application\Services\ListClinicalSessionAiRuns;
+use App\Modules\AI\Application\Services\ListSessionPostureAiRuns;
+use App\Modules\AI\Application\Services\PostureAnalysisAvailability;
 use App\Modules\AI\Domain\Enums\AiRunStatus;
 use App\Modules\AI\Domain\Enums\HumanReviewReasonCode;
 use App\Modules\AI\Domain\Enums\HumanReviewStatus;
@@ -49,15 +52,19 @@ use App\Modules\Sessions\Application\MedicalClinicalCatalog;
 use App\Modules\Sessions\Application\MedicalSafetyMarkerReader;
 use App\Modules\Sessions\Application\MedicalSessionFieldLimits;
 use App\Modules\Sessions\Application\MedicalSessionSnapshotHasher;
+use App\Modules\Sessions\Application\MedicalSessionTestReader;
 use App\Modules\Sessions\Application\MedicalSessionTestHistoryReader;
+use App\Modules\Sessions\Application\ListSessionAttachments;
 use App\Modules\Sessions\Application\SaveSessionRecommendationDraft;
 use App\Modules\Sessions\Application\RejectClinicalSessionAiDraft;
+use App\Modules\Sessions\Application\ReviewSessionPostureAiDraft;
 use App\Modules\Sessions\Application\SendSessionRecommendation;
 use App\Modules\Sessions\Application\UpdateSession;
 use App\Modules\Sessions\Application\UploadSessionPhoto;
 use App\Modules\Sessions\Domain\Enums\MedicalSessionAttachmentGallery;
 use App\Modules\Sessions\Domain\Enums\MedicalSessionAttachmentPlane;
 use App\Modules\Sessions\Domain\Enums\ClinicalSessionAiDraftTarget;
+use App\Modules\Sessions\Domain\Models\MedicalTestDefinition;
 use App\Modules\Sessions\Domain\Models\MedicalSession;
 use App\Modules\Sessions\Domain\Models\MedicalSessionPain;
 use App\Support\Images\SupportedImageTypes;
@@ -79,6 +86,7 @@ use Filament\Schemas\Components\Group;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Components\Utilities\Set;
+use Filament\Schemas\Components\View;
 use Filament\Schemas\Schema;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
@@ -408,6 +416,487 @@ class EditMedicalSession extends LocalizedEditRecord
                     $action->halt();
                 }
             });
+    }
+
+    private function analyzePostureAction(MedicalSessionAttachmentGallery $gallery): Action
+    {
+        $phaseLabel = $gallery->label();
+
+        return Action::make('analyzePosture'.ucfirst($gallery->value))
+            ->label(fn (): string => $this->postureAiActionLabel($gallery))
+            ->icon('heroicon-o-camera')
+            ->color('primary')
+            ->authorize(fn (): bool => $this->canUsePostureAi())
+            ->visible(fn (): bool => $this->canUsePostureAi())
+            ->disabled(fn (): bool => $this->postureAiActionDisabled($gallery))
+            ->tooltip(fn (): ?string => $this->postureAiActionTooltip($gallery))
+            ->schema([
+                Placeholder::make('posture_selection_hint')
+                    ->hiddenLabel()
+                    ->content(__('Выберите три фото из галереи «:phase»: спереди, сбоку и сзади. Внешнему AI уйдут только эти изображения через приватный контролируемый контур.', ['phase' => $phaseLabel]))
+                    ->columnSpanFull(),
+                Select::make('front')
+                    ->label(__('Спереди'))
+                    ->options(fn (): array => $this->sessionPosturePhotoOptions($gallery, MedicalSessionAttachmentPlane::Front))
+                    ->native(false)
+                    ->required(),
+                Select::make('side')
+                    ->label(__('Сбоку'))
+                    ->options(fn (): array => $this->sessionPosturePhotoOptions($gallery, MedicalSessionAttachmentPlane::Side))
+                    ->native(false)
+                    ->required(),
+                Select::make('back')
+                    ->label(__('Сзади'))
+                    ->options(fn (): array => $this->sessionPosturePhotoOptions($gallery, MedicalSessionAttachmentPlane::Back))
+                    ->native(false)
+                    ->required(),
+            ])
+            ->fillForm(fn (): array => $this->postureAiSelection($gallery))
+            ->modalHeading(__('Анализ осанки: :phase', ['phase' => $phaseLabel]))
+            ->modalDescription(__('Анализ создаст отдельный черновик. Подтверждённые данные сеанса и тест №2 не изменяются.'))
+            ->modalSubmitActionLabel(__('Анализировать с ИИ'))
+            ->action(function (Action $action, array $data) use ($gallery): void {
+                try {
+                    $latest = $this->latestPostureAiRun($gallery);
+                    app(StartPostureAnalysis::class)->handleSession(
+                        actor: $this->actor(),
+                        client: $this->parentClient(),
+                        session: $this->session(),
+                        gallery: $gallery,
+                        attachmentIds: [
+                            'front' => (int) ($data['front'] ?? 0),
+                            'side' => (int) ($data['side'] ?? 0),
+                            'back' => (int) ($data['back'] ?? 0),
+                        ],
+                        rerun: $latest?->status->isTerminal() ?? false,
+                    );
+                    Notification::make()
+                        ->success()
+                        ->title(__('Анализ осанки запущен'))
+                        ->body(__('Предыдущие версии этой фазы останутся в истории.'))
+                        ->send();
+                } catch (ValidationException $exception) {
+                    FormValidationFeedback::notifyValidation(
+                        FormValidationFeedback::forAction($exception, $action),
+                        __('Анализ не запущен.'),
+                    );
+                    $action->halt();
+                } catch (InvalidArgumentException $exception) {
+                    Notification::make()
+                        ->danger()
+                        ->title(__('Анализ осанки недоступен'))
+                        ->body($exception->getMessage())
+                        ->send();
+                    $action->halt();
+                } catch (Throwable $exception) {
+                    FormValidationFeedback::notifyValidation(FormValidationFeedback::unexpectedForAction($exception, $action));
+                    $action->halt();
+                }
+            });
+    }
+
+    private function openPostureAiDraftAction(MedicalSessionAttachmentGallery $gallery): Action
+    {
+        $phaseLabel = $gallery->label();
+
+        return Action::make('openPostureAiDraft'.ucfirst($gallery->value))
+            ->label(__('Проверить черновик'))
+            ->icon('heroicon-o-pencil-square')
+            ->color('warning')
+            ->authorize(fn (): bool => MedicalSessionResource::canEdit($this->getRecord()) && $this->canReviewPostureAi())
+            ->visible(fn (): bool => MedicalSessionResource::canEdit($this->getRecord())
+                && $this->canReviewPostureAi()
+                && $this->reviewablePostureAiRun($gallery) instanceof AiRun)
+            ->fillForm(function () use ($gallery): array {
+                $run = $this->reviewablePostureAiRun($gallery);
+                abort_unless($run instanceof AiRun, 404);
+                $result = app(GetClinicalAiResult::class)->handle($this->actor(), $run->getKey(), $this->parentClient()->getKey());
+
+                return [
+                    'run_id' => $run->getKey(),
+                    'ai_version' => ClinicalAiPresentation::aiVersion($run),
+                    'specialist_version' => ClinicalAiPresentation::specialistVersion($run),
+                    'edited_output' => ClinicalAiPresentation::postureObservationResult($result->outputPayload, $result->outputText),
+                    'sources' => $this->postureAiSourcesForRun($run),
+                ];
+            })
+            ->schema([
+                Hidden::make('run_id')->dehydrated(),
+                TextInput::make('ai_version')->label(__('Версия AI'))->disabled()->dehydrated(false),
+                TextInput::make('specialist_version')->label(__('Версия специалиста'))->disabled()->dehydrated(false),
+                Textarea::make('edited_output')
+                    ->label(__('Наблюдения по изображениям: проверьте и исправьте'))
+                    ->rows(12)
+                    ->required()
+                    ->maxLength(MedicalSessionFieldLimits::MaxTextLength),
+                Textarea::make('sources')
+                    ->label(__('Использованные фото и связанные факты'))
+                    ->rows(6)
+                    ->disabled()
+                    ->dehydrated(false),
+            ])
+            ->modalHeading(__('Проверка анализа осанки: :phase', ['phase' => $phaseLabel]))
+            ->modalDescription(__('Оставьте только наблюдения, которые подтверждаются фото. Принятие не изменяет тест №2, показатели или подтверждённые поля сеанса.'))
+            ->modalSubmitActionLabel(__('Принять наблюдения'))
+            ->action(function (Action $action, array $data): void {
+                try {
+                    app(ReviewSessionPostureAiDraft::class)->accept(
+                        actor: $this->actor(),
+                        session: $this->session(),
+                        client: $this->parentClient(),
+                        runId: (int) ($data['run_id'] ?? 0),
+                        editedOutput: (string) ($data['edited_output'] ?? ''),
+                    );
+                    Notification::make()->success()->title(__('Наблюдения приняты и сохранены в истории'))->send();
+                } catch (ValidationException $exception) {
+                    FormValidationFeedback::notifyValidation(
+                        FormValidationFeedback::forAction($exception, $action),
+                        __('Наблюдения не приняты.'),
+                    );
+                    $action->halt();
+                } catch (Throwable $exception) {
+                    FormValidationFeedback::notifyValidation(FormValidationFeedback::unexpectedForAction($exception, $action));
+                    $action->halt();
+                }
+            });
+    }
+
+    private function rejectPostureAiDraftAction(MedicalSessionAttachmentGallery $gallery): Action
+    {
+        $phaseLabel = $gallery->label();
+
+        return Action::make('rejectPostureAiDraft'.ucfirst($gallery->value))
+            ->label(__('Отклонить черновик'))
+            ->icon('heroicon-o-x-circle')
+            ->color('danger')
+            ->authorize(fn (): bool => MedicalSessionResource::canEdit($this->getRecord()) && $this->canReviewPostureAi())
+            ->visible(fn (): bool => MedicalSessionResource::canEdit($this->getRecord())
+                && $this->canReviewPostureAi()
+                && $this->reviewablePostureAiRun($gallery) instanceof AiRun)
+            ->schema([
+                Hidden::make('run_id')->dehydrated(),
+                Select::make('reason_code')
+                    ->label(__('Причина'))
+                    ->options(collect(HumanReviewReasonCode::cases())->mapWithKeys(
+                        static fn (HumanReviewReasonCode $code): array => [$code->value => CrmLabel::enum($code)],
+                    )->all())
+                    ->default(HumanReviewReasonCode::IncorrectContent->value)
+                    ->native(false)
+                    ->required(),
+                Textarea::make('notes')
+                    ->label(__('Заметка специалиста'))
+                    ->rows(4)
+                    ->maxLength(MedicalSessionFieldLimits::MaxTextLength),
+            ])
+            ->fillForm(fn (): array => [
+                'run_id' => $this->reviewablePostureAiRun($gallery)?->getKey(),
+                'reason_code' => HumanReviewReasonCode::IncorrectContent->value,
+            ])
+            ->modalHeading(__('Отклонить анализ осанки: :phase', ['phase' => $phaseLabel]))
+            ->modalDescription(__('Черновик останется в истории. Данные медицинского сеанса не изменятся.'))
+            ->modalSubmitActionLabel(__('Отклонить'))
+            ->action(function (Action $action, array $data): void {
+                try {
+                    app(ReviewSessionPostureAiDraft::class)->reject(
+                        actor: $this->actor(),
+                        session: $this->session(),
+                        client: $this->parentClient(),
+                        runId: (int) ($data['run_id'] ?? 0),
+                        reasonCode: (string) ($data['reason_code'] ?? ''),
+                        notes: filled($data['notes'] ?? null) ? (string) $data['notes'] : null,
+                    );
+                    Notification::make()->danger()->title(__('Черновик отклонён и сохранён в истории'))->send();
+                } catch (ValidationException $exception) {
+                    FormValidationFeedback::notifyValidation(
+                        FormValidationFeedback::forAction($exception, $action),
+                        __('Черновик не отклонён.'),
+                    );
+                    $action->halt();
+                } catch (Throwable $exception) {
+                    FormValidationFeedback::notifyValidation(FormValidationFeedback::unexpectedForAction($exception, $action));
+                    $action->halt();
+                }
+            });
+    }
+
+    public function postureAiPanelData(): array
+    {
+        if (! $this->canUsePostureAi()) {
+            return ['before' => [], 'after' => [], 'confirmed_text' => null, 'test_two' => null];
+        }
+
+        $runs = app(ListSessionPostureAiRuns::class)
+            ->handle($this->actor(), $this->session(), $this->parentClient());
+
+        $phaseData = [];
+        foreach ([MedicalSessionAttachmentGallery::Before, MedicalSessionAttachmentGallery::After] as $gallery) {
+            /** @var AiRun|null $run */
+            $run = $runs->first(fn (AiRun $candidate): bool => $this->runGallery($candidate) === $gallery->value);
+            $result = null;
+            if ($run instanceof AiRun && $run->status === AiRunStatus::Succeeded) {
+                $result = app(GetClinicalAiResult::class)->handle($this->actor(), $run->getKey(), $this->parentClient()->getKey());
+            }
+
+            $phaseData[$gallery->value] = [
+                'label' => $gallery->label(),
+                'status' => $this->postureAiStatus($gallery, $run),
+                'run' => $run,
+                'result' => $result === null ? null : ClinicalAiPresentation::postureObservationResult($result->outputPayload, $result->outputText),
+                'specialist_result' => $result?->humanEditedOutput,
+                'photos' => $run instanceof AiRun ? $this->postureAiUsedPhotos($run, $gallery) : [],
+                'history' => $runs
+                    ->filter(fn (AiRun $candidate): bool => $this->runGallery($candidate) === $gallery->value)
+                    ->take(8)
+                    ->map(fn (AiRun $candidate): array => $this->postureAiHistoryRow($candidate))
+                    ->all(),
+            ];
+        }
+
+        $current = app(GetSession::class)->handle($this->actor(), $this->session(), $this->parentClient());
+
+        return [
+            'before' => $phaseData[MedicalSessionAttachmentGallery::Before->value],
+            'after' => $phaseData[MedicalSessionAttachmentGallery::After->value],
+            'confirmed_text' => $current?->visualPostureDiagnostics,
+            'test_two' => $this->visualTestTwo(),
+        ];
+    }
+
+    private function canUsePostureAi(): bool
+    {
+        return MedicalSessionResource::canEdit($this->getRecord()) && $this->canUseClinicalSessionAi();
+    }
+
+    private function canReviewPostureAi(): bool
+    {
+        return $this->canReviewClinicalSessionAi();
+    }
+
+    private function postureAiActionLabel(MedicalSessionAttachmentGallery $gallery): string
+    {
+        $run = $this->latestPostureAiRun($gallery);
+        if ($run instanceof AiRun && ! $run->status->isTerminal()) {
+            return __('Анализ выполняется');
+        }
+        if ($run instanceof AiRun) {
+            return __('Повторить анализ с ИИ');
+        }
+
+        return __('Анализировать с ИИ');
+    }
+
+    private function postureAiActionDisabled(MedicalSessionAttachmentGallery $gallery): bool
+    {
+        return ! $this->postureAiHasThreePhotos($gallery)
+            || ! app(PostureAnalysisAvailability::class)->isReady()
+            || (($run = $this->latestPostureAiRun($gallery)) instanceof AiRun && ! $run->status->isTerminal());
+    }
+
+    private function postureAiActionTooltip(MedicalSessionAttachmentGallery $gallery): ?string
+    {
+        if (! $this->postureAiHasThreePhotos($gallery)) {
+            return __('Нужны три фото этой фазы: спереди, сбоку и сзади.');
+        }
+
+        return app(PostureAnalysisAvailability::class)->message();
+    }
+
+    /** @return array<int, string> */
+    private function sessionPosturePhotoOptions(
+        MedicalSessionAttachmentGallery $gallery,
+        MedicalSessionAttachmentPlane $plane,
+    ): array {
+        return collect(app(ListSessionAttachments::class)->handle($this->actor(), $this->session(), $this->parentClient()))
+            ->filter(fn ($attachment): bool => $attachment->galleryKey === $gallery->value
+                && $attachment->plane === $plane->label())
+            ->mapWithKeys(fn ($attachment): array => [
+                $attachment->attachmentId => $attachment->filename.' · '.$attachment->uploadedAt,
+            ])
+            ->all();
+    }
+
+    private function postureAiHasThreePhotos(MedicalSessionAttachmentGallery $gallery): bool
+    {
+        return collect(MedicalSessionAttachmentPlane::cases())
+            ->every(fn (MedicalSessionAttachmentPlane $plane): bool => $this->sessionPosturePhotoOptions($gallery, $plane) !== []);
+    }
+
+    /** @return array<string, int> */
+    private function postureAiSelection(MedicalSessionAttachmentGallery $gallery): array
+    {
+        $run = $this->latestPostureAiRun($gallery);
+        if (! $run instanceof AiRun) {
+            return [];
+        }
+
+        return collect((array) $run->input_references)
+            ->filter(static fn (mixed $reference): bool => is_array($reference) && ($reference['type'] ?? null) === 'medical_attachment')
+            ->mapWithKeys(static fn (array $reference): array => [(string) ($reference['role'] ?? '') => (int) ($reference['id'] ?? 0)])
+            ->filter(static fn (int $id): bool => $id > 0)
+            ->all();
+    }
+
+    private function latestPostureAiRun(MedicalSessionAttachmentGallery $gallery): ?AiRun
+    {
+        return app(ListSessionPostureAiRuns::class)
+            ->handle($this->actor(), $this->session(), $this->parentClient())
+            ->first(fn (AiRun $run): bool => $this->runGallery($run) === $gallery->value);
+    }
+
+    private function reviewablePostureAiRun(MedicalSessionAttachmentGallery $gallery): ?AiRun
+    {
+        $run = $this->latestPostureAiRun($gallery);
+
+        return $run instanceof AiRun
+            && $run->status === AiRunStatus::Succeeded
+            && $run->human_review_status === HumanReviewStatus::PendingReview
+            ? $run
+            : null;
+    }
+
+    private function postureAiRunInProgress(): bool
+    {
+        if (! $this->canUseClinicalSessionAi()) {
+            return false;
+        }
+
+        return app(ListSessionPostureAiRuns::class)
+            ->handle($this->actor(), $this->session(), $this->parentClient())
+            ->contains(static fn (AiRun $run): bool => ! $run->status->isTerminal());
+    }
+
+    private function postureAiStatus(MedicalSessionAttachmentGallery $gallery, ?AiRun $run): string
+    {
+        if (! $this->postureAiHasThreePhotos($gallery)) {
+            return __('Нужны три фото этой фазы: спереди, сбоку и сзади.');
+        }
+        if ($run === null) {
+            if (! app(PostureAnalysisAvailability::class)->isReady()) {
+                return app(PostureAnalysisAvailability::class)->message()
+                    ?? __('Анализ осанки сейчас недоступен.');
+            }
+
+            return __('Черновик этой фазы ещё не подготовлен.');
+        }
+        if (! $run->status->isTerminal()) {
+            return __('AI анализирует выбранные фото.');
+        }
+        if ($run->status !== AiRunStatus::Succeeded) {
+            return __('Ошибка: :message. Можно повторить анализ.', ['message' => ClinicalAiPresentation::failure($run->error_category)]);
+        }
+
+        return match ($run->human_review_status) {
+            HumanReviewStatus::PendingReview => __('Черновик готов. Проверьте наблюдения, исправьте и примите или отклоните.'),
+            HumanReviewStatus::Accepted, HumanReviewStatus::EditedAndAccepted => __('Наблюдения приняты специалистом.'),
+            HumanReviewStatus::Rejected => __('Черновик отклонён специалистом. Можно подготовить новую версию.'),
+            default => __('Результат сохранён в истории.'),
+        };
+    }
+
+    private function runGallery(AiRun $run): ?string
+    {
+        $reference = collect((array) $run->input_references)->first(
+            static fn (mixed $item): bool => is_array($item) && ($item['type'] ?? null) === 'medical_session',
+        );
+
+        return is_array($reference) && is_string($reference['role'] ?? null) ? $reference['role'] : null;
+    }
+
+    /** @return list<array<string, mixed>> */
+    private function postureAiUsedPhotos(AiRun $run, MedicalSessionAttachmentGallery $gallery): array
+    {
+        $photos = collect(app(ListSessionAttachments::class)->handle($this->actor(), $this->session(), $this->parentClient()))
+            ->filter(fn ($attachment): bool => $attachment->galleryKey === $gallery->value)
+            ->keyBy('attachmentId');
+
+        return collect((array) $run->input_references)
+            ->filter(static fn (mixed $reference): bool => is_array($reference) && ($reference['type'] ?? null) === 'medical_attachment')
+            ->map(function (array $reference) use ($photos): array {
+                $attachment = $photos->get((int) ($reference['id'] ?? 0));
+
+                return [
+                    'role' => (string) ($reference['role'] ?? ''),
+                    'filename' => $attachment?->filename ?? __('Фото из истории сеанса'),
+                    'preview_url' => $attachment?->previewUrl,
+                ];
+            })
+            ->values()
+            ->all();
+    }
+
+    private function postureAiSourcesForRun(AiRun $run): string
+    {
+        $gallery = MedicalSessionAttachmentGallery::tryFrom((string) $this->runGallery($run));
+        $photos = $gallery === null ? [] : $this->postureAiUsedPhotos($run, $gallery);
+        $photoLabels = collect($photos)
+            ->map(static fn (array $photo): string => implode(': ', array_filter([
+                match ($photo['role']) {
+                    'front' => __('Спереди'),
+                    'side' => __('Сбоку'),
+                    'back' => __('Сзади'),
+                    default => __('Фото'),
+                },
+                $photo['filename'] ?? null,
+            ])))
+            ->implode(', ');
+        $test = $this->visualTestTwo();
+
+        return implode("\n", array_filter([
+            __('Фаза сеанса: :phase.', ['phase' => $gallery?->label() ?? __('не определена')]),
+            __('Фото: :photos.', ['photos' => $photoLabels !== '' ? $photoLabels : __('не доступны')]),
+            $test === null
+                ? __('Визуальный тест №2: данных в этом сеансе нет.')
+                : __('Визуальный тест №2: до: :before; после: :after.', [
+                    'before' => $test['before'] ?? __('не заполнено'),
+                    'after' => $test['after'] ?? __('не заполнено'),
+                ]),
+        ]));
+    }
+
+    /** @return array<string, string|null> */
+    private function postureAiHistoryRow(AiRun $run): array
+    {
+        $review = $run->humanReviews->last();
+
+        return [
+            'date' => $run->created_at?->format('d.m.Y H:i'),
+            'status' => ClinicalAiPresentation::status($run->status),
+            'review' => $run->status === AiRunStatus::Succeeded ? ClinicalAiPresentation::review($run->human_review_status) : null,
+            'author' => $review?->reviewer?->name,
+            'reviewed_at' => $review?->reviewed_at?->format('d.m.Y H:i'),
+            'ai_version' => ClinicalAiPresentation::aiVersion($run),
+            'specialist_version' => ClinicalAiPresentation::specialistVersion($run),
+        ];
+    }
+
+    /** @return array<string, string|null>|null */
+    private function visualTestTwo(): ?array
+    {
+        $definition = MedicalTestDefinition::query()
+            ->where('organization_id', $this->session()->organization_id)
+            ->where('sort_order', 2)
+            ->orderBy('id')
+            ->first();
+        if ($definition === null) {
+            return null;
+        }
+
+        $test = collect(app(MedicalSessionTestReader::class)->tests($this->session()))
+            ->first(fn ($candidate): bool => (int) $candidate->testId === (int) $definition->getKey());
+        if ($test === null) {
+            return null;
+        }
+
+        $before = $test->beforeLabel;
+        $after = $test->afterLabel;
+        $beforeIndex = $test->structuredPayload['general_index']['before'] ?? null;
+        $afterIndex = $test->structuredPayload['general_index']['after'] ?? null;
+
+        return [
+            'name' => $test->testName,
+            'before' => $before ?? ($beforeIndex === null ? null : __('Индекс: :value', ['value' => $beforeIndex])),
+            'after' => $after ?? ($afterIndex === null ? null : __('Индекс: :value', ['value' => $afterIndex])),
+        ];
     }
 
     public function refreshClinicalSessionAiPanel(): void
@@ -846,9 +1335,35 @@ class EditMedicalSession extends LocalizedEditRecord
                             ->content(fn (): string => $this->sessionAiHistory())
                             ->columnSpanFull(),
                     ])
-                    ->extraAttributes(fn (): array => $this->sessionAiRunInProgress()
+                    ->extraAttributes(fn (): array => ($this->sessionAiRunInProgress() || $this->postureAiRunInProgress())
                         ? ['wire:poll.5s' => 'refreshClinicalSessionAiPanel']
                         : [])
+                    ->columnSpanFull(),
+                Section::make(__('ИИ-анализ осанки'))
+                    ->description(__('Выберите отдельные три фото для «До» или «После». AI показывает только наблюдения по изображениям; тест №2 и подтверждённые поля сеанса остаются отдельными.'))
+                    ->visible(fn (): bool => $this->canUsePostureAi())
+                    ->schema([
+                        Placeholder::make('posture_ai_before_status')
+                            ->label(__('До сеанса'))
+                            ->content(fn (): string => $this->postureAiStatus(MedicalSessionAttachmentGallery::Before, $this->latestPostureAiRun(MedicalSessionAttachmentGallery::Before)))
+                            ->columnSpanFull(),
+                        Actions::make([
+                            $this->analyzePostureAction(MedicalSessionAttachmentGallery::Before),
+                            $this->openPostureAiDraftAction(MedicalSessionAttachmentGallery::Before),
+                            $this->rejectPostureAiDraftAction(MedicalSessionAttachmentGallery::Before),
+                        ])->columnSpanFull(),
+                        Placeholder::make('posture_ai_after_status')
+                            ->label(__('После сеанса'))
+                            ->content(fn (): string => $this->postureAiStatus(MedicalSessionAttachmentGallery::After, $this->latestPostureAiRun(MedicalSessionAttachmentGallery::After)))
+                            ->columnSpanFull(),
+                        Actions::make([
+                            $this->analyzePostureAction(MedicalSessionAttachmentGallery::After),
+                            $this->openPostureAiDraftAction(MedicalSessionAttachmentGallery::After),
+                            $this->rejectPostureAiDraftAction(MedicalSessionAttachmentGallery::After),
+                        ])->columnSpanFull(),
+                        View::make('filament.resources.clients.session-posture-ai-panel')
+                            ->columnSpanFull(),
+                    ])
                     ->columnSpanFull(),
                 Section::make(__('Маркер безопасности'))
                     ->schema([

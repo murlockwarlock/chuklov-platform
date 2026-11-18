@@ -72,7 +72,7 @@ class AiCapabilityRegistry
                     capability: AiCapability::PostureAnalysis,
                     displayName: 'Анализ осанки и фотоматериалов',
                     description: 'Оценка симметрии, положения плеч, таза и позвоночника по загруженным фотографиям осанки.',
-                    allowedInputReferenceTypes: ['client', 'medical_attachment'],
+                    allowedInputReferenceTypes: ['client', 'medical_session', 'medical_attachment'],
                     supportsRag: false,
                     allowedTools: [],
                     defaultTimeoutSeconds: 45,

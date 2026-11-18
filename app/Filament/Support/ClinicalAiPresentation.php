@@ -297,6 +297,23 @@ final class ClinicalAiPresentation
         } ?? __('Результат получен, но не может быть отображён в текущем формате.');
     }
 
+    public static function postureObservationResult(?array $payload, ?string $text): string
+    {
+        if ($payload === null && filled($text)) {
+            $decoded = json_decode((string) $text, true);
+            $payload = is_array($decoded) ? $decoded : null;
+        }
+
+        if ($payload !== null) {
+            return self::joinSections([
+                self::visualFindingsSection($payload['visual_findings'] ?? null),
+                self::listSection('Ограничения анализа', $payload['limitations'] ?? null),
+            ]) ?? __('Наблюдения по изображениям не заполнены.');
+        }
+
+        return self::safeText($text) ?? __('Результат получен, но структурированные наблюдения недоступны.');
+    }
+
     public static function preview(AiCapability|string $capability, ?array $payload, ?string $text, ?string $workflowKey = null): string
     {
         $result = trim(self::result($capability, $payload, $text, $workflowKey));

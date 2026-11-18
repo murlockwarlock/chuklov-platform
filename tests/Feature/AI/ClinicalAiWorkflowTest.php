@@ -15,6 +15,7 @@ use App\Modules\AI\Domain\Enums\AiModelModality;
 use App\Modules\AI\Domain\Enums\AiRunOrigin;
 use App\Modules\AI\Domain\Enums\AiRunStatus;
 use App\Modules\AI\Domain\Enums\ClinicalSynthesizerWorkflow;
+use App\Modules\AI\Domain\Enums\HumanReviewDecision;
 use App\Modules\AI\Domain\Enums\HumanReviewStatus;
 use App\Modules\AI\Domain\Models\AiModelConfiguration;
 use App\Modules\AI\Domain\Models\AiModelRelease;
@@ -41,6 +42,11 @@ use App\Modules\Security\Domain\Enums\CredentialStatus;
 use App\Modules\Security\Domain\Models\OrganizationCredential;
 use App\Modules\Sessions\Application\CreateSession;
 use App\Modules\Sessions\Application\DTOs\CreateSessionCommand;
+use App\Modules\Sessions\Application\GetSession;
+use App\Modules\Sessions\Application\LinkSessionAttachment;
+use App\Modules\Sessions\Application\ReviewSessionPostureAiDraft;
+use App\Modules\Sessions\Domain\Enums\MedicalSessionAttachmentGallery;
+use App\Modules\Sessions\Domain\Enums\MedicalSessionAttachmentPlane;
 use App\Modules\Sessions\Domain\Models\MedicalSession;
 use App\Modules\Specialists\Domain\Models\Specialist;
 use App\Modules\Surveys\Domain\Enums\SurveyAttemptStatus;
@@ -945,6 +951,211 @@ final class ClinicalAiWorkflowTest extends TestCase
                 'side' => $fixture['references'][1]->id,
                 'back' => $fixture['references'][2]->id,
             ],
+        );
+    }
+
+    public function test_session_posture_launch_is_scoped_to_one_phase_and_is_idempotent(): void
+    {
+        Queue::fake();
+        $specialist = Specialist::factory()->forOrganization($this->organization)->create();
+        $session = MedicalSession::query()->findOrFail(app(CreateSession::class)->handle(
+            $this->staff,
+            $this->client,
+            new CreateSessionCommand(
+                specialistId: (int) $specialist->getKey(),
+                occurredAt: Carbon::parse('2026-11-18 10:00:00', 'UTC'),
+            ),
+        )->id);
+        $beforePhotos = [
+            'front' => $this->attachment($this->client, AttachmentType::PosturePhoto, 'before-front.png'),
+            'side' => $this->attachment($this->client, AttachmentType::PosturePhoto, 'before-side.png'),
+            'back' => $this->attachment($this->client, AttachmentType::PosturePhoto, 'before-back.png'),
+        ];
+        $afterPhotos = [
+            'front' => $this->attachment($this->client, AttachmentType::PosturePhoto, 'after-front.png'),
+            'side' => $this->attachment($this->client, AttachmentType::PosturePhoto, 'after-side.png'),
+            'back' => $this->attachment($this->client, AttachmentType::PosturePhoto, 'after-back.png'),
+        ];
+        foreach ([
+            [$beforePhotos, MedicalSessionAttachmentGallery::Before],
+            [$afterPhotos, MedicalSessionAttachmentGallery::After],
+        ] as [$photos, $gallery]) {
+            foreach ($photos as $role => $photo) {
+                app(LinkSessionAttachment::class)->handle(
+                    $this->staff,
+                    $session,
+                    $this->client,
+                    (int) $photo->getKey(),
+                    $gallery,
+                    MedicalSessionAttachmentPlane::from($role),
+                );
+            }
+        }
+
+        $action = app(StartPostureAnalysis::class);
+        $beforeRun = $action->handleSession(
+            actor: $this->staff,
+            client: $this->client,
+            session: $session,
+            gallery: MedicalSessionAttachmentGallery::Before,
+            attachmentIds: array_map(static fn ($photo): int => (int) $photo->getKey(), $beforePhotos),
+        );
+        $sameBeforeRun = $action->handleSession(
+            actor: $this->staff,
+            client: $this->client,
+            session: $session,
+            gallery: MedicalSessionAttachmentGallery::Before,
+            attachmentIds: array_map(static fn ($photo): int => (int) $photo->getKey(), $beforePhotos),
+        );
+        $afterRun = $action->handleSession(
+            actor: $this->staff,
+            client: $this->client,
+            session: $session,
+            gallery: MedicalSessionAttachmentGallery::After,
+            attachmentIds: array_map(static fn ($photo): int => (int) $photo->getKey(), $afterPhotos),
+        );
+
+        self::assertSame($beforeRun->getKey(), $sameBeforeRun->getKey());
+        $beforeRun->update(['status' => AiRunStatus::Succeeded]);
+        $beforeRerun = $action->handleSession(
+            actor: $this->staff,
+            client: $this->client,
+            session: $session,
+            gallery: MedicalSessionAttachmentGallery::Before,
+            attachmentIds: array_map(static fn ($photo): int => (int) $photo->getKey(), $beforePhotos),
+            rerun: true,
+        );
+        $sameBeforeRerun = $action->handleSession(
+            actor: $this->staff,
+            client: $this->client,
+            session: $session,
+            gallery: MedicalSessionAttachmentGallery::Before,
+            attachmentIds: array_map(static fn ($photo): int => (int) $photo->getKey(), $beforePhotos),
+            rerun: true,
+        );
+
+        self::assertSame($beforeRerun->getKey(), $sameBeforeRerun->getKey());
+        self::assertNotSame($beforeRun->getKey(), $beforeRerun->getKey());
+        self::assertNotSame($beforeRun->getKey(), $afterRun->getKey());
+        self::assertContains(
+            ['type' => 'medical_session', 'id' => $session->getKey(), 'role' => MedicalSessionAttachmentGallery::Before->value],
+            $beforeRun->input_references,
+        );
+        self::assertSame('posture_analysis_session', $beforeRun->workflow_key);
+        self::assertSame(
+            ['front', 'side', 'back'],
+            collect($beforeRun->input_references)
+                ->filter(static fn (array $reference): bool => ($reference['type'] ?? null) === 'medical_attachment')
+                ->pluck('role')
+                ->values()
+                ->all(),
+        );
+    }
+
+    public function test_session_posture_launch_rejects_missing_or_wrong_phase_photo_before_dispatch(): void
+    {
+        Queue::fake();
+        $specialist = Specialist::factory()->forOrganization($this->organization)->create();
+        $session = MedicalSession::query()->findOrFail(app(CreateSession::class)->handle(
+            $this->staff,
+            $this->client,
+            new CreateSessionCommand(
+                specialistId: (int) $specialist->getKey(),
+                occurredAt: Carbon::parse('2026-11-18 10:00:00', 'UTC'),
+            ),
+        )->id);
+        $photos = [
+            'front' => $this->attachment($this->client, AttachmentType::PosturePhoto, 'before-front.png'),
+            'side' => $this->attachment($this->client, AttachmentType::PosturePhoto, 'before-side.png'),
+            'back' => $this->attachment($this->client, AttachmentType::PosturePhoto, 'before-back.png'),
+        ];
+        foreach ($photos as $role => $photo) {
+            app(LinkSessionAttachment::class)->handle(
+                $this->staff,
+                $session,
+                $this->client,
+                (int) $photo->getKey(),
+                MedicalSessionAttachmentGallery::Before,
+                MedicalSessionAttachmentPlane::from($role),
+            );
+        }
+
+        $this->expectException(InvalidArgumentException::class);
+        app(StartPostureAnalysis::class)->handleSession(
+            actor: $this->staff,
+            client: $this->client,
+            session: $session,
+            gallery: MedicalSessionAttachmentGallery::After,
+            attachmentIds: array_map(static fn ($photo): int => (int) $photo->getKey(), $photos),
+        );
+
+        self::assertDatabaseCount('ai_runs', 0);
+    }
+
+    public function test_session_posture_review_preserves_ai_payload_and_confirmed_session_fields(): void
+    {
+        $specialist = Specialist::factory()->forOrganization($this->organization)->create();
+        $session = MedicalSession::query()->findOrFail(app(CreateSession::class)->handle(
+            $this->staff,
+            $this->client,
+            new CreateSessionCommand(
+                specialistId: (int) $specialist->getKey(),
+                occurredAt: Carbon::parse('2026-11-18 10:00:00', 'UTC'),
+                visualPostureDiagnostics: 'Подтверждённое наблюдение специалиста',
+            ),
+        )->id);
+        $payload = [
+            'visual_findings' => [['plane' => 'front', 'observations' => ['Наблюдение из черновика']]],
+            'leading_compensatory_patterns' => [],
+            'practitioner_focus' => [],
+            'limitations' => ['Проверка специалистом обязательна.'],
+        ];
+        $run = $this->reviewedRun(
+            AiCapability::PostureAnalysis,
+            [
+                new AiInputReference('client', $this->client->id),
+                new AiInputReference('medical_session', $session->id, MedicalSessionAttachmentGallery::Before->value),
+            ],
+            $payload,
+            HumanReviewStatus::PendingReview,
+            'posture_analysis_session',
+        );
+
+        $review = app(ReviewSessionPostureAiDraft::class)->accept(
+            actor: $this->staff,
+            session: $session,
+            client: $this->client,
+            runId: (int) $run->getKey(),
+            editedOutput: 'Исправленное наблюдение специалиста',
+        );
+
+        self::assertSame(HumanReviewDecision::EditedAndAccepted, $review->decision);
+        self::assertSame('posture_observations', $review->target_field);
+        self::assertSame(HumanReviewStatus::EditedAndAccepted, $run->fresh()->human_review_status);
+        self::assertSame(
+            'Подтверждённое наблюдение специалиста',
+            app(GetSession::class)->handle($this->staff, $session->fresh(), $this->client)?->visualPostureDiagnostics,
+        );
+        $storedPayload = AiRunPayload::query()->where('ai_run_id', $run->getKey())->firstOrFail();
+        self::assertSame(
+            json_encode($payload, JSON_THROW_ON_ERROR),
+            app(MedicalEncryptorInterface::class)->decryptField(
+                $this->organization->id,
+                $storedPayload->encrypted_output_payload,
+                $storedPayload->encryption_key_version,
+            ),
+        );
+        self::assertSame(
+            'Исправленное наблюдение специалиста',
+            app(MedicalEncryptorInterface::class)->decryptField(
+                $this->organization->id,
+                $storedPayload->encrypted_human_edited_output,
+                $storedPayload->encryption_key_version,
+            ),
+        );
+        self::assertSame(
+            'Исправленное наблюдение специалиста',
+            app(GetClinicalAiResult::class)->handle($this->staff, $run->getKey(), $this->client->getKey())->humanEditedOutput,
         );
     }
 
