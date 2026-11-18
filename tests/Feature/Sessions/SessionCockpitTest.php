@@ -60,6 +60,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Livewire\Livewire;
 use Mockery;
@@ -72,6 +73,7 @@ final class SessionCockpitTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        Storage::fake('private');
         CarbonImmutable::setTestNow(CarbonImmutable::create(2026, 8, 16, 12, 0, 0, 'UTC'));
     }
 
@@ -1733,6 +1735,10 @@ final class SessionCockpitTest extends TestCase
         Client $client,
         string $filename,
     ): MedicalAttachment {
+        $storagePath = 'medical/attachments/'.$organization->getKey().'/'.Str::uuid().'.pdf';
+        $contents = 'Безопасный документ для проверки извлечения сведений.';
+        Storage::disk('private')->put($storagePath, $contents);
+
         $attachment = new MedicalAttachment;
         $attachment->forceFill([
             'uuid' => (string) Str::uuid(),
@@ -1741,11 +1747,11 @@ final class SessionCockpitTest extends TestCase
             'uploaded_by_user_id' => $uploader->getKey(),
             'attachment_type' => AttachmentType::MedicalReport,
             'disk' => 'private',
-            'storage_path' => 'medical/attachments/'.$organization->getKey().'/'.Str::uuid().'.pdf',
+            'storage_path' => $storagePath,
             'original_filename' => $filename,
             'mime_type' => 'application/pdf',
-            'size_bytes' => 1,
-            'sha256_checksum' => hash('sha256', 'document'),
+            'size_bytes' => strlen($contents),
+            'sha256_checksum' => hash('sha256', $contents),
         ]);
         $attachment->save();
 
