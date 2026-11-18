@@ -290,6 +290,106 @@ final class ClinicalAiWorkflowTest extends TestCase
         );
     }
 
+    public function test_session_synthesis_uses_all_current_reviewed_documents_and_excludes_later_other_session_sources(): void
+    {
+        Queue::fake();
+        $specialist = Specialist::factory()->forOrganization($this->organization)->create();
+        $currentSession = MedicalSession::query()->findOrFail(app(CreateSession::class)->handle(
+            $this->staff,
+            $this->client,
+            new CreateSessionCommand(
+                specialistId: (int) $specialist->getKey(),
+                occurredAt: Carbon::parse('2026-11-18 10:00:00', 'UTC'),
+            ),
+        )->id);
+        $otherSession = MedicalSession::query()->findOrFail(app(CreateSession::class)->handle(
+            $this->staff,
+            $this->client,
+            new CreateSessionCommand(
+                specialistId: (int) $specialist->getKey(),
+                occurredAt: Carbon::parse('2026-11-18 11:00:00', 'UTC'),
+            ),
+        )->id);
+        $currentDocument = $this->attachment($this->client, AttachmentType::MedicalReport, 'current-report.pdf', 'application/pdf');
+        $secondCurrentDocument = $this->attachment($this->client, AttachmentType::MedicalReport, 'second-current-report.pdf', 'application/pdf');
+        $otherDocument = $this->attachment($this->client, AttachmentType::MedicalReport, 'other-session-report.pdf', 'application/pdf');
+
+        $currentRun = $this->reviewedRun(
+            AiCapability::ClinicalDocumentExtraction,
+            [
+                new AiInputReference('client', $this->client->id),
+                new AiInputReference('medical_session', $currentSession->id),
+                new AiInputReference('medical_attachment', $currentDocument->id),
+            ],
+            ['plain_summary' => 'Источник A текущего сеанса.'],
+            HumanReviewStatus::EditedAndAccepted,
+            humanEditedOutput: 'Проверенный факт A текущего сеанса.',
+        );
+        $secondCurrentRun = $this->reviewedRun(
+            AiCapability::ClinicalDocumentExtraction,
+            [
+                new AiInputReference('client', $this->client->id),
+                new AiInputReference('medical_session', $currentSession->id),
+                new AiInputReference('medical_attachment', $secondCurrentDocument->id),
+            ],
+            ['plain_summary' => 'Источник A2 текущего сеанса.'],
+            HumanReviewStatus::Accepted,
+        );
+        $otherSessionRun = $this->reviewedRun(
+            AiCapability::ClinicalDocumentExtraction,
+            [
+                new AiInputReference('client', $this->client->id),
+                new AiInputReference('medical_session', $otherSession->id),
+                new AiInputReference('medical_attachment', $otherDocument->id),
+            ],
+            ['plain_summary' => 'Источник B другого сеанса.'],
+            HumanReviewStatus::EditedAndAccepted,
+            humanEditedOutput: 'Проверенный факт B другого сеанса.',
+        );
+        $pendingCurrentRun = $this->reviewedRun(
+            AiCapability::ClinicalDocumentExtraction,
+            [
+                new AiInputReference('client', $this->client->id),
+                new AiInputReference('medical_session', $currentSession->id),
+                new AiInputReference('medical_attachment', $this->attachment($this->client, AttachmentType::MedicalReport, 'pending-report.pdf', 'application/pdf')->id),
+            ],
+            ['plain_summary' => 'Неподтверждённый факт не использовать.'],
+            HumanReviewStatus::PendingReview,
+        );
+        $rejectedCurrentRun = $this->reviewedRun(
+            AiCapability::ClinicalDocumentExtraction,
+            [
+                new AiInputReference('client', $this->client->id),
+                new AiInputReference('medical_session', $currentSession->id),
+                new AiInputReference('medical_attachment', $this->attachment($this->client, AttachmentType::MedicalReport, 'rejected-report.pdf', 'application/pdf')->id),
+            ],
+            ['plain_summary' => 'Отклонённый факт не использовать.'],
+            HumanReviewStatus::Rejected,
+        );
+
+        $synthesisRun = app(StartClinicalSynthesis::class)->handleSession($this->staff, $this->client, $currentSession);
+        $payload = AiRunPayload::query()->where('ai_run_id', $synthesisRun->getKey())->firstOrFail();
+        $prompt = app(MedicalEncryptorInterface::class)->decryptField(
+            $this->organization->id,
+            $payload->encrypted_user_prompt,
+            $payload->encryption_key_version,
+        );
+        $sourceRunIds = collect($synthesisRun->input_references)
+            ->filter(static fn (array $reference): bool => ($reference['type'] ?? null) === 'ai_run')
+            ->pluck('id')
+            ->all();
+
+        self::assertStringContainsString('Проверенный факт A текущего сеанса.', (string) $prompt);
+        self::assertStringContainsString('Источник A2 текущего сеанса.', (string) $prompt);
+        self::assertStringNotContainsString('Проверенный факт B другого сеанса.', (string) $prompt);
+        self::assertStringNotContainsString('Неподтверждённый факт не использовать.', (string) $prompt);
+        self::assertStringNotContainsString('Отклонённый факт не использовать.', (string) $prompt);
+        self::assertEqualsCanonicalizing([$currentRun->id, $secondCurrentRun->id], $sourceRunIds);
+        self::assertNotContains($otherSessionRun->id, $sourceRunIds);
+        self::assertNotContains($pendingCurrentRun->id, $sourceRunIds);
+        self::assertNotContains($rejectedCurrentRun->id, $sourceRunIds);
+    }
+
     public function test_synthesis_prompt_includes_the_complete_medical_profile_and_profile_changes_change_idempotency(): void
     {
         Queue::fake();
