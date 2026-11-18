@@ -417,6 +417,77 @@ final class ClinicalAiWorkflowTest extends TestCase
         self::assertSame($rerun->getKey(), $sameRerun->getKey());
     }
 
+    public function test_session_preparation_uses_dynamics_and_confirmed_session_posture_without_deferred_clinical_content(): void
+    {
+        Queue::fake();
+        $specialist = Specialist::factory()->forOrganization($this->organization)->create();
+        app(CreateSession::class)->handle($this->staff, $this->client, new CreateSessionCommand(
+            specialistId: (int) $specialist->getKey(),
+            occurredAt: Carbon::parse('2026-11-17 10:00:00', 'UTC'),
+            pain: 'Предыдущая боль',
+            tests: 'Предыдущие тесты',
+            observations: 'Предыдущее наблюдение',
+            result: 'Предыдущий результат',
+            rootCauseHypothesis: 'Не передавать гипотезу',
+            protocol: 'Не передавать протокол',
+        ));
+        $current = MedicalSession::query()->findOrFail(app(CreateSession::class)->handle(
+            $this->staff,
+            $this->client,
+            new CreateSessionCommand(
+                specialistId: (int) $specialist->getKey(),
+                occurredAt: Carbon::parse('2026-11-18 10:00:00', 'UTC'),
+                pain: 'Текущая боль',
+                tests: 'Текущие тесты',
+                observations: 'Текущее наблюдение',
+                result: 'Текущий результат',
+                rootCauseHypothesis: 'Текущая гипотеза не передаётся',
+                protocol: 'Текущий протокол не передаётся',
+            ),
+        )->id);
+        $postureRun = $this->reviewedRun(
+            AiCapability::PostureAnalysis,
+            [
+                new AiInputReference('client', $this->client->id),
+                new AiInputReference('medical_session', $current->id, 'before'),
+            ],
+            [
+                'visual_findings' => [['plane' => 'front', 'observations' => ['Подтверждённое наблюдение осанки.']]],
+                'leading_compensatory_patterns' => [],
+                'practitioner_focus' => [],
+                'limitations' => [],
+            ],
+            HumanReviewStatus::EditedAndAccepted,
+            'posture_analysis_session',
+        );
+
+        $run = app(StartClinicalSynthesis::class)->handleSession($this->staff, $this->client, $current);
+        $payload = AiRunPayload::query()->where('ai_run_id', $run->getKey())->firstOrFail();
+        $prompt = app(MedicalEncryptorInterface::class)->decryptField(
+            $this->organization->id,
+            $payload->encrypted_user_prompt,
+            $payload->encryption_key_version,
+        );
+
+        self::assertStringContainsString('Предыдущая боль', (string) $prompt);
+        self::assertStringContainsString('Предыдущий результат', (string) $prompt);
+        self::assertStringContainsString('Текущая боль', (string) $prompt);
+        self::assertStringContainsString('Текущий результат', (string) $prompt);
+        self::assertStringContainsString('Подтверждённое наблюдение осанки.', (string) $prompt);
+        self::assertStringNotContainsString('Не передавать гипотезу', (string) $prompt);
+        self::assertStringNotContainsString('Не передавать протокол', (string) $prompt);
+        self::assertStringNotContainsString('Текущая гипотеза не передаётся', (string) $prompt);
+        self::assertStringNotContainsString('Текущий протокол не передаётся', (string) $prompt);
+        self::assertContains(['type' => 'ai_run', 'id' => $postureRun->getKey()], $run->input_references);
+        self::assertEqualsCanonicalizing(
+            MedicalSession::query()->where('client_id', $this->client->getKey())->pluck('id')->all(),
+            collect($run->input_references)
+                ->filter(static fn (array $reference): bool => ($reference['type'] ?? null) === 'medical_session')
+                ->pluck('id')
+                ->all(),
+        );
+    }
+
     public function test_synthesis_prompt_includes_the_complete_medical_profile_and_profile_changes_change_idempotency(): void
     {
         Queue::fake();

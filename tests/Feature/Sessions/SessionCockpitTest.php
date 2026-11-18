@@ -46,6 +46,7 @@ use App\Modules\Sessions\Application\GetSession;
 use App\Modules\Sessions\Application\ListClientSessions;
 use App\Modules\Sessions\Application\MedicalSessionPainInitializer;
 use App\Modules\Sessions\Application\UpdateSession;
+use App\Modules\Sessions\Domain\Enums\ClinicalSessionAiDraftTarget;
 use App\Modules\Sessions\Domain\Models\MedicalSession;
 use App\Modules\Sessions\Domain\Models\MedicalTestDefinition;
 use App\Modules\Sessions\Domain\Models\MedicalTestValue;
@@ -1198,6 +1199,17 @@ final class SessionCockpitTest extends TestCase
         self::assertSame(
             'Ручной пошаговый протокол пока не заполнен',
             app(GetSession::class)->handle($admin, $session->fresh(), $client)?->protocol,
+        );
+    }
+
+    public function test_session_preparation_has_no_deferred_clinical_acceptance_targets(): void
+    {
+        self::assertSame(
+            [ClinicalSessionAiDraftTarget::Result],
+            array_values(array_filter(
+                ClinicalSessionAiDraftTarget::cases(),
+                static fn (ClinicalSessionAiDraftTarget $target): bool => $target->isAvailable(),
+            )),
         );
     }
 

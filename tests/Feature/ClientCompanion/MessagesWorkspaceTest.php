@@ -7,6 +7,7 @@ use App\Filament\Resources\Bookings\Pages\ViewBooking;
 use App\Filament\Resources\Clients\ClientResource;
 use App\Filament\Resources\Clients\Pages\ViewClient;
 use App\Filament\Resources\Clients\RelationManagers\ClientClinicalAiRelationManager;
+use App\Filament\Resources\Clients\Resources\Sessions\MedicalSessionResource;
 use App\Models\User;
 use App\Modules\AI\Domain\Enums\AiCapability;
 use App\Modules\AI\Domain\Enums\AiExecutionMode;
@@ -43,7 +44,11 @@ use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Organizations\Domain\Models\OrganizationFeatureFlag;
 use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Services\Domain\Models\Service;
+use App\Modules\Sessions\Application\CreateSession;
+use App\Modules\Sessions\Application\DTOs\CreateSessionCommand;
+use App\Modules\Sessions\Domain\Models\MedicalSession;
 use App\Modules\Specialists\Domain\Models\Specialist;
+use Carbon\Carbon;
 use Filament\Facades\Filament;
 use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\Textarea;
@@ -513,6 +518,32 @@ final class MessagesWorkspaceTest extends TestCase
             ->assertSuccessful()
             ->assertSee($this->client->full_name)
             ->assertSee(ClientResource::getUrl('view', ['record' => $this->client]));
+    }
+
+    public function test_existing_booking_opens_the_linked_session_preparation_surface(): void
+    {
+        $specialist = Specialist::factory()->forOrganization($this->organization)->create();
+        $service = Service::factory()->forOrganization($this->organization)->create();
+        $booking = Booking::factory()
+            ->forClient($this->client)
+            ->forSpecialist($specialist)
+            ->forService($service)
+            ->create();
+        $created = app(CreateSession::class)->handle($this->admin, $this->client, new CreateSessionCommand(
+            specialistId: (int) $specialist->getKey(),
+            occurredAt: Carbon::parse('2026-11-18 10:00:00', 'UTC'),
+            bookingId: (int) $booking->getKey(),
+        ));
+        $session = MedicalSession::query()->findOrFail($created->id);
+
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+        Livewire::actingAs($this->admin)
+            ->test(ViewBooking::class, ['record' => $booking->getKey()])
+            ->assertActionVisible('prepareMedicalSession')
+            ->assertActionHasUrl('prepareMedicalSession', MedicalSessionResource::getUrl('edit', [
+                'client' => $this->client,
+                'record' => $session,
+            ]));
     }
 
     public function test_client_card_links_to_messages_with_the_client_selected(): void
