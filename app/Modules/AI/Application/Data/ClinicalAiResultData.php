@@ -15,5 +15,6 @@ final readonly class ClinicalAiResultData
         public ?array $outputPayload,
         public ?string $outputText,
         public array $attachmentProvenance,
+        public ?string $humanEditedOutput = null,
     ) {}
 }

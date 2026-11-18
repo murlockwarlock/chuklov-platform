@@ -31,6 +31,8 @@ final readonly class FindLatestReviewedAiRun
 
         if ($capability === AiCapability::ClinicalSynthesizer) {
             $query->where('workflow_key', $workflowKey ?? ClinicalSynthesizerWorkflow::Summary->value);
+        } elseif ($capability === AiCapability::PostureAnalysis) {
+            $query->where('workflow_key', $workflowKey ?? 'posture_analysis');
         } elseif ($workflowKey !== null) {
             $query->where('workflow_key', $workflowKey);
         }

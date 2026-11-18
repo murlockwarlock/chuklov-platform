@@ -58,6 +58,7 @@ final class GetClinicalAiResult
                 outputPayload: null,
                 outputText: null,
                 attachmentProvenance: $this->attachmentProvenance($run),
+                humanEditedOutput: null,
             );
         }
 
@@ -78,11 +79,20 @@ final class GetClinicalAiResult
             $outputPayload = is_array($decoded) ? $decoded : null;
         }
 
+        $humanEditedOutput = $payload->encrypted_human_edited_output === null
+            ? null
+            : $this->medicalEncryptor->decryptField(
+                $orgId,
+                $payload->encrypted_human_edited_output,
+                $payload->encryption_key_version,
+            );
+
         return new ClinicalAiResultData(
             run: $run,
             outputPayload: $outputPayload,
             outputText: $outputText,
             attachmentProvenance: $this->attachmentProvenance($run),
+            humanEditedOutput: $humanEditedOutput,
         );
     }
 

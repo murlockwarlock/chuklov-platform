@@ -1417,9 +1417,9 @@ Catalog REQs and catalog OQs are defined in the linked test-catalog file. The pa
 - Delivery package: `Deferred`
 - Status: `OUT OF STAGE 1`
 
-## Stage 2 backlog - out of Stage 1
+## Stage 2 backlog and delivered slices
 
-All requirements in this section have status `OUT OF STAGE 1`. They are preserved so a later agent can implement them without reopening the 2026-11-14 DOCX. They do not block starting or accepting Stage 1.
+Requirements in this section remain the Stage 2 ledger. The statuses below record only the implemented Stage 2 slices; deferred clinical behavior remains explicitly out of scope.
 
 ### AI agents and automated rules
 
@@ -1440,10 +1440,10 @@ All requirements in this section have status `OUT OF STAGE 1`. They are preserve
 - Source section: `Этап 2`, paragraph 30; Stage 1 AI-version seam
 - Type: `ADD`
 - Requirement: Stage 2 supplies an AI version next to the relevant medical fields and preserves the distinction between AI suggestion and specialist-confirmed data.
-- Acceptance: Deferred; Stage 1 only reserves the presentation seam and keeps the action disabled.
+- Acceptance: The session cockpit shows the pinned AI prompt/model version, keeps the original AI result, and shows the specialist decision separately for the implemented session draft and posture slices. Confirmed medical fields remain distinct.
 - Dependencies: `REQ-MED-1A-SESSION-004`; structured Stage 1 model.
 - Delivery package: `2`
-- Status: `OUT OF STAGE 1`
+- Status: `IMPLEMENTED`
 
 ### REQ-MED-2-AI-003 - Accept AI suggestion
 
@@ -1451,10 +1451,10 @@ All requirements in this section have status `OUT OF STAGE 1`. They are preserve
 - Source section: `Этап 2`, paragraph 30
 - Type: `ADD`
 - Requirement: The master can explicitly accept an AI proposal.
-- Acceptance: Deferred; acceptance must be explicit, auditable, and distinct from generation.
+- Acceptance: In the implemented session and posture slices, the specialist can edit the draft, explicitly accept it, and retain the review author, time, target, and version history. Acceptance does not silently change confirmed medical data.
 - Dependencies: `REQ-MED-2-AI-001`; Stage 2 AI governance.
 - Delivery package: `2`
-- Status: `OUT OF STAGE 1`
+- Status: `IMPLEMENTED`
 
 ### REQ-MED-2-AI-004 - Reject AI suggestion
 
@@ -1462,10 +1462,10 @@ All requirements in this section have status `OUT OF STAGE 1`. They are preserve
 - Source section: `Этап 2`, paragraph 30
 - Type: `ADD`
 - Requirement: The master can explicitly reject an AI proposal.
-- Acceptance: Deferred; rejection must not overwrite specialist data.
+- Acceptance: In the implemented session and posture slices, the specialist can explicitly reject a draft with a recorded decision. The draft and confirmed specialist data remain unchanged, and a later generation creates a new version.
 - Dependencies: `REQ-MED-2-AI-001`.
 - Delivery package: `2`
-- Status: `OUT OF STAGE 1`
+- Status: `IMPLEMENTED`
 
 ### REQ-MED-2-AI-005 - Preserve corrections as future examples
 
@@ -1517,10 +1517,10 @@ All requirements in this section have status `OUT OF STAGE 1`. They are preserve
 - Source section: `Этап 2`, paragraph 33
 - Type: `ADD`
 - Requirement: A posture agent may analyze session photos using master scores from Visual Test 2 as an anchor.
-- Acceptance: Deferred; Stage 1 only stores semantic photos and the master visual test.
+- Acceptance: The implemented session slice selects exactly one private front, side, and back photo for either the Before or After phase, displays the linked Visual Test 2 facts, and stores an observation-only AI draft with review history. Clinical interpretation, measurements, diagnoses, causes, recommendations, and automatic Test 2 changes remain disabled until approved materials are configured.
 - Dependencies: `REQ-MED-1C-PHOTO-001`; Test 2 data.
 - Delivery package: `2`
-- Status: `OUT OF STAGE 1`
+- Status: `PARTIALLY IMPLEMENTED`
 
 ### REQ-MED-2-AI-010 - Client self-posture through bot
 
