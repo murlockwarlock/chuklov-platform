@@ -1326,8 +1326,14 @@ class EditMedicalSession extends LocalizedEditRecord
             ->orderByDesc('id')
             ->get(['id', 'occurred_at'])
             ->map(fn (MedicalSession $session): string => (int) $session->getKey() === (int) $this->session()->getKey()
-                ? __('текущий сеанс · :date', ['date' => $session->occurred_at?->format('d.m.Y H:i') ?? '—'])
-                : __('сеанс · :date', ['date' => $session->occurred_at?->format('d.m.Y H:i') ?? '—']))
+                ? __('текущий сеанс #:id · :date', [
+                    'id' => $session->getKey(),
+                    'date' => $session->occurred_at?->format('d.m.Y H:i') ?? '—',
+                ])
+                : __('сеанс #:id · :date', [
+                    'id' => $session->getKey(),
+                    'date' => $session->occurred_at?->format('d.m.Y H:i') ?? '—',
+                ]))
             ->all();
         $surveyCount = $references->filter(static fn (mixed $reference): bool => is_array($reference) && ($reference['type'] ?? null) === 'survey_attempt')->count();
         $upstreamRunIds = $references
@@ -1386,8 +1392,8 @@ class EditMedicalSession extends LocalizedEditRecord
     private function sessionAiTargetAvailability(): string
     {
         return implode("\n", [
-            __('Доступно после ручной правки: результат сеанса и гипотеза для проверки.'),
-            __('Выключено: протокол и рекомендации. Нужны утверждённый клинический алгоритм и prompt.'),
+            __('Доступно после ручной правки: результат сеанса.'),
+            __('Выключено: гипотезы, протокол и рекомендации. Нужны утверждённые клинические правила.'),
             __('Принятие не меняет подтверждённые тесты, причины или данные клиента автоматически.'),
         ]);
     }
@@ -1395,6 +1401,7 @@ class EditMedicalSession extends LocalizedEditRecord
     private function sessionAiDisabledTargets(): string
     {
         return implode("\n", [
+            ClinicalSessionAiDraftTarget::RootCauseHypothesis->label().': '.ClinicalSessionAiDraftTarget::RootCauseHypothesis->unavailableReason(),
             ClinicalSessionAiDraftTarget::ProtocolSteps->label().': '.ClinicalSessionAiDraftTarget::ProtocolSteps->unavailableReason(),
             ClinicalSessionAiDraftTarget::RecommendationDraft->label().': '.ClinicalSessionAiDraftTarget::RecommendationDraft->unavailableReason(),
         ]);

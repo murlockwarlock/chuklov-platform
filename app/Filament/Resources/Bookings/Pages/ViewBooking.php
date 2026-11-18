@@ -13,6 +13,7 @@ use App\Modules\Identity\Application\GetClientCommunicationIdentities;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Scheduling\Domain\Models\Booking;
+use App\Modules\Sessions\Domain\Models\MedicalSession;
 use App\Modules\Specialists\Domain\Models\Specialist;
 use Filament\Actions\Action;
 use Filament\Actions\ActionGroup;
@@ -75,7 +76,17 @@ class ViewBooking extends LocalizedViewRecord
                 ->label(__('Создать медицинский сеанс'))
                 ->icon('heroicon-o-plus')
                 ->url(fn (): ?string => $this->medicalSessionCreateUrl())
-                ->visible(fn (): bool => MedicalSessionResource::canCreate() && $this->medicalSessionCreateUrl() !== null),
+                ->visible(fn (): bool => MedicalSessionResource::canCreate()
+                    && $this->linkedMedicalSession() === null
+                    && $this->medicalSessionCreateUrl() !== null),
+            Action::make('prepareMedicalSession')
+                ->label(__('Подготовка к сеансу'))
+                ->icon('heroicon-o-sparkles')
+                ->color('primary')
+                ->url(fn (): ?string => $this->medicalSessionEditUrl())
+                ->visible(fn (): bool => ($session = $this->linkedMedicalSession()) instanceof MedicalSession
+                    && MedicalSessionResource::canEdit($session)
+                    && $this->medicalSessionEditUrl() !== null),
             ...BookingLifecycleActions::primary(),
             ActionGroup::make([
                 ...BookingLifecycleActions::all(false),
@@ -168,5 +179,32 @@ class ViewBooking extends LocalizedViewRecord
 
         return MedicalSessionResource::getUrl('create', ['client' => $record->clinicalClientId()])
             .'?'.http_build_query(['booking_id' => (int) $record->getKey()]);
+    }
+
+    private function linkedMedicalSession(): ?MedicalSession
+    {
+        $record = $this->getRecord();
+        if (! $record instanceof Booking) {
+            return null;
+        }
+
+        return MedicalSession::query()
+            ->where('organization_id', app(OrganizationContext::class)->id())
+            ->where('client_id', $record->clinicalClientId())
+            ->where('booking_id', $record->getKey())
+            ->first();
+    }
+
+    private function medicalSessionEditUrl(): ?string
+    {
+        $session = $this->linkedMedicalSession();
+        if (! $session instanceof MedicalSession || ! MedicalSessionResource::canEdit($session)) {
+            return null;
+        }
+
+        return MedicalSessionResource::getUrl('edit', [
+            'client' => $session->client_id,
+            'record' => $session,
+        ]);
     }
 }

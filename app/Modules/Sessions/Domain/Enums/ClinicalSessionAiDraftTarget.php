@@ -21,7 +21,7 @@ enum ClinicalSessionAiDraftTarget: string
 
     public function isAvailable(): bool
     {
-        return in_array($this, [self::Result, self::RootCauseHypothesis], true);
+        return $this === self::Result;
     }
 
     public function unavailableReason(): ?string

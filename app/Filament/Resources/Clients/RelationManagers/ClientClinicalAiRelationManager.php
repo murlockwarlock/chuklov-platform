@@ -6,6 +6,7 @@ use App\Filament\Support\ClinicalAiPresentation;
 use App\Filament\Support\ClinicalAiResultAction;
 use App\Filament\Support\CrmLabel;
 use App\Filament\Support\LocalizedRelationManager;
+use App\Filament\Resources\Clients\Resources\Sessions\MedicalSessionResource;
 use App\Models\User;
 use App\Modules\AI\Application\Actions\ReviewAiRun;
 use App\Modules\AI\Application\Actions\StartClinicalCourseReport;
@@ -27,6 +28,7 @@ use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
 use Carbon\CarbonImmutable;
+use App\Modules\Sessions\Domain\Models\MedicalSession;
 use Filament\Actions\Action;
 use Filament\Actions\ActionGroup;
 use Filament\Forms\Components\DatePicker;
@@ -176,6 +178,40 @@ final class ClientClinicalAiRelationManager extends LocalizedRelationManager
                                 ],
                             );
                             self::success(__('Анализ осанки запущен.'));
+                        } catch (Throwable $exception) {
+                            self::failure($exception);
+                        }
+                    }),
+                Action::make('sessionPreparation')
+                    ->label(__('Подготовка к сеансу'))
+                    ->icon('heroicon-o-sparkles')
+                    ->color('primary')
+                    ->schema([
+                        Select::make('medical_session_id')
+                            ->label(__('Сеанс'))
+                            ->options(fn (): array => self::sessionPreparationOptions($client))
+                            ->searchable()
+                            ->native(false)
+                            ->required(),
+                        Placeholder::make('session_preparation_hint')
+                            ->label(__('Что будет сделано'))
+                            ->content(__('Откроется существующая карточка сеанса. AI использует только доступные факты и проверенные источники этого клиента.')),
+                    ])
+                    ->modalHeading(__('Подготовка специалиста к сеансу'))
+                    ->modalSubmitActionLabel(__('Открыть сеанс'))
+                    ->action(function (array $data) use ($actor, $client): void {
+                        try {
+                            $session = self::sessionForPreparation($client, (int) ($data['medical_session_id'] ?? 0));
+                            if (! $session instanceof MedicalSession || ! MedicalSessionResource::canEdit($session)) {
+                                throw new \InvalidArgumentException('Выбранный сеанс недоступен.');
+                            }
+
+                            app(StartClinicalSynthesis::class)->handleSession($actor, $client, $session);
+                            self::success(__('Карточка сеанса открывается. Подготовка с ИИ доступна в ней.'));
+                            $this->redirect(MedicalSessionResource::getUrl('edit', [
+                                'client' => $client->getKey(),
+                                'record' => $session,
+                            ]));
                         } catch (Throwable $exception) {
                             self::failure($exception);
                         }
@@ -359,6 +395,35 @@ final class ClientClinicalAiRelationManager extends LocalizedRelationManager
         return $summary === null
             ? null
             : view('filament.resources.clients.clinical-ai-summary', ['summary' => $summary]);
+    }
+
+    /** @return array<int, string> */
+    private static function sessionPreparationOptions(Client $client): array
+    {
+        return MedicalSession::query()
+            ->where('organization_id', app(OrganizationContext::class)->id())
+            ->where('client_id', $client->getKey())
+            ->orderByDesc('occurred_at')
+            ->orderByDesc('id')
+            ->limit(25)
+            ->get(['id', 'occurred_at', 'status'])
+            ->mapWithKeys(static fn (MedicalSession $session): array => [
+                (int) $session->getKey() => __('Сеанс #:id · :date · :status', [
+                    'id' => $session->getKey(),
+                    'date' => $session->occurred_at?->format('d.m.Y H:i') ?? '—',
+                    'status' => $session->status->label(),
+                ]),
+            ])
+            ->all();
+    }
+
+    private static function sessionForPreparation(Client $client, int $sessionId): ?MedicalSession
+    {
+        return MedicalSession::query()
+            ->where('organization_id', app(OrganizationContext::class)->id())
+            ->where('client_id', $client->getKey())
+            ->whereKey($sessionId)
+            ->first();
     }
 
     /** @return array<int, string> */

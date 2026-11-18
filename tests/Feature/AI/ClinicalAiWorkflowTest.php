@@ -58,6 +58,7 @@ use App\Modules\Surveys\Domain\Models\SurveyAttempt;
 use App\Modules\Surveys\Domain\Models\SurveyDefinition;
 use App\Modules\Surveys\Domain\Models\SurveyReport;
 use App\Modules\Surveys\Domain\Models\SurveyVersion;
+use App\Filament\Support\ClinicalAiPresentation;
 use Carbon\Carbon;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -488,6 +489,31 @@ final class ClinicalAiWorkflowTest extends TestCase
         );
     }
 
+    public function test_session_preparation_presentation_hides_deferred_clinical_sections(): void
+    {
+        $result = ClinicalAiPresentation::result(
+            AiCapability::ClinicalSynthesizer,
+            [
+                'client_summary' => 'Фактическая сводка.',
+                'main_request' => 'Запрос клиента.',
+                'source_facts' => ['Факт из источника.'],
+                'hypotheses' => [['statement' => 'Гипотеза не показывается.']],
+                'critical_limitations_risks' => ['Клинический риск не показывается.'],
+                'blind_spots_questions' => ['Уточнить дату записи.'],
+                'recommended_first_session_focus' => ['Рекомендация не показывается.'],
+                'missing_information' => ['Не хватает результата теста.'],
+            ],
+            null,
+            ClinicalSynthesizerWorkflow::SessionDraft->value,
+        );
+
+        self::assertStringContainsString('Факт из источника.', (string) $result);
+        self::assertStringContainsString('Не хватает результата теста.', (string) $result);
+        self::assertStringNotContainsString('Гипотеза не показывается.', (string) $result);
+        self::assertStringNotContainsString('Клинический риск не показывается.', (string) $result);
+        self::assertStringNotContainsString('Рекомендация не показывается.', (string) $result);
+    }
+
     public function test_synthesis_prompt_includes_the_complete_medical_profile_and_profile_changes_change_idempotency(): void
     {
         Queue::fake();
@@ -588,7 +614,7 @@ final class ClinicalAiWorkflowTest extends TestCase
             $payload->encryption_key_version,
         );
         self::assertStringContainsString('Текущая жалоба сеанса', (string) $prompt);
-        self::assertStringContainsString('Сохранённый факт протокола', (string) $prompt);
+        self::assertStringNotContainsString('Сохранённый факт протокола', (string) $prompt);
 
         $sameRun = app(StartClinicalSynthesis::class)->handleSession(
             actor: $this->staff,

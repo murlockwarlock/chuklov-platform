@@ -796,6 +796,7 @@ final class SessionCockpitTest extends TestCase
             ->call('create')
             ->assertHasNoErrors();
 
+        $session = MedicalSession::query()->where('client_id', $client->getKey())->latest('id')->firstOrFail();
         $pain = $session->pains()->sole();
         self::assertSame(0, $pain->before_score);
         self::assertNull($pain->after_score);
@@ -1176,8 +1177,8 @@ final class SessionCockpitTest extends TestCase
 
         $component = Livewire::actingAs($admin)
             ->test(EditMedicalSession::class, ['parentRecord' => $client, 'record' => $session->getKey()])
-            ->assertActionExists('fillResult')
-            ->assertActionDisabled('fillResult')
+            ->assertActionExists('prepareClinicalSessionAi')
+            ->assertActionVisible('prepareClinicalSessionAi')
             ->assertActionVisible('suggestSessionPainTags')
             ->assertActionExists('acceptSessionPainTags')
             ->mountAction('suggestSessionPainTags')
@@ -1497,10 +1498,9 @@ final class SessionCockpitTest extends TestCase
 
         $component = Livewire::actingAs($admin)
             ->test(CreateMedicalSession::class, ['parentRecord' => $client])
-            ->assertFormComponentActionExists('result', 'fillResult')
-            ->assertFormComponentActionDisabled('result', 'fillResult')
             ->fillForm(['result' => 'Ручной результат без ИИ']);
 
+        self::assertNotNull($component->instance()->getSchemaComponent('form.result'));
         $component->assertSet('data.result', 'Ручной результат без ИИ');
         self::assertSame(0, MedicalSession::query()->where('client_id', $client->getKey())->count());
 
