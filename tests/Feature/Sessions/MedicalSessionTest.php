@@ -15,6 +15,8 @@ use App\Modules\Services\Domain\Models\Service;
 use App\Modules\Sessions\Application\CreateSession;
 use App\Modules\Sessions\Application\DTOs\CreateSessionCommand;
 use App\Modules\Sessions\Application\DTOs\MedicalSessionData;
+use App\Modules\Sessions\Application\DTOs\MedicalSessionTestData;
+use App\Modules\Sessions\Application\DTOs\SessionDynamicsData;
 use App\Modules\Sessions\Application\DTOs\UpdateSessionCommand;
 use App\Modules\Sessions\Application\GetSession;
 use App\Modules\Sessions\Application\GetSessionDynamics;
@@ -252,6 +254,112 @@ final class MedicalSessionTest extends TestCase
         self::assertSame([], $comparison[1]['measurements_before']);
         self::assertArrayNotHasKey('delta', $payload['sessions'][0]);
         self::assertArrayNotHasKey('trend', $payload['sessions'][0]);
+    }
+
+    public function test_session_dynamics_chart_data_is_chronological_bounded_and_preserves_gaps_and_zero(): void
+    {
+        [, $admin, $client, $specialist] = $this->setupOrganizationWithClientAndSpecialist();
+        $sessions = [];
+
+        foreach (range(1, 10) as $day) {
+            $measurements = match ($day) {
+                2 => [
+                    'before' => ['vitals' => ['sys' => 0]],
+                ],
+                3 => null,
+                default => ['before' => ['vitals' => ['sys' => 100 + $day]]],
+            };
+
+            $sessions[$day] = app(CreateSession::class)->handle($admin, $client, new CreateSessionCommand(
+                specialistId: (int) $specialist->getKey(),
+                occurredAt: Carbon::parse('2026-01-'.str_pad((string) $day, 2, '0', STR_PAD_LEFT).' 09:00:00', 'UTC'),
+                measurements: $measurements,
+            ));
+        }
+
+        $current = app(CreateSession::class)->handle($admin, $client, new CreateSessionCommand(
+            specialistId: (int) $specialist->getKey(),
+            occurredAt: Carbon::parse('2026-01-11 09:00:00', 'UTC'),
+            measurements: [
+                'after_enabled' => true,
+                'before' => ['vitals' => ['sys' => 120]],
+                'after' => ['vitals' => ['sys' => 118]],
+            ],
+        ));
+
+        $chart = app(GetSessionDynamics::class)
+            ->handle($admin, MedicalSession::findOrFail($current->id), $client)
+            ->chartData();
+
+        self::assertCount(10, $chart['sessions']);
+        self::assertSame('2026-01-02', $chart['sessions'][0]['full_date']);
+        self::assertSame('2026-01-11', $chart['sessions'][9]['full_date']);
+
+        $sys = collect($chart['metrics'])->firstWhere('key', 'sys');
+        self::assertIsArray($sys);
+
+        $before = collect($sys['points']['before'])->keyBy('session_id');
+        $after = collect($sys['points']['after'])->keyBy('session_id');
+        self::assertSame(0, $before[$sessions[2]->id]['value']);
+        self::assertNull($before[$sessions[3]->id]['value']);
+        self::assertSame(120, $before[$current->id]['value']);
+        self::assertSame(118, $after[$current->id]['value']);
+        self::assertGreaterThanOrEqual(2, count($sys['segments']['before']));
+    }
+
+    public function test_session_dynamics_chart_data_does_not_merge_unproven_test_versions_or_identities(): void
+    {
+        $test = static fn (int $testId, int $version): MedicalSessionTestData => new MedicalSessionTestData(
+            testId: $testId,
+            testName: 'Одинаковое название',
+            beforeValueId: null,
+            beforeLabel: 'До',
+            beforeAbnormal: false,
+            afterValueId: null,
+            afterLabel: 'После',
+            afterAbnormal: false,
+            structuredPayload: ['type' => 'numeric', 'version' => $version],
+        );
+        $session = static fn (int $id, string $at, MedicalSessionTestData $result): MedicalSessionData => new MedicalSessionData(
+            id: $id,
+            organizationId: 1,
+            clientId: 1,
+            specialistId: 1,
+            bookingId: null,
+            pain: null,
+            tests: null,
+            observations: null,
+            rootCauseHypothesis: null,
+            protocol: null,
+            result: null,
+            occurredAt: Carbon::parse($at, 'UTC'),
+            testResults: [$result],
+        );
+
+        $first = $session(1, '2026-01-01 09:00:00', $test(7, 1));
+        $second = $session(2, '2026-01-02 09:00:00', $test(7, 1));
+        $third = $session(3, '2026-01-03 09:00:00', $test(7, 2));
+        $fourth = $session(4, '2026-01-04 09:00:00', $test(8, 1));
+
+        $chart = new SessionDynamicsData(
+            current: $fourth,
+            previous: $third,
+            currentSpecialist: 'Специалист',
+            currentBooking: 'Без записи на приём',
+            previousSpecialist: 'Специалист',
+            previousBooking: 'Без записи на приём',
+            timezone: 'UTC',
+            history: [
+                ['period' => 'Текущий сеанс', 'data' => $fourth, 'specialist' => 'Специалист', 'booking' => 'Без записи на приём'],
+                ['period' => 'Предыдущий сеанс', 'data' => $third, 'specialist' => 'Специалист', 'booking' => 'Без записи на приём'],
+                ['period' => 'Сеанс 2 назад', 'data' => $second, 'specialist' => 'Специалист', 'booking' => 'Без записи на приём'],
+                ['period' => 'Сеанс 3 назад', 'data' => $first, 'specialist' => 'Специалист', 'booking' => 'Без записи на приём'],
+            ],
+        )->chartData();
+
+        $testGroups = collect($chart['tests']);
+        self::assertCount(3, $testGroups);
+        self::assertSame([1, 1, 2], $testGroups->map(static fn (array $group): int => count($group['sessions']))->sort()->values()->all());
     }
 
     public function test_pain_vas_rejects_values_outside_zero_to_ten(): void

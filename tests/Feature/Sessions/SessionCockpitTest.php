@@ -472,6 +472,7 @@ final class SessionCockpitTest extends TestCase
             ], shouldGuessMissingParameters: true)))
             ->assertSuccessful()
             ->assertSee('Динамика подтверждённых фактов')
+            ->assertSee('Динамика медицинских показателей')
             ->assertSee('Медицинские выводы не формируются.')
             ->assertSee('Сеанс 9 назад')
             ->assertSee('Показатели до сеанса')
