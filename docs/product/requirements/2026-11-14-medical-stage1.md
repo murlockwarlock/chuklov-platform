@@ -1539,10 +1539,10 @@ Requirements in this section remain the Stage 2 ledger. The statuses below recor
 - Source section: `Этап 2`, paragraph 34
 - Type: `ADD`
 - Requirement: Analyze before/after vital patterns.
-- Acceptance: Deferred; Stage 1 only stores, calculates, and highlights configured values.
+- Acceptance: Partially implemented; the session card displays saved configured vital values as separate «До» and «После» series, preserving missing values as gaps. Pattern analysis, clinical evaluation, thresholds, indices, and «лучше/хуже» conclusions remain deferred.
 - Dependencies: Stage 1C vitals.
 - Delivery package: `2`
-- Status: `OUT OF STAGE 1`
+- Status: `PARTIALLY IMPLEMENTED`
 
 ### REQ-MED-2-AI-012 - Five-to-ten-visit trends
 
@@ -1550,10 +1550,10 @@ Requirements in this section remain the Stage 2 ledger. The statuses below recor
 - Source section: `Этап 2`, paragraph 34
 - Type: `ADD`
 - Requirement: Analyze vital trends over 5-10 visits using the approved source definitions.
-- Acceptance: Deferred; no trend interpretation is inferred in Stage 1.
+- Acceptance: Partially implemented; the session card shows the current session and up to nine previous sessions in the organization timezone, with factual gaps and only same-test groups supported by saved definition, type, version, and unit evidence. Trend analysis and interpretation remain deferred.
 - Dependencies: `REQ-MED-2-AI-011`; historical vitals.
 - Delivery package: `2`
-- Status: `OUT OF STAGE 1`
+- Status: `PARTIALLY IMPLEMENTED`
 
 ### REQ-MED-2-AI-013 - Automated index 3 rule
 

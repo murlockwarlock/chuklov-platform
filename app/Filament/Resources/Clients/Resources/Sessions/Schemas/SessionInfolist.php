@@ -251,6 +251,13 @@ final class SessionInfolist
                 Section::make(__('Динамика подтверждённых фактов'))
                     ->description(__('Сохранённые значения текущего и до 9 предыдущих сеансов. Медицинские выводы не формируются.'))
                     ->schema([
+                        ViewEntry::make('dynamicsChart')
+                            ->hiddenLabel()
+                            ->view(
+                                'filament.resources.clients.session-dynamics-chart',
+                                fn (MedicalSession $record, ViewEntry $entry): array => self::dynamicsChartViewData($record, $entry),
+                            )
+                            ->columnSpanFull(),
                         RepeatableEntry::make('comparison')
                             ->hiddenLabel()
                             ->schema([
@@ -372,6 +379,21 @@ final class SessionInfolist
         return [
             'summary' => $summary,
             'clinicalAiUrl' => $summary === null ? null : self::clinicalAiUrl(self::parentClient($record, $entry)),
+        ];
+    }
+
+    /** @return array{chart: array<string, mixed>} */
+    private static function dynamicsChartViewData(MedicalSession $record, ViewEntry $entry): array
+    {
+        $actor = auth()->user();
+        $client = self::parentClient($record, $entry);
+
+        if (! $actor instanceof User || ! $client instanceof Client) {
+            return ['chart' => ['sessions' => [], 'metrics' => [], 'pains' => [], 'tests' => []]];
+        }
+
+        return [
+            'chart' => app(GetSessionDynamics::class)->handle($actor, $record, $client)->chartData(),
         ];
     }
 
