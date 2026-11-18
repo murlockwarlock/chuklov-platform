@@ -8,9 +8,11 @@ use App\Filament\Support\CrmLabel;
 use App\Filament\Support\LocalizedViewRecord;
 use App\Models\User;
 use App\Modules\AI\Application\Actions\ReviewAiRun;
+use App\Modules\AI\Domain\Enums\AiCapability;
 use App\Modules\AI\Domain\Enums\HumanReviewDecision;
 use App\Modules\AI\Domain\Enums\HumanReviewReasonCode;
 use App\Modules\AI\Domain\Enums\HumanReviewStatus;
+use App\Modules\AI\Domain\Enums\ClinicalSynthesizerWorkflow;
 use App\Modules\AI\Domain\Models\AiRun;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
@@ -59,7 +61,8 @@ class ViewAiRun extends LocalizedViewRecord
             Action::make('accept_review')
                 ->label(__('Ответ AI корректный'))
                 ->color('success')
-                ->visible(fn (AiRun $record) => $record->human_review_status === HumanReviewStatus::PendingReview)
+                ->visible(fn (AiRun $record): bool => ! self::isSessionDraft($record)
+                    && $record->human_review_status === HumanReviewStatus::PendingReview)
                 ->requiresConfirmation()
                 ->modalHeading(__('Подтвердить результат AI'))
                 ->modalDescription(__('Это оценка результата AI специалистом. Она не отправляет сообщение клиенту.'))
@@ -80,7 +83,8 @@ class ViewAiRun extends LocalizedViewRecord
             Action::make('reject_review')
                 ->label(__('Ответ AI неверный'))
                 ->color('danger')
-                ->visible(fn (AiRun $record) => $record->human_review_status === HumanReviewStatus::PendingReview)
+                ->visible(fn (AiRun $record): bool => ! self::isSessionDraft($record)
+                    && $record->human_review_status === HumanReviewStatus::PendingReview)
                 ->form([
                     Select::make('reason_code')
                         ->label(__('Код причины'))
@@ -108,7 +112,8 @@ class ViewAiRun extends LocalizedViewRecord
             Action::make('edit_and_accept_review')
                 ->label(__('Исправить ответ'))
                 ->color('info')
-                ->visible(fn (AiRun $record) => $record->human_review_status === HumanReviewStatus::PendingReview)
+                ->visible(fn (AiRun $record): bool => ! self::isSessionDraft($record)
+                    && $record->human_review_status === HumanReviewStatus::PendingReview)
                 ->modalDescription(__('Исправление сохраняется только как результат проверки. Чтобы отправить текст клиенту, используйте чат.'))
                 ->form([
                     Textarea::make('edited_output')
@@ -149,6 +154,12 @@ class ViewAiRun extends LocalizedViewRecord
             app(OrganizationContext::class)->organization(),
             OrganizationPermission::ViewAiTrace,
         );
+    }
+
+    private static function isSessionDraft(AiRun $record): bool
+    {
+        return $record->capability === AiCapability::ClinicalSynthesizer
+            && $record->workflow_key === ClinicalSynthesizerWorkflow::SessionDraft->value;
     }
 
     private function refreshReviewState(AiRun $record): void

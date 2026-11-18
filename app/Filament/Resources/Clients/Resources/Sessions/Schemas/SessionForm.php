@@ -332,14 +332,14 @@ final class SessionForm
                             ->columnSpanFull(),
                         Placeholder::make('root_cause_ai_version')
                             ->label(__('Версия ИИ'))
-                            ->content(__('Не подключена. ИИ будет доступен на этапе 2.'))
+                            ->content(__('Доступно после сохранения сеанса через блок «ИИ-помощник сеанса».'))
                             ->columnSpanFull(),
                         Actions::make([
                             Action::make('fillRootCauseStage2')
                                 ->label(__('Заполнить с ИИ'))
                                 ->icon('heroicon-o-sparkles')
                                 ->disabled()
-                                ->tooltip(__('ИИ подключается на этапе 2.')),
+                                ->tooltip(__('Подготовьте фактический черновик после сохранения сеанса.')),
                         ])->columnSpanFull(),
                     ])->columnSpanFull(),
                 Section::make(__('4. Пошаговый протокол сеанса'))
@@ -363,15 +363,15 @@ final class SessionForm
                                 ->label(__('Заполнить с ИИ'))
                                 ->icon('heroicon-o-sparkles')
                                 ->disabled()
-                                ->tooltip(__('ИИ подключается на этапе 2.'))),
+                                ->tooltip(__('Протокол останется выключен до утверждения клинического алгоритма.'))),
                         Placeholder::make('protocol_legacy_hint')->label(__('Историческое поле протокола'))->content(__('Старый монолитный текст сохранён для истории. Новые шаги сохраняются отдельно.'))->columnSpanFull(),
-                        Placeholder::make('protocol_ai_hint')->label(__('Версия ИИ'))->content(__('Не подключена. ИИ будет доступен на этапе 2.'))->columnSpanFull(),
+                        Placeholder::make('protocol_ai_hint')->label(__('Версия ИИ'))->content(__('Автоматическое заполнение протокола выключено до утверждения клинического алгоритма.'))->columnSpanFull(),
                         Actions::make([
                             Action::make('fillProtocolStage2')
                                 ->label(__('Заполнить с ИИ'))
                                 ->icon('heroicon-o-sparkles')
                                 ->disabled()
-                                ->tooltip(__('ИИ подключается на этапе 2.')),
+                                ->tooltip(__('Протокол останется выключен до утверждения клинического алгоритма.')),
                         ])->columnSpanFull(),
                     ])->collapsible()->columnSpanFull(),
                 Section::make(__('5. Субъективные ощущения клиента после сеанса'))

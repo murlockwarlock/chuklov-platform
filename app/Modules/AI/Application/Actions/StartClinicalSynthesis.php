@@ -47,6 +47,44 @@ final readonly class StartClinicalSynthesis
         $this->authorizer->authorize($actor, $organization, OrganizationPermission::ViewAiRuns);
         $this->sessionAuthorization->authorizeViewClient($actor, $client);
 
+        return $this->start(
+            actor: $actor,
+            client: $client,
+            focusSession: null,
+            workflow: ClinicalSynthesizerWorkflow::Summary,
+            rerun: $rerun,
+        );
+    }
+
+    public function handleSession(
+        User $actor,
+        Client $client,
+        MedicalSession $session,
+        bool $rerun = false,
+    ): AiRun {
+        $organization = $this->context->organization();
+        $this->authorizer->authorize($actor, $organization, OrganizationPermission::ViewClients);
+        $this->authorizer->authorize($actor, $organization, OrganizationPermission::ViewAiRuns);
+        $this->sessionAuthorization->authorizeView($actor, $session, $client);
+
+        return $this->start(
+            actor: $actor,
+            client: $client,
+            focusSession: $session,
+            workflow: ClinicalSynthesizerWorkflow::SessionDraft,
+            rerun: $rerun,
+        );
+    }
+
+    private function start(
+        User $actor,
+        Client $client,
+        ?MedicalSession $focusSession,
+        ClinicalSynthesizerWorkflow $workflow,
+        bool $rerun,
+    ): AiRun {
+        $organization = $this->context->organization();
+
         $documentRun = $this->findLatestReviewedAiRun->handle(
             $client,
             AiCapability::ClinicalDocumentExtraction,
@@ -70,6 +108,13 @@ final readonly class StartClinicalSynthesis
             ->orderByDesc('id')
             ->limit(5)
             ->get();
+        if ($focusSession !== null && ! $sessions->contains(fn (MedicalSession $item): bool => (int) $item->getKey() === (int) $focusSession->getKey())) {
+            $sessions->push($focusSession);
+            $sessions = $sessions
+                ->sortByDesc(fn (MedicalSession $item): string => $item->occurred_at?->format('Y-m-d H:i:s.u').' '.str_pad((string) $item->getKey(), 12, '0', STR_PAD_LEFT))
+                ->take(6)
+                ->values();
+        }
         foreach ($sessions as $session) {
             $sessionData = $this->getSession->handle($actor, $session, $client);
             if ($sessionData === null) {
@@ -85,7 +130,10 @@ final readonly class StartClinicalSynthesis
             'client_name' => (string) ($client->full_name ?: 'Клиент'),
             'anamnesis' => $this->medicalProfileContext->build($profile),
             'complaints_goals' => $this->boundedText($profile?->complaintsGoalsForCompatibility() ?? '', 700),
-            'recent_sessions' => $this->sessionsContext($sessionHistory),
+            'recent_sessions' => $this->sessionsContext(
+                $sessionHistory,
+                $focusSession === null ? null : (int) $focusSession->getKey(),
+            ),
             'agent_one_result' => $this->documentContext($documentResult?->outputPayload),
             'agent_two_result' => $this->postureContext($postureResult?->outputPayload),
             'survey_results' => $surveyResults,
@@ -104,7 +152,9 @@ final readonly class StartClinicalSynthesis
             'variables' => $inputVariables,
             'references' => array_map(static fn (AiInputReference $reference): array => $reference->toArray(), $references),
         ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR));
-        $baseKey = 'clinical_synthesizer:'.$sourceDigest;
+        $baseKey = $workflow === ClinicalSynthesizerWorkflow::SessionDraft
+            ? $workflow->value.':'.($focusSession === null ? '0' : (int) $focusSession->getKey()).':'.$sourceDigest
+            : 'clinical_synthesizer:'.$sourceDigest;
         $idempotencyKey = $this->idempotencyKey(
             organizationId: (int) $organization->getKey(),
             baseKey: $baseKey,
@@ -113,7 +163,7 @@ final readonly class StartClinicalSynthesis
 
         return $this->dispatcher->handle($actor, new AiRunRequest(
             capability: AiCapability::ClinicalSynthesizer,
-            workflowKey: ClinicalSynthesizerWorkflow::Summary->value,
+            workflowKey: $workflow->value,
             origin: AiRunOrigin::User,
             executionMode: AiExecutionMode::Async,
             clientId: (int) $client->getKey(),
@@ -254,10 +304,12 @@ final readonly class StartClinicalSynthesis
     }
 
     /** @param array<string, mixed> $session */
-    private function sessionContext(array $session): string
+    private function sessionContext(array $session, ?int $focusSessionId = null): string
     {
         $parts = [
-            'Сессия #'.(int) ($session['id'] ?? 0),
+            $focusSessionId !== null && (int) ($session['id'] ?? 0) === $focusSessionId
+                ? 'Текущий сеанс'
+                : 'Сеанс из истории',
             $this->boundedText($session['occurred_at'] ?? '', 40),
         ];
         foreach ([
@@ -274,18 +326,82 @@ final readonly class StartClinicalSynthesis
             }
         }
 
+        if ($focusSessionId !== null) {
+            $painFacts = collect((array) ($session['pains'] ?? []))
+                ->map(static fn (mixed $pain): string => is_array($pain)
+                    ? trim(implode('; ', array_filter([
+                        (string) ($pain['name'] ?? ''),
+                        isset($pain['before_score']) ? 'до: '.(string) $pain['before_score'] : null,
+                        isset($pain['after_score']) ? 'после: '.(string) $pain['after_score'] : null,
+                    ])))
+                    : '')
+                ->filter()
+                ->take(5)
+                ->implode(' | ');
+            if ($painFacts !== '') {
+                $parts[] = 'Структурированные жалобы: '.$painFacts;
+            }
+
+            $testFacts = collect((array) ($session['test_results'] ?? []))
+                ->map(static function (mixed $test): string {
+                    if (! is_array($test)) {
+                        return '';
+                    }
+
+                    $warnings = is_array($test['warnings'] ?? null) ? implode(', ', array_slice($test['warnings'], 0, 3)) : '';
+
+                    return trim(implode('; ', array_filter([
+                        (string) ($test['test_name'] ?? ''),
+                        isset($test['before_label']) ? 'до: '.(string) $test['before_label'] : null,
+                        isset($test['after_label']) ? 'после: '.(string) $test['after_label'] : null,
+                        ($test['priority'] ?? false) === true ? 'отмечен специалистом как приоритетный' : null,
+                        $warnings === '' ? null : 'предупреждения: '.$warnings,
+                    ])));
+                })
+                ->filter()
+                ->take(5)
+                ->implode(' | ');
+            if ($testFacts !== '') {
+                $parts[] = 'Структурированные тесты: '.$testFacts;
+            }
+
+            $rootCauseFacts = collect((array) ($session['root_causes'] ?? []))
+                ->map(static fn (mixed $cause): string => is_array($cause)
+                    ? trim(implode('; ', array_filter([
+                        (string) ($cause['cause_name'] ?? ''),
+                        (string) ($cause['free_text'] ?? ''),
+                        (string) ($cause['status'] ?? ''),
+                    ])))
+                    : '')
+                ->filter()
+                ->take(5)
+                ->implode(' | ');
+            if ($rootCauseFacts !== '') {
+                $parts[] = 'Сохранённые записи причин: '.$rootCauseFacts;
+            }
+
+            $protocolFacts = collect((array) ($session['protocol_steps'] ?? []))
+                ->map(static fn (mixed $step): string => is_array($step) ? trim((string) ($step['text'] ?? '')) : '')
+                ->filter()
+                ->take(8)
+                ->implode(' | ');
+            if ($protocolFacts !== '') {
+                $parts[] = 'Сохранённые шаги протокола: '.$protocolFacts;
+            }
+        }
+
         return implode('; ', array_filter($parts, static fn (string $value): bool => $value !== ''));
     }
 
     /** @param list<array<string, mixed>> $sessions */
-    private function sessionsContext(array $sessions): string
+    private function sessionsContext(array $sessions, ?int $focusSessionId = null): string
     {
         $lines = [];
         foreach ($sessions as $session) {
-            $lines[] = $this->sessionContext($session);
+            $lines[] = $this->sessionContext($session, $focusSessionId);
         }
 
-        return $this->boundedText(implode("\n", $lines), 900);
+        return $this->boundedText(implode("\n", $lines), $focusSessionId === null ? 900 : 2200);
     }
 
     /** @param array<string, mixed> $result */

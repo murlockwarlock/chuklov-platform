@@ -41,6 +41,7 @@ use App\Modules\Security\Domain\Enums\CredentialStatus;
 use App\Modules\Security\Domain\Models\OrganizationCredential;
 use App\Modules\Sessions\Application\CreateSession;
 use App\Modules\Sessions\Application\DTOs\CreateSessionCommand;
+use App\Modules\Sessions\Domain\Models\MedicalSession;
 use App\Modules\Specialists\Domain\Models\Specialist;
 use App\Modules\Surveys\Domain\Enums\SurveyAttemptStatus;
 use App\Modules\Surveys\Domain\Enums\SurveyVersionStatus;
@@ -300,6 +301,68 @@ final class ClinicalAiWorkflowTest extends TestCase
         self::assertStringNotContainsString('Операция Y', (string) $prompt);
         self::assertStringNotContainsString('Лекарство Z', (string) $prompt);
         self::assertStringNotContainsString('Добавка Q', (string) $prompt);
+    }
+
+    public function test_session_synthesis_pins_the_current_session_and_stays_out_of_client_health_flow(): void
+    {
+        Queue::fake();
+        $specialist = Specialist::factory()->forOrganization($this->organization)->create();
+        $session = app(CreateSession::class)->handle($this->staff, $this->client, new CreateSessionCommand(
+            specialistId: (int) $specialist->getKey(),
+            occurredAt: Carbon::parse('2026-11-17 10:00:00', 'UTC'),
+            pain: 'Текущая жалоба сеанса',
+            protocolSteps: [['text' => 'Сохранённый факт протокола']],
+        ));
+
+        $run = app(StartClinicalSynthesis::class)->handleSession(
+            actor: $this->staff,
+            client: $this->client,
+            session: MedicalSession::query()->whereKey($session->id)->firstOrFail(),
+        );
+
+        self::assertSame(ClinicalSynthesizerWorkflow::SessionDraft->value, $run->workflow_key);
+        self::assertContains(
+            ['type' => 'medical_session', 'id' => $session->id],
+            $run->input_references,
+        );
+
+        $payload = AiRunPayload::query()->where('ai_run_id', $run->id)->firstOrFail();
+        $prompt = app(MedicalEncryptorInterface::class)->decryptField(
+            $this->organization->id,
+            $payload->encrypted_user_prompt,
+            $payload->encryption_key_version,
+        );
+        self::assertStringContainsString('Текущая жалоба сеанса', (string) $prompt);
+        self::assertStringContainsString('Сохранённый факт протокола', (string) $prompt);
+
+        $sameRun = app(StartClinicalSynthesis::class)->handleSession(
+            actor: $this->staff,
+            client: $this->client,
+            session: MedicalSession::query()->whereKey($session->id)->firstOrFail(),
+        );
+        self::assertSame($run->id, $sameRun->id);
+
+        $run->forceFill([
+            'status' => AiRunStatus::Succeeded,
+            'human_review_status' => HumanReviewStatus::Accepted,
+        ])->save();
+        $summary = app(ReadClinicalAiClientSummary::class)->handle($this->staff, $this->client);
+
+        self::assertNotNull($summary);
+        self::assertSame('Нет', $summary['states']['synthesis']['state']);
+
+        $rerun = app(StartClinicalSynthesis::class)->handleSession(
+            actor: $this->staff,
+            client: $this->client,
+            session: MedicalSession::query()->whereKey($session->id)->firstOrFail(),
+            rerun: true,
+        );
+        self::assertNotSame($run->id, $rerun->id);
+        self::assertSame(2, AiRun::query()
+            ->where('client_id', $this->client->id)
+            ->where('workflow_key', ClinicalSynthesizerWorkflow::SessionDraft->value)
+            ->count());
+        self::assertNotNull(AiRunPayload::query()->where('ai_run_id', $run->id)->first());
     }
 
     public function test_course_report_uses_full_profile_and_dedicated_prompt_with_server_period(): void

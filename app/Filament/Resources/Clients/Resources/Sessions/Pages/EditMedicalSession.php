@@ -9,10 +9,19 @@ use App\Filament\Resources\Clients\Resources\Sessions\Schemas\ClinicalTestProtoc
 use App\Filament\Resources\Clients\Resources\Sessions\Schemas\MedicalComplaintSelect;
 use App\Filament\Resources\Clients\Resources\Sessions\Schemas\MedicalMeasurementForm;
 use App\Filament\Resources\Clients\Resources\Sessions\Schemas\SessionForm;
+use App\Filament\Support\ClinicalAiPresentation;
+use App\Filament\Support\CrmLabel;
 use App\Filament\Support\FormValidationFeedback;
 use App\Filament\Support\InteractsWithFormValidationFeedback;
 use App\Filament\Support\LocalizedEditRecord;
 use App\Models\User;
+use App\Modules\AI\Application\Actions\GetClinicalAiResult;
+use App\Modules\AI\Application\Actions\StartClinicalSynthesis;
+use App\Modules\AI\Application\Services\ListClinicalSessionAiRuns;
+use App\Modules\AI\Domain\Enums\AiRunStatus;
+use App\Modules\AI\Domain\Enums\HumanReviewReasonCode;
+use App\Modules\AI\Domain\Enums\HumanReviewStatus;
+use App\Modules\AI\Domain\Models\AiRun;
 use App\Modules\Analytics\Application\AcceptAnalyticsClassification;
 use App\Modules\Analytics\Application\SuggestAnalyticsTags;
 use App\Modules\Analytics\Domain\Enums\ClassificationRunStatus;
@@ -22,9 +31,12 @@ use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\MedicalProfiles\Application\DTOs\MedicalPainData;
 use App\Modules\MedicalProfiles\Application\MedicalFrequencyPeriodCatalog;
 use App\Modules\MedicalProfiles\Application\MedicalProblemTagCatalog;
+use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
+use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
 use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Sessions\Application\AggregateMedicalSessionCauses;
+use App\Modules\Sessions\Application\AcceptClinicalSessionAiDraft;
 use App\Modules\Sessions\Application\CalculateSessionEffectiveness;
 use App\Modules\Sessions\Application\CompleteSession;
 use App\Modules\Sessions\Application\DTOs\MedicalSessionData;
@@ -39,11 +51,13 @@ use App\Modules\Sessions\Application\MedicalSessionFieldLimits;
 use App\Modules\Sessions\Application\MedicalSessionSnapshotHasher;
 use App\Modules\Sessions\Application\MedicalSessionTestHistoryReader;
 use App\Modules\Sessions\Application\SaveSessionRecommendationDraft;
+use App\Modules\Sessions\Application\RejectClinicalSessionAiDraft;
 use App\Modules\Sessions\Application\SendSessionRecommendation;
 use App\Modules\Sessions\Application\UpdateSession;
 use App\Modules\Sessions\Application\UploadSessionPhoto;
 use App\Modules\Sessions\Domain\Enums\MedicalSessionAttachmentGallery;
 use App\Modules\Sessions\Domain\Enums\MedicalSessionAttachmentPlane;
+use App\Modules\Sessions\Domain\Enums\ClinicalSessionAiDraftTarget;
 use App\Modules\Sessions\Domain\Models\MedicalSession;
 use App\Modules\Sessions\Domain\Models\MedicalSessionPain;
 use App\Support\Images\SupportedImageTypes;
@@ -71,6 +85,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Carbon;
 use Illuminate\Validation\ValidationException;
+use InvalidArgumentException;
 use Livewire\Attributes\Locked;
 use Throwable;
 
@@ -198,6 +213,398 @@ class EditMedicalSession extends LocalizedEditRecord
         ])->extraAttributes([
             'wire:loading.attr' => 'inert',
         ]);
+    }
+
+    private function prepareClinicalSessionAiAction(): Action
+    {
+        return Action::make('prepareClinicalSessionAi')
+            ->label(fn (): string => $this->sessionAiPrepareLabel())
+            ->icon('heroicon-o-sparkles')
+            ->color('primary')
+            ->authorize(fn (): bool => MedicalSessionResource::canEdit($this->getRecord()) && $this->canUseClinicalSessionAi())
+            ->visible(fn (): bool => MedicalSessionResource::canEdit($this->getRecord()) && $this->canUseClinicalSessionAi())
+            ->disabled(fn (): bool => $this->sessionAiRunInProgress())
+            ->action(function (Action $action): void {
+                try {
+                    $latest = $this->latestSessionAiRun();
+                    app(StartClinicalSynthesis::class)->handleSession(
+                        actor: $this->actor(),
+                        client: $this->parentClient(),
+                        session: $this->session(),
+                        rerun: $latest?->status->isTerminal() ?? false,
+                    );
+                    Notification::make()
+                        ->success()
+                        ->title($latest === null ? __('Подготовка с ИИ запущена') : __('Новая версия черновика запущена'))
+                        ->body(__('Предыдущие версии останутся в истории.'))
+                        ->send();
+                } catch (ValidationException $exception) {
+                    $mapped = FormValidationFeedback::forAction($exception, $action);
+                    FormValidationFeedback::notifyValidation($mapped, __('Не удалось запустить подготовку.'));
+                    throw $mapped;
+                } catch (InvalidArgumentException $exception) {
+                    Notification::make()
+                        ->danger()
+                        ->title(__('AI пока недоступен'))
+                        ->body(ClinicalAiPresentation::failure(null, $exception))
+                        ->send();
+                } catch (Throwable $exception) {
+                    $mapped = FormValidationFeedback::unexpectedForAction($exception, $action);
+                    FormValidationFeedback::notifyValidation($mapped);
+                    throw $mapped;
+                }
+            });
+    }
+
+    private function openClinicalSessionAiDraftAction(): Action
+    {
+        return Action::make('openClinicalSessionAiDraft')
+            ->label(__('Проверить черновик'))
+            ->icon('heroicon-o-pencil-square')
+            ->color('warning')
+            ->authorize(fn (): bool => MedicalSessionResource::canEdit($this->getRecord()) && $this->canReviewClinicalSessionAi())
+            ->visible(fn (): bool => MedicalSessionResource::canEdit($this->getRecord()) && $this->canReviewClinicalSessionAi() && $this->reviewableSessionAiRun() instanceof AiRun)
+            ->fillForm(function (): array {
+                $run = $this->reviewableSessionAiRun();
+                abort_unless($run instanceof AiRun, 404);
+                $result = app(GetClinicalAiResult::class)->handle($this->actor(), $run->getKey(), $this->parentClient()->getKey());
+
+                return [
+                    'run_id' => $run->getKey(),
+                    'expected_snapshot' => app(MedicalSessionSnapshotHasher::class)->forSession($this->session()),
+                    'edited_output' => ClinicalAiPresentation::result(
+                        $run->capability,
+                        $result->outputPayload,
+                        $result->outputText,
+                        $run->workflow_key,
+                    ),
+                    'ai_version' => ClinicalAiPresentation::aiVersion($run),
+                    'specialist_version' => ClinicalAiPresentation::specialistVersion($run),
+                    'sources' => $this->sessionAiSourcesForRun($run),
+                    'target' => ClinicalSessionAiDraftTarget::Result->value,
+                ];
+            })
+            ->schema([
+                Hidden::make('run_id')->dehydrated(),
+                Hidden::make('expected_snapshot')->dehydrated(),
+                TextInput::make('ai_version')
+                    ->label(__('Версия AI'))
+                    ->disabled()
+                    ->dehydrated(false),
+                TextInput::make('specialist_version')
+                    ->label(__('Версия специалиста'))
+                    ->disabled()
+                    ->dehydrated(false),
+                Textarea::make('edited_output')
+                    ->label(__('Черновик для проверки и исправления'))
+                    ->rows(14)
+                    ->required()
+                    ->maxLength(MedicalSessionFieldLimits::MaxTextLength),
+                Select::make('target')
+                    ->label(__('Куда перенести после принятия'))
+                    ->options(collect(ClinicalSessionAiDraftTarget::cases())
+                        ->filter(static fn (ClinicalSessionAiDraftTarget $target): bool => $target->isAvailable())
+                        ->mapWithKeys(static fn (ClinicalSessionAiDraftTarget $target): array => [$target->value => __($target->label())])
+                        ->all())
+                    ->default(ClinicalSessionAiDraftTarget::Result->value)
+                    ->native(false)
+                    ->required(),
+                Textarea::make('sources')
+                    ->label(__('Факты и сеансы, использованные для подготовки'))
+                    ->rows(5)
+                    ->disabled()
+                    ->dehydrated(false),
+                Placeholder::make('disabled_targets')
+                    ->label(__('Пока выключено'))
+                    ->content(fn (): string => $this->sessionAiDisabledTargets())
+                    ->dehydrated(false),
+            ])
+            ->modalHeading(__('Проверка черновика AI'))
+            ->modalDescription(__('Измените текст и выберите только допустимое поле. Принятие не отправляет сообщение клиенту.'))
+            ->modalSubmitActionLabel(__('Принять в сеанс'))
+            ->action(function (Action $action, array $data): void {
+                try {
+                    $target = ClinicalSessionAiDraftTarget::tryFrom((string) ($data['target'] ?? ''));
+                    if ($target === null) {
+                        throw ValidationException::withMessages(['target' => 'Выберите допустимое поле сеанса.']);
+                    }
+                    app(AcceptClinicalSessionAiDraft::class)->handle(
+                        actor: $this->actor(),
+                        session: $this->session(),
+                        client: $this->parentClient(),
+                        runId: (int) ($data['run_id'] ?? 0),
+                        target: $target,
+                        editedOutput: (string) ($data['edited_output'] ?? ''),
+                        expectedSnapshot: is_string($data['expected_snapshot'] ?? null) ? $data['expected_snapshot'] : null,
+                    );
+                    $this->refreshAfterClinicalSessionAiAction();
+                    Notification::make()->success()->title(__('Черновик принят и перенесён в сеанс'))->send();
+                } catch (ValidationException $exception) {
+                    $message = collect($exception->errors())->flatten()->first();
+                    Notification::make()
+                        ->danger()
+                        ->title(__('Черновик не перенесён.'))
+                        ->body(is_string($message) && filled($message)
+                            ? __($message)
+                            : __('Проверьте поля, отмеченные ошибкой.'))
+                        ->send();
+                    $action->halt();
+                } catch (Throwable $exception) {
+                    FormValidationFeedback::notifyValidation(FormValidationFeedback::unexpectedForAction($exception, $action));
+                    $action->halt();
+                }
+            });
+    }
+
+    private function rejectClinicalSessionAiDraftAction(): Action
+    {
+        return Action::make('rejectClinicalSessionAiDraft')
+            ->label(__('Отклонить черновик'))
+            ->icon('heroicon-o-x-circle')
+            ->color('danger')
+            ->authorize(fn (): bool => MedicalSessionResource::canEdit($this->getRecord()) && $this->canReviewClinicalSessionAi())
+            ->visible(fn (): bool => MedicalSessionResource::canEdit($this->getRecord()) && $this->canReviewClinicalSessionAi() && $this->reviewableSessionAiRun() instanceof AiRun)
+            ->schema([
+                Hidden::make('run_id')->dehydrated(),
+                Select::make('reason_code')
+                    ->label(__('Причина'))
+                    ->options(collect(HumanReviewReasonCode::cases())->mapWithKeys(
+                        static fn (HumanReviewReasonCode $code): array => [$code->value => CrmLabel::enum($code)],
+                    )->all())
+                    ->default(HumanReviewReasonCode::IncorrectContent->value)
+                    ->native(false)
+                    ->required(),
+                Textarea::make('notes')
+                    ->label(__('Заметка специалиста'))
+                    ->rows(4)
+                    ->maxLength(MedicalSessionFieldLimits::MaxTextLength),
+            ])
+            ->fillForm(fn (): array => [
+                'run_id' => $this->reviewableSessionAiRun()?->getKey(),
+                'reason_code' => HumanReviewReasonCode::IncorrectContent->value,
+            ])
+            ->modalHeading(__('Отклонить черновик AI'))
+            ->modalDescription(__('Черновик останется в истории. Данные медицинского сеанса не изменятся.'))
+            ->modalSubmitActionLabel(__('Отклонить'))
+            ->action(function (Action $action, array $data): void {
+                try {
+                    app(RejectClinicalSessionAiDraft::class)->handle(
+                        actor: $this->actor(),
+                        session: $this->session(),
+                        client: $this->parentClient(),
+                        runId: (int) ($data['run_id'] ?? 0),
+                        reasonCode: (string) ($data['reason_code'] ?? ''),
+                        notes: filled($data['notes'] ?? null) ? (string) $data['notes'] : null,
+                    );
+                    Notification::make()->danger()->title(__('Черновик отклонён и сохранён в истории'))->send();
+                } catch (ValidationException $exception) {
+                    FormValidationFeedback::notifyValidation(
+                        FormValidationFeedback::forAction($exception, $action),
+                        __('Черновик не отклонён.'),
+                    );
+                    $action->halt();
+                } catch (Throwable $exception) {
+                    FormValidationFeedback::notifyValidation(FormValidationFeedback::unexpectedForAction($exception, $action));
+                    $action->halt();
+                }
+            });
+    }
+
+    public function refreshClinicalSessionAiPanel(): void
+    {
+    }
+
+    private function canUseClinicalSessionAi(): bool
+    {
+        $actor = auth()->user();
+        if (! $actor instanceof User) {
+            return false;
+        }
+
+        $organization = app(OrganizationContext::class)->organization();
+        $authorizer = app(OrganizationAuthorizer::class);
+
+        return $authorizer->allows($actor, $organization, OrganizationPermission::ViewClients)
+            && $authorizer->allows($actor, $organization, OrganizationPermission::ViewAiRuns);
+    }
+
+    private function canReviewClinicalSessionAi(): bool
+    {
+        if (! $this->canUseClinicalSessionAi()) {
+            return false;
+        }
+
+        $actor = auth()->user();
+        if (! $actor instanceof User) {
+            return false;
+        }
+
+        return app(OrganizationAuthorizer::class)->allows(
+            $actor,
+            app(OrganizationContext::class)->organization(),
+            OrganizationPermission::ReviewAiProposals,
+        );
+    }
+
+    private function latestSessionAiRun(): ?AiRun
+    {
+        return app(ListClinicalSessionAiRuns::class)
+            ->handle($this->actor(), $this->session(), $this->parentClient())
+            ->first();
+    }
+
+    private function reviewableSessionAiRun(): ?AiRun
+    {
+        return app(ListClinicalSessionAiRuns::class)
+            ->handle($this->actor(), $this->session(), $this->parentClient())
+            ->first(static fn (AiRun $run): bool => $run->status === AiRunStatus::Succeeded
+                && $run->human_review_status === HumanReviewStatus::PendingReview);
+    }
+
+    private function sessionAiRunInProgress(): bool
+    {
+        $run = $this->latestSessionAiRun();
+
+        return $run instanceof AiRun && ! $run->status->isTerminal();
+    }
+
+    private function sessionAiPrepareLabel(): string
+    {
+        $run = $this->latestSessionAiRun();
+        if ($run === null) {
+            return __('Подготовить с ИИ');
+        }
+        if (! $run->status->isTerminal()) {
+            return __('Подготовка выполняется');
+        }
+        if ($run->status !== AiRunStatus::Succeeded) {
+            return __('Повторить подготовку');
+        }
+
+        return __('Подготовить новую версию');
+    }
+
+    private function sessionAiStatus(): string
+    {
+        $run = $this->latestSessionAiRun();
+        if ($run === null) {
+            return __('Черновики ещё не подготовлены.');
+        }
+        if (! $run->status->isTerminal()) {
+            return __('AI готовит фактический черновик. Можно продолжать заполнять сеанс.');
+        }
+        if ($run->status !== AiRunStatus::Succeeded) {
+            return __('Ошибка: :message', ['message' => ClinicalAiPresentation::failure($run->error_category)]);
+        }
+
+        return match ($run->human_review_status) {
+            HumanReviewStatus::PendingReview => __('Черновик готов. Проверьте его, исправьте и примите или отклоните.'),
+            HumanReviewStatus::Accepted, HumanReviewStatus::EditedAndAccepted => __('Последняя версия принята специалистом.'),
+            HumanReviewStatus::Rejected => __('Последняя версия отклонена специалистом. Можно подготовить новую.'),
+            default => __('Черновик сохранён в истории.'),
+        };
+    }
+
+    private function sessionAiVersions(): string
+    {
+        $run = $this->latestSessionAiRun();
+        if (! $run instanceof AiRun) {
+            return __('Версии появятся после подготовки черновика.');
+        }
+
+        return implode("\n", [
+            __('AI: :version', ['version' => ClinicalAiPresentation::aiVersion($run)]),
+            __('Специалист: :version', ['version' => ClinicalAiPresentation::specialistVersion($run)]),
+        ]);
+    }
+
+    private function sessionAiSources(): string
+    {
+        $run = $this->latestSessionAiRun();
+
+        return $run instanceof AiRun ? $this->sessionAiSourcesForRun($run) : __('Источники появятся после подготовки черновика.');
+    }
+
+    private function sessionAiSourcesForRun(AiRun $run): string
+    {
+        $references = collect((array) $run->input_references);
+        $sessionIds = $references
+            ->filter(static fn (mixed $reference): bool => is_array($reference) && ($reference['type'] ?? null) === 'medical_session')
+            ->map(static fn (array $reference): int => (int) ($reference['id'] ?? 0))
+            ->filter()
+            ->unique()
+            ->values();
+        $sessionDates = MedicalSession::query()
+            ->where('organization_id', $this->session()->organization_id)
+            ->where('client_id', $this->parentClient()->getKey())
+            ->whereIn('id', $sessionIds->all())
+            ->orderByDesc('occurred_at')
+            ->orderByDesc('id')
+            ->get(['id', 'occurred_at'])
+            ->map(fn (MedicalSession $session): string => (int) $session->getKey() === (int) $this->session()->getKey()
+                ? __('текущий сеанс · :date', ['date' => $session->occurred_at?->format('d.m.Y H:i') ?? '—'])
+                : __('сеанс · :date', ['date' => $session->occurred_at?->format('d.m.Y H:i') ?? '—']))
+            ->all();
+        $surveyCount = $references->filter(static fn (mixed $reference): bool => is_array($reference) && ($reference['type'] ?? null) === 'survey_attempt')->count();
+        $upstreamCount = $references->filter(static fn (mixed $reference): bool => is_array($reference) && ($reference['type'] ?? null) === 'ai_run')->count();
+
+        return implode("\n", [
+            __('Текущий сеанс: жалобы, результаты тестов и сохранённые записи включены.'),
+            __('Использованные сеансы: :sessions.', ['sessions' => $sessionDates === [] ? __('не доступны') : implode(', ', $sessionDates)]),
+            __('Медицинский профиль: :state.', ['state' => ($run->context_provenance['medical_summary_included'] ?? false) ? __('доступен') : __('не включён')]),
+            __('Проверенные AI-источники: :count.', ['count' => $upstreamCount]),
+            __('Завершённые опросы: :count.', ['count' => $surveyCount]),
+        ]);
+    }
+
+    private function sessionAiTargetAvailability(): string
+    {
+        return implode("\n", [
+            __('Доступно после ручной правки: результат сеанса и гипотеза для проверки.'),
+            __('Выключено: протокол и рекомендации. Нужны утверждённый клинический алгоритм и prompt.'),
+            __('Принятие не меняет подтверждённые тесты, причины или данные клиента автоматически.'),
+        ]);
+    }
+
+    private function sessionAiDisabledTargets(): string
+    {
+        return implode("\n", [
+            ClinicalSessionAiDraftTarget::ProtocolSteps->label().': '.ClinicalSessionAiDraftTarget::ProtocolSteps->unavailableReason(),
+            ClinicalSessionAiDraftTarget::RecommendationDraft->label().': '.ClinicalSessionAiDraftTarget::RecommendationDraft->unavailableReason(),
+        ]);
+    }
+
+    private function sessionAiHistory(): string
+    {
+        $runs = app(ListClinicalSessionAiRuns::class)
+            ->handle($this->actor(), $this->session(), $this->parentClient())
+            ->take(8);
+        if ($runs->isEmpty()) {
+            return __('История решений пока пуста.');
+        }
+
+        return $runs->map(function (AiRun $run): string {
+            $review = $run->humanReviews->last();
+            $target = $review?->target_field === null
+                ? null
+                : ClinicalSessionAiDraftTarget::tryFrom((string) $review->target_field)?->label();
+
+            return implode(' · ', array_filter([
+                $run->created_at?->format('d.m.Y H:i'),
+                ClinicalAiPresentation::status($run->status),
+                $run->status === AiRunStatus::Succeeded ? ClinicalAiPresentation::review($run->human_review_status) : null,
+                $target === null ? null : __('поле: :target', ['target' => $target]),
+                $review?->reviewer?->name,
+                $review?->reviewed_at?->format('d.m.Y H:i'),
+            ]));
+        })->implode("\n");
+    }
+
+    private function refreshAfterClinicalSessionAiAction(): void
+    {
+        $this->record = $this->session()->fresh();
+        $this->form->model($this->record);
+        $this->fillForm();
     }
 
     private function collectResultAction(bool $inline = false): Action
@@ -408,6 +815,40 @@ class EditMedicalSession extends LocalizedEditRecord
                 Placeholder::make('session_lifecycle')
                     ->hiddenLabel()
                     ->content(fn (): string => $this->lifecycleSummary())
+                    ->columnSpanFull(),
+                Section::make(__('ИИ-помощник сеанса'))
+                    ->description(__('Подготовьте фактический черновик из данных текущего сеанса и доступной истории. AI не меняет подтверждённые данные и ничего не отправляет клиенту.'))
+                    ->visible(fn (): bool => $this->canUseClinicalSessionAi())
+                    ->schema([
+                        Placeholder::make('session_ai_status')
+                            ->label(__('Состояние'))
+                            ->content(fn (): string => $this->sessionAiStatus())
+                            ->columnSpanFull(),
+                        Placeholder::make('session_ai_versions')
+                            ->label(__('Версии'))
+                            ->content(fn (): string => $this->sessionAiVersions())
+                            ->columnSpanFull(),
+                        Placeholder::make('session_ai_sources')
+                            ->label(__('Использованные источники'))
+                            ->content(fn (): string => $this->sessionAiSources())
+                            ->columnSpanFull(),
+                        Placeholder::make('session_ai_target_availability')
+                            ->label(__('Что можно перенести'))
+                            ->content(fn (): string => $this->sessionAiTargetAvailability())
+                            ->columnSpanFull(),
+                        Actions::make([
+                            $this->prepareClinicalSessionAiAction(),
+                            $this->openClinicalSessionAiDraftAction(),
+                            $this->rejectClinicalSessionAiDraftAction(),
+                        ])->columnSpanFull(),
+                        Placeholder::make('session_ai_history')
+                            ->label(__('История решений'))
+                            ->content(fn (): string => $this->sessionAiHistory())
+                            ->columnSpanFull(),
+                    ])
+                    ->extraAttributes(fn (): array => $this->sessionAiRunInProgress()
+                        ? ['wire:poll.5s' => 'refreshClinicalSessionAiPanel']
+                        : [])
                     ->columnSpanFull(),
                 Section::make(__('Маркер безопасности'))
                     ->schema([
@@ -655,14 +1096,14 @@ class EditMedicalSession extends LocalizedEditRecord
                             ->columnSpanFull(),
                         Placeholder::make('root_cause_ai_version')
                             ->label(__('Версия ИИ'))
-                            ->content(__('Не подключена. ИИ будет доступен на этапе 2.'))
+                            ->content(__('Автоматический перенос выключен. Безопасный фактический черновик доступен в блоке «ИИ-помощник сеанса».'))
                             ->columnSpanFull(),
                         Actions::make([
                             Action::make('fillRootCauseStage2')
                                 ->label(__('Заполнить с ИИ'))
                                 ->icon('heroicon-o-sparkles')
                                 ->disabled()
-                                ->tooltip(__('ИИ подключается на этапе 2.')),
+                                ->tooltip(__('Подготовьте фактический черновик в блоке «ИИ-помощник сеанса».')),
                         ])->columnSpanFull(),
                     ])->columnSpanFull(),
                 Section::make(__('4. Пошаговый протокол сеанса'))
@@ -686,15 +1127,15 @@ class EditMedicalSession extends LocalizedEditRecord
                                 ->label(__('Заполнить с ИИ'))
                                 ->icon('heroicon-o-sparkles')
                                 ->disabled()
-                                ->tooltip(__('ИИ подключается на этапе 2.'))),
+                                ->tooltip(__('Протокол останется выключен до утверждения клинического алгоритма.'))),
                         Placeholder::make('protocol_legacy_hint')->label(__('Историческое поле протокола'))->content(__('Старый монолитный текст сохранён для истории. Новые шаги сохраняются отдельно.'))->columnSpanFull(),
-                        Placeholder::make('protocol_ai_hint')->label(__('Версия ИИ'))->content(__('Не подключена. ИИ будет доступен на этапе 2.'))->columnSpanFull(),
+                        Placeholder::make('protocol_ai_hint')->label(__('Версия ИИ'))->content(__('Автоматическое заполнение протокола выключено до утверждения клинического алгоритма.'))->columnSpanFull(),
                         Actions::make([
                             Action::make('fillProtocolStage2')
                                 ->label(__('Заполнить с ИИ'))
                                 ->icon('heroicon-o-sparkles')
                                 ->disabled()
-                                ->tooltip(__('ИИ подключается на этапе 2.')),
+                                ->tooltip(__('Протокол останется выключен до утверждения клинического алгоритма.')),
                         ])->columnSpanFull(),
                     ])->collapsible()->columnSpanFull(),
                 Section::make(__('5. Субъективные ощущения клиента после сеанса'))

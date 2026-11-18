@@ -22,6 +22,11 @@ final class ClinicalAiPresentation
             return __('Итоговый отчёт курса');
         }
 
+        if ($capability === AiCapability::ClinicalSynthesizer
+            && $workflowKey === ClinicalSynthesizerWorkflow::SessionDraft->value) {
+            return __('Черновик для медицинского сеанса');
+        }
+
         return match ($capability) {
             AiCapability::ClinicalDocumentExtraction => __('Анализ документов'),
             AiCapability::PostureAnalysis => __('Анализ осанки'),
@@ -219,6 +224,27 @@ final class ClinicalAiPresentation
     public static function reviewGuidance(HumanReviewStatus|string $status, ?string $workflowKey = null): string
     {
         $status = $status instanceof HumanReviewStatus ? $status : HumanReviewStatus::tryFrom($status);
+        if ($workflowKey === ClinicalSynthesizerWorkflow::SessionDraft->value) {
+            return match ($status) {
+                HumanReviewStatus::PendingReview => implode("\n", [
+                    __('Черновик подготовлен для текущего медицинского сеанса.'),
+                    __('Проверьте факты и исправьте текст перед переносом.'),
+                    __('Клиенту ничего не отправлено.'),
+                    __('В медицинские данные автоматически ничего не внесено.'),
+                ]),
+                HumanReviewStatus::Accepted, HumanReviewStatus::EditedAndAccepted => implode("\n", [
+                    __('Решение специалиста сохранено в истории.'),
+                    __('Принятый текст перенесён только в выбранное поле сеанса.'),
+                    __('Клиенту ничего не отправлено.'),
+                ]),
+                HumanReviewStatus::Rejected => implode("\n", [
+                    __('Черновик отклонён специалистом и сохранён в истории.'),
+                    __('Данные сеанса не перезаписаны.'),
+                    __('Клиенту ничего не отправлено.'),
+                ]),
+                default => __('Черновик сохранён в истории. Клиенту ничего не отправлено.'),
+            };
+        }
         $resultName = $workflowKey === ClinicalSynthesizerWorkflow::CourseReport->value
             ? __('итогового отчёта курса')
             : __('клинического резюме');
@@ -314,9 +340,38 @@ final class ClinicalAiPresentation
 
     public static function resultActionLabel(?string $workflowKey): string
     {
+        if ($workflowKey === ClinicalSynthesizerWorkflow::SessionDraft->value) {
+            return __('Открыть черновик сеанса');
+        }
+
         return $workflowKey === ClinicalSynthesizerWorkflow::CourseReport->value
             ? __('Открыть итоговый отчёт')
             : __('Открыть результат');
+    }
+
+    public static function aiVersion(AiRun $run): string
+    {
+        $promptVersion = $run->promptVersion?->version;
+        $modelRelease = $run->modelRelease?->release_number;
+
+        return implode(' · ', array_filter([
+            $promptVersion === null ? __('Промпт: версия зафиксирована') : __('Промпт v:version', ['version' => $promptVersion]),
+            $modelRelease === null ? __('Модель: версия зафиксирована') : __('Модель v:version', ['version' => $modelRelease]),
+        ]));
+    }
+
+    public static function specialistVersion(AiRun $run): string
+    {
+        $review = $run->humanReviews->last();
+        if ($review === null) {
+            return __('Не создана: решение специалиста ещё не сохранено.');
+        }
+
+        return __('Решение :step · :author · :date', [
+            'step' => (int) $review->review_step,
+            'author' => $review->reviewer?->name ?? __('специалист'),
+            'date' => $review->reviewed_at?->format('d.m.Y H:i') ?? '—',
+        ]);
     }
 
     private static function safeText(?string $text): ?string
