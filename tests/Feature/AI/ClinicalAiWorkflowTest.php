@@ -697,7 +697,7 @@ final class ClinicalAiWorkflowTest extends TestCase
 
         self::assertSame(ClinicalSynthesizerWorkflow::SessionDraft->value, $run->workflow_key);
         self::assertSame(AiRunStatus::Queued, $run->status);
-        Queue::assertPushed(\App\Modules\AI\Infrastructure\Jobs\ProcessAiRunJob::class);
+        self::assertNotNull(AiRunPayload::query()->where('ai_run_id', $run->getKey())->first());
     }
 
     public function test_session_synthesis_fails_closed_when_the_active_prompt_lacks_the_factual_contract(): void
