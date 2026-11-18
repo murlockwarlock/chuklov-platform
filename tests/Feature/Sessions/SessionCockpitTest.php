@@ -383,7 +383,7 @@ final class SessionCockpitTest extends TestCase
         $original = app(MedicalEncryptorInterface::class);
         $mock = Mockery::mock(MedicalEncryptorInterface::class);
         $mock->shouldReceive('decryptField')
-            ->times(7)
+            ->times(9)
             ->andReturnUsing(static fn (int $organizationId, ?string $ciphertext): ?string => $ciphertext === null ? null : 'Расшифрованное поле');
         app()->forgetScopedInstances();
         app(OrganizationContext::class)->set($organization);
