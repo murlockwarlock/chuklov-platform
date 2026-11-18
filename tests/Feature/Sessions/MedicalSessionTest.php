@@ -206,6 +206,54 @@ final class MedicalSessionTest extends TestCase
         self::assertSame($organization->getKey(), $client->organization_id);
     }
 
+    public function test_session_dynamics_prepares_bounded_facts_only_payload_with_before_and_after_values(): void
+    {
+        [, $admin, $client, $specialist] = $this->setupOrganizationWithClientAndSpecialist();
+
+        $previous = app(CreateSession::class)->handle($admin, $client, new CreateSessionCommand(
+            specialistId: (int) $specialist->getKey(),
+            occurredAt: Carbon::parse('2026-01-11 09:00:00', 'UTC'),
+            pain: 'Предыдущая запись',
+            result: 'Предыдущий сохранённый результат',
+        ));
+        $current = app(CreateSession::class)->handle($admin, $client, new CreateSessionCommand(
+            specialistId: (int) $specialist->getKey(),
+            occurredAt: Carbon::parse('2026-01-12 09:00:00', 'UTC'),
+            pain: 'Текущая запись',
+            tests: 'Сохранённое описание тестов',
+            observations: 'Сохранённое наблюдение',
+            protocol: 'Сохранённый протокол',
+            result: 'Текущий сохранённый результат',
+            measurements: [
+                'after_enabled' => true,
+                'before' => ['vitals' => ['sys' => 120, 'dia' => 80, 'pulse' => 70, 'spo2' => 98]],
+                'after' => ['vitals' => ['sys' => 118, 'dia' => 78, 'pulse' => 68, 'spo2' => 99]],
+            ],
+        ));
+
+        $dynamics = app(GetSessionDynamics::class)->handle(
+            $admin,
+            MedicalSession::findOrFail($current->id),
+            $client,
+            historyLimit: 2,
+        );
+        $payload = $dynamics->analysisPayload();
+        $comparison = $dynamics->comparison();
+
+        self::assertSame('confirmed_session_facts', $payload['scope']);
+        self::assertFalse($payload['interpretation_allowed']);
+        self::assertCount(2, $payload['sessions']);
+        self::assertSame($current->id, $payload['sessions'][0]['session_id']);
+        self::assertSame(120, $payload['sessions'][0]['measurements']['before']['vitals']['sys']);
+        self::assertSame(99, $payload['sessions'][0]['measurements']['after']['vitals']['spo2']);
+        self::assertSame($previous->id, $payload['sessions'][1]['session_id']);
+        self::assertContains('SYS: 120', $comparison[0]['measurements_before']);
+        self::assertContains('SYS: 118', $comparison[0]['measurements_after']);
+        self::assertSame([], $comparison[1]['measurements_before']);
+        self::assertArrayNotHasKey('delta', $payload['sessions'][0]);
+        self::assertArrayNotHasKey('trend', $payload['sessions'][0]);
+    }
+
     public function test_pain_vas_rejects_values_outside_zero_to_ten(): void
     {
         [$organization, $admin, $client, $specialist] = $this->setupOrganizationWithClientAndSpecialist();

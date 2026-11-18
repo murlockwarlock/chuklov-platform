@@ -12,12 +12,14 @@ use Illuminate\Support\Carbon;
 
 final readonly class GetSessionDynamics
 {
+    public const MAX_HISTORY = 10;
+
     public function __construct(
         private MedicalSessionAuthorization $authorization,
         private GetSession $getSession,
     ) {}
 
-    public function handle(User $actor, MedicalSession $session, Client $client): SessionDynamicsData
+    public function handle(User $actor, MedicalSession $session, Client $client, int $historyLimit = self::MAX_HISTORY): SessionDynamicsData
     {
         $organization = $this->authorization->authorizeView($actor, $session, $client);
         $current = $this->getSession->handle($actor, $session, $client);
@@ -31,7 +33,8 @@ final readonly class GetSessionDynamics
             'booking:id,organization_id,starts_at',
         ]);
 
-        $previous = MedicalSession::query()
+        $historyLimit = max(1, min(self::MAX_HISTORY, $historyLimit));
+        $previousSessions = MedicalSession::query()
             ->where('organization_id', $organization->getKey())
             ->where('client_id', $client->getKey())
             ->where(function (Builder $query) use ($session): void {
@@ -43,12 +46,45 @@ final readonly class GetSessionDynamics
             })
             ->orderByDesc('occurred_at')
             ->orderByDesc('id')
-            ->limit(1)
+            ->limit($historyLimit - 1)
+            ->select([
+                'id',
+                'organization_id',
+                'client_id',
+                'specialist_id',
+                'booking_id',
+                'occurred_at',
+                'encryption_key_version',
+            ])
             ->with([
                 'specialist:id,organization_id,display_name',
                 'booking:id,organization_id,starts_at',
             ])
-            ->first();
+            ->get();
+
+        $previous = $previousSessions->first();
+        $history = [[
+            'period' => 'Текущий сеанс',
+            'data' => $current,
+            'specialist' => $session->specialist->display_name,
+            'booking' => self::bookingLabel($session, $organization->defaultTimezone()),
+        ]];
+
+        foreach ($previousSessions as $index => $previousSession) {
+            $data = $this->getSession->handle($actor, $previousSession, $client);
+            if ($data === null) {
+                continue;
+            }
+
+            $history[] = [
+                'period' => $index === 0
+                    ? 'Предыдущий сеанс'
+                    : __('Сеанс :number назад', ['number' => $index + 1]),
+                'data' => $data,
+                'specialist' => $previousSession->specialist->display_name,
+                'booking' => self::bookingLabel($previousSession, $organization->defaultTimezone()),
+            ];
+        }
 
         return new SessionDynamicsData(
             current: $current,
@@ -60,6 +96,7 @@ final readonly class GetSessionDynamics
             previousSpecialist: $previous?->specialist->display_name,
             previousBooking: $previous instanceof MedicalSession ? self::bookingLabel($previous, $organization->defaultTimezone()) : null,
             timezone: $organization->defaultTimezone(),
+            history: $history,
         );
     }
 
