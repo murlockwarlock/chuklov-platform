@@ -388,8 +388,13 @@ final class SessionCockpitTest extends TestCase
         app()->instance(MedicalEncryptorInterface::class, $mock);
 
         try {
-            Livewire::actingAs($admin)
-                ->test(ViewMedicalSession::class, ['parentRecord' => $client, 'record' => $session->getKey()])
+            $this
+                ->actingAs($admin)
+                ->get($this->relativeUrl(ViewMedicalSession::getUrl([
+                    'client' => $client,
+                    'record' => $session,
+                ], shouldGuessMissingParameters: true)))
+                ->assertSuccessful()
                 ->assertSee('Расшифрованное поле');
         } finally {
             app()->forgetScopedInstances();
@@ -1177,8 +1182,14 @@ final class SessionCockpitTest extends TestCase
 
         $component = Livewire::actingAs($admin)
             ->test(EditMedicalSession::class, ['parentRecord' => $client, 'record' => $session->getKey()])
-            ->assertActionExists('prepareClinicalSessionAi')
-            ->assertActionVisible('prepareClinicalSessionAi')
+            ->assertSee('ИИ-помощник сеанса')
+            ->assertSee('Подготовить с ИИ')
+            ->call('mountAction', 'prepareClinicalSessionAi', [], ['schemaComponent' => 'form'])
+            ->assertActionMounted([
+                'name' => 'prepareClinicalSessionAi',
+                'context' => ['schemaComponent' => 'form'],
+            ])
+            ->unmountAction()
             ->assertActionVisible('suggestSessionPainTags')
             ->assertActionExists('acceptSessionPainTags')
             ->mountAction('suggestSessionPainTags')

@@ -2,11 +2,11 @@
 
 namespace App\Filament\Resources\Clients\RelationManagers;
 
+use App\Filament\Resources\Clients\Resources\Sessions\MedicalSessionResource;
 use App\Filament\Support\ClinicalAiPresentation;
 use App\Filament\Support\ClinicalAiResultAction;
 use App\Filament\Support\CrmLabel;
 use App\Filament\Support\LocalizedRelationManager;
-use App\Filament\Resources\Clients\Resources\Sessions\MedicalSessionResource;
 use App\Models\User;
 use App\Modules\AI\Application\Actions\ReviewAiRun;
 use App\Modules\AI\Application\Actions\StartClinicalCourseReport;
@@ -27,8 +27,8 @@ use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
-use Carbon\CarbonImmutable;
 use App\Modules\Sessions\Domain\Models\MedicalSession;
+use Carbon\CarbonImmutable;
 use Filament\Actions\Action;
 use Filament\Actions\ActionGroup;
 use Filament\Forms\Components\DatePicker;

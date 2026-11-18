@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\AI;
 
+use App\Filament\Support\ClinicalAiPresentation;
 use App\Models\User;
 use App\Modules\AI\Application\Actions\GetClinicalAiResult;
 use App\Modules\AI\Application\Actions\ReviewClinicalSessionDocumentAiRun;
@@ -58,7 +59,6 @@ use App\Modules\Surveys\Domain\Models\SurveyAttempt;
 use App\Modules\Surveys\Domain\Models\SurveyDefinition;
 use App\Modules\Surveys\Domain\Models\SurveyReport;
 use App\Modules\Surveys\Domain\Models\SurveyVersion;
-use App\Filament\Support\ClinicalAiPresentation;
 use Carbon\Carbon;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
