@@ -146,23 +146,26 @@ final readonly class StartClinicalSynthesis
         }
 
         [$surveyResults, $surveyReferences] = $this->surveyBundle($actor, $client);
+        $recentSessions = $this->sessionsContext(
+            $sessionHistory,
+            $focusSession === null ? null : (int) $focusSession->getKey(),
+        );
+        $documentContext = $focusSession === null
+            ? $this->documentContext(
+                $documentResult?->outputPayload,
+                $documentResult?->humanEditedOutput,
+            )
+            : $this->sessionDocumentContext($documentSources);
+        $postureContext = $this->postureSourcesContext($postureSources, $focusSession !== null);
         $inputVariables = [
             'client_name' => (string) ($client->full_name ?: 'Клиент'),
             'anamnesis' => $this->medicalProfileContext->build($profile),
             'complaints_goals' => $this->boundedText($profile?->complaintsGoalsForCompatibility() ?? '', 700),
             'session_preparation_mode' => $focusSession === null ? 'client_summary' : 'factual_session_preparation',
-            'recent_sessions' => $this->sessionsContext(
-                $sessionHistory,
-                $focusSession === null ? null : (int) $focusSession->getKey(),
-            ),
-            'agent_one_result' => $focusSession === null
-                ? $this->documentContext(
-                    $documentResult?->outputPayload,
-                    $documentResult?->humanEditedOutput,
-                )
-                : $this->sessionDocumentContext($documentSources),
-            'agent_two_result' => $this->postureSourcesContext($postureSources, $focusSession !== null),
-            'survey_results' => $surveyResults,
+            'recent_sessions' => $recentSessions === '' ? [] : [$recentSessions],
+            'agent_one_result' => ['content' => $documentContext],
+            'agent_two_result' => ['content' => $postureContext],
+            'survey_results' => ['content' => $surveyResults],
         ];
 
         $references = [new AiInputReference('client', (int) $client->getKey())];

@@ -647,6 +647,59 @@ final class ClinicalAiWorkflowTest extends TestCase
         self::assertNotNull(AiRunPayload::query()->where('ai_run_id', $run->id)->first());
     }
 
+    public function test_session_synthesis_matches_the_source_backed_variable_schema(): void
+    {
+        Queue::fake();
+        $specialist = Specialist::factory()->forOrganization($this->organization)->create();
+        $session = MedicalSession::query()->findOrFail(app(CreateSession::class)->handle(
+            $this->staff,
+            $this->client,
+            new CreateSessionCommand(
+                specialistId: (int) $specialist->getKey(),
+                occurredAt: Carbon::parse('2026-11-18 10:00:00', 'UTC'),
+            ),
+        )->id);
+        $prompt = AiPrompt::query()
+            ->where('organization_id', $this->organization->id)
+            ->where('key', 'clinical_synthesizer_source_draft')
+            ->firstOrFail();
+        $version = AiPromptVersion::query()->whereKey($prompt->active_version_id)->firstOrFail();
+        $version->update([
+            'variables_schema' => [
+                'type' => 'object',
+                'properties' => [
+                    'client_name' => ['type' => 'string'],
+                    'anamnesis' => ['type' => 'string'],
+                    'complaints_goals' => ['type' => 'string'],
+                    'session_preparation_mode' => [
+                        'type' => 'string',
+                        'enum' => ['client_summary', 'factual_session_preparation'],
+                    ],
+                    'recent_sessions' => ['type' => 'array'],
+                    'agent_one_result' => ['type' => 'object'],
+                    'agent_two_result' => ['type' => 'object'],
+                    'survey_results' => ['type' => 'object'],
+                ],
+                'required' => [
+                    'client_name',
+                    'anamnesis',
+                    'complaints_goals',
+                    'session_preparation_mode',
+                    'recent_sessions',
+                    'agent_one_result',
+                    'agent_two_result',
+                    'survey_results',
+                ],
+            ],
+        ]);
+
+        $run = app(StartClinicalSynthesis::class)->handleSession($this->staff, $this->client, $session);
+
+        self::assertSame(ClinicalSynthesizerWorkflow::SessionDraft->value, $run->workflow_key);
+        self::assertSame(AiRunStatus::Queued, $run->status);
+        Queue::assertPushed(\App\Modules\AI\Infrastructure\Jobs\ProcessAiRunJob::class);
+    }
+
     public function test_session_synthesis_fails_closed_when_the_active_prompt_lacks_the_factual_contract(): void
     {
         Queue::fake();
