@@ -292,8 +292,8 @@ final class MedicalSessionTest extends TestCase
             ->chartData();
 
         self::assertCount(10, $chart['sessions']);
-        self::assertSame('2026-01-02', $chart['sessions'][0]['full_date']);
-        self::assertSame('2026-01-11', $chart['sessions'][9]['full_date']);
+        self::assertSame('02.01.2026 09:00', $chart['sessions'][0]['full_date']);
+        self::assertSame('11.01.2026 09:00', $chart['sessions'][9]['full_date']);
 
         $sys = collect($chart['metrics'])->firstWhere('key', 'sys');
         self::assertIsArray($sys);
