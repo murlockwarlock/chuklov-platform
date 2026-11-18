@@ -6,6 +6,7 @@ use App\Models\User;
 use App\Modules\AI\Domain\Enums\HumanReviewDecision;
 use App\Modules\AI\Domain\Enums\HumanReviewReasonCode;
 use App\Modules\AI\Domain\Enums\HumanReviewStatus;
+use App\Modules\AI\Domain\Enums\AiRunStatus;
 use App\Modules\AI\Domain\Models\AiRun;
 use App\Modules\AI\Domain\Models\AiRunHumanReview;
 use App\Modules\AI\Domain\Models\AiRunPayload;
@@ -59,6 +60,11 @@ class ReviewAiRun
         if ($run === null) {
             throw new InvalidArgumentException('AI Run not found.');
         }
+        if ($run->status !== AiRunStatus::Succeeded) {
+            throw ValidationException::withMessages([
+                'review' => 'Оценить можно только успешно завершённый результат AI.',
+            ]);
+        }
 
         $keyVersion = (int) Config::get('medical.key_version', 1);
 
@@ -100,6 +106,11 @@ class ReviewAiRun
     ): AiRunHumanReview {
         if ((int) $lockedRun->organization_id !== (int) $organization->getKey()) {
             throw new InvalidArgumentException('AI Run is outside the current organization.');
+        }
+        if ($lockedRun->status !== AiRunStatus::Succeeded) {
+            throw ValidationException::withMessages([
+                'review' => 'Оценить можно только успешно завершённый результат AI.',
+            ]);
         }
         $this->validateTargetField($targetField);
 

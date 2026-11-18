@@ -5,7 +5,10 @@ namespace App\Modules\AI\Application\Actions;
 use App\Modules\AI\Application\Data\AiRunRequest;
 use App\Modules\AI\Application\Data\ContextAssemblyResult;
 use App\Modules\AI\Domain\Contracts\AiSafetyBudgetManagerInterface;
+use App\Modules\AI\Domain\Contracts\AiOutputValidatorInterface;
+use App\Modules\AI\Domain\Enums\AiCapability;
 use App\Modules\AI\Domain\Enums\AiExecutionMode;
+use App\Modules\AI\Domain\Enums\ClinicalSynthesizerWorkflow;
 use App\Modules\AI\Domain\Enums\AiRunStatus;
 use App\Modules\AI\Domain\Models\AiOrganizationSafetyControl;
 use App\Modules\AI\Domain\Models\AiPromptVersion;
@@ -33,6 +36,7 @@ final class PrepareAiRun
         private readonly AiSafetyBudgetManagerInterface $budgetManager,
         private readonly MedicalEncryptorInterface $medicalEncryptor,
         private readonly ResolveAiExecutionCandidates $candidateResolver,
+        private readonly AiOutputValidatorInterface $outputValidator,
     ) {}
 
     /**
@@ -48,6 +52,8 @@ final class PrepareAiRun
         ?AiExecutionMode $executionMode = null,
         ?int $initiatedByUserId = null,
     ): array {
+        $this->validatePromptContract($request, $promptVersion);
+
         $workerLeaseToken = (string) Str::uuid();
         $effectiveExecutionMode = $executionMode ?? $request->executionMode;
         $candidateSnapshot = [];
@@ -284,6 +290,10 @@ final class PrepareAiRun
             if ($contextAssembly->attachmentProvenance !== []) {
                 $assembledProvenance['attachments'] = $contextAssembly->attachmentProvenance;
             }
+            $sessionPreparationMode = $contextAssembly->variables['session_preparation_mode'] ?? null;
+            if (in_array($sessionPreparationMode, ['client_summary', 'factual_session_preparation'], true)) {
+                $assembledProvenance['session_preparation_mode'] = $sessionPreparationMode;
+            }
 
             $status = $lockedRun->execution_mode === AiExecutionMode::Async
                 ? AiRunStatus::Queued
@@ -365,5 +375,70 @@ final class PrepareAiRun
             'configuration_snapshot' => $snapshot->configuration->toArray(),
             'pricing_snapshot' => $snapshot->pricing->toArray(),
         ];
+    }
+
+    private function validatePromptContract(AiRunRequest $request, AiPromptVersion $promptVersion): void
+    {
+        $variablesSchema = (array) ($promptVersion->variables_schema ?? []);
+        if ($variablesSchema !== [] && ! $this->outputValidator->validate($request->inputVariables, $variablesSchema)) {
+            throw new InvalidArgumentException('AI prompt variables do not satisfy the active prompt version schema.');
+        }
+
+        $isSessionPreparation = $request->capability === AiCapability::ClinicalSynthesizer
+            && $request->workflowKey === ClinicalSynthesizerWorkflow::SessionDraft->value;
+        if (! $isSessionPreparation) {
+            return;
+        }
+
+        if (($request->inputVariables['session_preparation_mode'] ?? null) !== 'factual_session_preparation') {
+            throw new InvalidArgumentException('Clinical session preparation requires factual_session_preparation mode.');
+        }
+
+        $variableProperties = is_array($variablesSchema['properties'] ?? null)
+            ? $variablesSchema['properties']
+            : [];
+        $modeSchema = is_array($variableProperties['session_preparation_mode'] ?? null)
+            ? $variableProperties['session_preparation_mode']
+            : [];
+        $modeEnum = is_array($modeSchema['enum'] ?? null) ? $modeSchema['enum'] : [];
+        $requiredVariables = is_array($variablesSchema['required'] ?? null)
+            ? array_map('strval', $variablesSchema['required'])
+            : [];
+        $outputSchema = is_array($promptVersion->output_schema) ? $promptVersion->output_schema : [];
+        $outputProperties = is_array($outputSchema['properties'] ?? null)
+            ? $outputSchema['properties']
+            : [];
+        $requiredOutputFields = is_array($outputSchema['required'] ?? null)
+            ? array_map('strval', $outputSchema['required'])
+            : [];
+        $promptText = mb_strtolower($promptVersion->system_prompt."\n".$promptVersion->user_prompt_template);
+
+        $hasFactualContract = in_array('factual_session_preparation', $modeEnum, true)
+            && in_array('session_preparation_mode', $requiredVariables, true)
+            && str_contains($promptText, 'factual_session_preparation')
+            && str_contains($promptText, 'не создавай диагноз')
+            && str_contains($promptText, 'не интерпретируй факты')
+            && str_contains($promptText, '{{session_preparation_mode}}')
+            && array_key_exists('source_facts', $outputProperties)
+            && array_key_exists('hypotheses', $outputProperties)
+            && array_key_exists('critical_limitations_risks', $outputProperties)
+            && array_key_exists('recommended_first_session_focus', $outputProperties)
+            && array_key_exists('missing_information', $outputProperties)
+            && count(array_diff([
+                'client_summary',
+                'main_request',
+                'source_facts',
+                'hypotheses',
+                'critical_limitations_risks',
+                'blind_spots_questions',
+                'recommended_first_session_focus',
+                'missing_information',
+            ], $requiredOutputFields)) === 0;
+
+        if (! $hasFactualContract) {
+            throw new InvalidArgumentException(
+                'Active clinical synthesizer prompt does not provide the factual session preparation contract.',
+            );
+        }
     }
 }

@@ -97,7 +97,7 @@ final class ClinicalAiWorkflowTest extends TestCase
         $this->configurePrompt(AiCapability::PostureAnalysis, 'posture', 'Три изображения осанки.');
         $this->configurePrompt(
             AiCapability::ClinicalSynthesizer,
-            'synthesizer',
+            'clinical_synthesizer_source_draft',
             '{{client_name}} {{anamnesis}} {{complaints_goals}} {{recent_sessions}} {{agent_one_result}} {{agent_two_result}} {{survey_results}}',
         );
     }
@@ -602,6 +602,7 @@ final class ClinicalAiWorkflowTest extends TestCase
         );
 
         self::assertSame(ClinicalSynthesizerWorkflow::SessionDraft->value, $run->workflow_key);
+        self::assertSame('clinical_synthesizer_source_draft', $run->promptVersion?->prompt?->key);
         self::assertContains(
             ['type' => 'medical_session', 'id' => $session->id],
             $run->input_references,
@@ -644,6 +645,40 @@ final class ClinicalAiWorkflowTest extends TestCase
             ->where('workflow_key', ClinicalSynthesizerWorkflow::SessionDraft->value)
             ->count());
         self::assertNotNull(AiRunPayload::query()->where('ai_run_id', $run->id)->first());
+    }
+
+    public function test_session_synthesis_fails_closed_when_the_active_prompt_lacks_the_factual_contract(): void
+    {
+        Queue::fake();
+        $specialist = Specialist::factory()->forOrganization($this->organization)->create();
+        $session = MedicalSession::query()->findOrFail(app(CreateSession::class)->handle(
+            $this->staff,
+            $this->client,
+            new CreateSessionCommand(
+                specialistId: (int) $specialist->getKey(),
+                occurredAt: Carbon::parse('2026-11-18 10:00:00', 'UTC'),
+            ),
+        )->id);
+        $prompt = AiPrompt::query()
+            ->where('organization_id', $this->organization->id)
+            ->where('key', 'clinical_synthesizer_source_draft')
+            ->firstOrFail();
+        $version = AiPromptVersion::query()->whereKey($prompt->active_version_id)->firstOrFail();
+        $version->update([
+            'variables_schema' => [],
+            'system_prompt' => 'Use only source facts.',
+            'user_prompt_template' => '{{client_name}}',
+        ]);
+
+        try {
+            app(StartClinicalSynthesis::class)->handleSession($this->staff, $this->client, $session);
+            self::fail('A factual session preparation run must fail closed without its prompt contract.');
+        } catch (InvalidArgumentException $exception) {
+            self::assertStringContainsString('factual session preparation contract', $exception->getMessage());
+        }
+
+        Queue::assertNothingPushed();
+        self::assertDatabaseCount('ai_runs', 0);
     }
 
     public function test_course_report_uses_full_profile_and_dedicated_prompt_with_server_period(): void
@@ -1664,8 +1699,24 @@ final class ClinicalAiWorkflowTest extends TestCase
             'prompt_id' => $prompt->id,
             'version' => 1,
             'status' => 'active',
-            'system_prompt' => 'Use only source facts. Return structured output.',
-            'user_prompt_template' => $template,
+            'system_prompt' => $capability === AiCapability::ClinicalSynthesizer
+                ? 'Use only source facts. If session_preparation_mode is factual_session_preparation, prepare factual facts only. Не создавай диагнозы и не интерпретируй факты. Return structured output with hypotheses, critical_limitations_risks, and recommended_first_session_focus fields.'
+                : 'Use only source facts. Return structured output.',
+            'user_prompt_template' => $capability === AiCapability::ClinicalSynthesizer
+                ? $template." {{session_preparation_mode}}"
+                : $template,
+            'variables_schema' => $capability === AiCapability::ClinicalSynthesizer
+                ? [
+                    'type' => 'object',
+                    'properties' => [
+                        'session_preparation_mode' => [
+                            'type' => 'string',
+                            'enum' => ['client_summary', 'factual_session_preparation'],
+                        ],
+                    ],
+                    'required' => ['session_preparation_mode'],
+                ]
+                : [],
             'output_schema' => AiCapabilityRegistry::get($capability)->defaultOutputSchema,
             'context_policy' => $capability === AiCapability::ClinicalSynthesizer
                 ? ['include_client_profile' => true, 'include_medical_summary' => true, 'include_recent_sessions_count' => 5]

@@ -11,26 +11,34 @@ class JsonSchemaOutputValidator implements AiOutputValidatorInterface
     /**
      * @param  array<string, mixed>|string|null  $output
      * @param  array<string, mixed>|null  $schema
+     * @param  array<string, mixed>  $context
      */
-    public function validate(array|string|null $output, ?array $schema): bool
+    public function validate(array|string|null $output, ?array $schema, array $context = []): bool
     {
         $this->lastError = null;
 
-        if ($schema === null || empty($schema)) {
-            return true;
-        }
-
-        if (is_string($output)) {
+        $decodedOutput = $output;
+        if (is_string($output) && (($schema !== null && $schema !== [])
+            || ($context['session_preparation_mode'] ?? null) === 'factual_session_preparation')) {
             $decoded = json_decode($output, true);
             if (json_last_error() !== JSON_ERROR_NONE) {
                 $this->lastError = 'Output is not valid JSON: '.json_last_error_msg();
 
                 return false;
             }
-            $output = $decoded;
+            $decodedOutput = $decoded;
         }
 
-        return $this->validateNode($output, $schema);
+        if ($schema !== null && $schema !== [] && ! $this->validateNode($decodedOutput, $schema)) {
+            return false;
+        }
+
+        if (($context['session_preparation_mode'] ?? null) === 'factual_session_preparation'
+            && ! $this->validateFactualSessionPreparation($decodedOutput)) {
+            return false;
+        }
+
+        return true;
     }
 
     public function getValidationError(): ?string
@@ -159,5 +167,97 @@ class JsonSchemaOutputValidator implements AiOutputValidatorInterface
         }
 
         return true;
+    }
+
+    private function validateFactualSessionPreparation(mixed $output): bool
+    {
+        if (! is_array($output) || (count($output) > 0 && array_is_list($output))) {
+            $this->lastError = 'Factual session preparation must return a JSON object.';
+
+            return false;
+        }
+
+        $allowedFields = [
+            'client_summary',
+            'main_request',
+            'source_facts',
+            'hypotheses',
+            'critical_limitations_risks',
+            'blind_spots_questions',
+            'recommended_first_session_focus',
+            'missing_information',
+        ];
+        foreach (array_keys($output) as $field) {
+            if (! in_array((string) $field, $allowedFields, true)) {
+                $this->lastError = "Factual session preparation contains an unsupported field: {$field}.";
+
+                return false;
+            }
+        }
+
+        foreach ([
+            'hypotheses',
+            'critical_limitations_risks',
+            'recommended_first_session_focus',
+        ] as $field) {
+            if (array_key_exists($field, $output) && $output[$field] !== []) {
+                $this->lastError = "Factual session preparation cannot contain {$field}.";
+
+                return false;
+            }
+        }
+
+        $prohibitedPath = $this->prohibitedFieldPath($output);
+        if ($prohibitedPath !== null) {
+            $this->lastError = "Factual session preparation contains a prohibited field: {$prohibitedPath}.";
+
+            return false;
+        }
+
+        return true;
+    }
+
+    private function prohibitedFieldPath(mixed $value, string $path = ''): ?string
+    {
+        $prohibitedFields = [
+            'diagnosis',
+            'diagnoses',
+            'root_cause',
+            'root_causes',
+            'recommendation',
+            'recommendations',
+            'protocol',
+            'protocols',
+            'prognosis',
+            'prognoses',
+            'red_flag',
+            'red_flags',
+            'clinical_evaluation',
+            'clinical_evaluations',
+            'index',
+            'indices',
+            'score',
+            'scores',
+        ];
+
+        if (! is_array($value)) {
+            return null;
+        }
+
+        foreach ($value as $key => $child) {
+            $key = (string) $key;
+            $childPath = $path === '' ? $key : $path.'.'.$key;
+            $normalizedKey = strtolower((string) preg_replace('/[^a-z0-9]+/i', '_', $key));
+            if (in_array($normalizedKey, $prohibitedFields, true)) {
+                return $childPath;
+            }
+
+            $nestedPath = $this->prohibitedFieldPath($child, $childPath);
+            if ($nestedPath !== null) {
+                return $nestedPath;
+            }
+        }
+
+        return null;
     }
 }
