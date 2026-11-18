@@ -179,7 +179,11 @@ final readonly class SessionDynamicsData
     /** @param array<string, mixed>|null $measurements */
     private static function measurementValue(?array $measurements, string $phase, string $key): int|float|null
     {
-        if (! is_array($measurements) || ($phase === 'after' && ! ($measurements['after_enabled'] ?? false))) {
+        if (! is_array($measurements)) {
+            return null;
+        }
+
+        if ($phase === 'after' && filter_var($measurements['after_enabled'] ?? false, FILTER_VALIDATE_BOOLEAN) !== true) {
             return null;
         }
 
