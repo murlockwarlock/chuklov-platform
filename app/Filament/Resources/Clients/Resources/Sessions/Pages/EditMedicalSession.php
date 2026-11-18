@@ -16,11 +16,16 @@ use App\Filament\Support\InteractsWithFormValidationFeedback;
 use App\Filament\Support\LocalizedEditRecord;
 use App\Models\User;
 use App\Modules\AI\Application\Actions\GetClinicalAiResult;
+use App\Modules\AI\Application\Actions\GetClinicalSessionDocumentAiResult;
+use App\Modules\AI\Application\Actions\ReviewClinicalSessionDocumentAiRun;
+use App\Modules\AI\Application\Actions\StartClinicalDocumentAnalysis;
 use App\Modules\AI\Application\Actions\StartClinicalSynthesis;
 use App\Modules\AI\Application\Actions\StartPostureAnalysis;
 use App\Modules\AI\Application\Services\ListClinicalSessionAiRuns;
+use App\Modules\AI\Application\Services\ListClinicalSessionDocumentAiRuns;
 use App\Modules\AI\Application\Services\ListSessionPostureAiRuns;
 use App\Modules\AI\Application\Services\PostureAnalysisAvailability;
+use App\Modules\AI\Domain\Enums\HumanReviewDecision;
 use App\Modules\AI\Domain\Enums\AiRunStatus;
 use App\Modules\AI\Domain\Enums\HumanReviewReasonCode;
 use App\Modules\AI\Domain\Enums\HumanReviewStatus;
@@ -30,6 +35,9 @@ use App\Modules\Analytics\Application\SuggestAnalyticsTags;
 use App\Modules\Analytics\Domain\Enums\ClassificationRunStatus;
 use App\Modules\Analytics\Domain\Models\AnalyticsClassificationRun;
 use App\Modules\Attachments\Application\AttachmentAuthorization;
+use App\Modules\Attachments\Application\ListClientAttachments;
+use App\Modules\Attachments\Domain\Enums\AttachmentType;
+use App\Modules\Attachments\Domain\Models\MedicalAttachment;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\MedicalProfiles\Application\DTOs\MedicalPainData;
 use App\Modules\MedicalProfiles\Application\MedicalFrequencyPeriodCatalog;
@@ -409,6 +417,237 @@ class EditMedicalSession extends LocalizedEditRecord
                     FormValidationFeedback::notifyValidation(
                         FormValidationFeedback::forAction($exception, $action),
                         __('Черновик не отклонён.'),
+                    );
+                    $action->halt();
+                } catch (Throwable $exception) {
+                    FormValidationFeedback::notifyValidation(FormValidationFeedback::unexpectedForAction($exception, $action));
+                    $action->halt();
+                }
+            });
+    }
+
+    private function analyzeClinicalDocumentAction(): Action
+    {
+        return Action::make('analyzeClinicalDocument')
+            ->label(fn (): string => $this->clinicalDocumentAiActionLabel())
+            ->icon('heroicon-o-document-magnifying-glass')
+            ->color('primary')
+            ->authorize(fn (): bool => MedicalSessionResource::canEdit($this->getRecord()) && $this->canUseClinicalSessionAi())
+            ->visible(fn (): bool => MedicalSessionResource::canEdit($this->getRecord()) && $this->canUseClinicalSessionAi())
+            ->disabled(fn (): bool => $this->clinicalDocumentAiActionDisabled())
+            ->schema([
+                Placeholder::make('clinical_document_selection_hint')
+                    ->hiddenLabel()
+                    ->content(__('Выберите загруженный документ клиента. AI извлекает сведения из файла, но не ставит диагноз и не меняет поля сеанса.'))
+                    ->columnSpanFull(),
+                Select::make('attachment_id')
+                    ->label(__('Медицинский документ'))
+                    ->options(fn (): array => $this->clinicalDocumentOptions())
+                    ->native(false)
+                    ->searchable()
+                    ->required(),
+            ])
+            ->fillForm(fn (): array => ['attachment_id' => $this->clinicalDocumentSelection()])
+            ->modalHeading(__('Разбор медицинского документа с ИИ'))
+            ->modalDescription(__('Результат останется в истории текущего сеанса. После завершения его нужно проверить и явно принять или отклонить. Клиенту результат не отправляется.'))
+            ->modalSubmitActionLabel(__('Разобрать с ИИ'))
+            ->action(function (Action $action, array $data): void {
+                try {
+                    $attachment = $this->clinicalDocumentForAction((int) ($data['attachment_id'] ?? 0));
+                    $latest = $this->latestClinicalDocumentAiRunForAttachment((int) $attachment->getKey());
+                    app(StartClinicalDocumentAnalysis::class)->handleSession(
+                        actor: $this->actor(),
+                        client: $this->parentClient(),
+                        session: $this->session(),
+                        attachment: $attachment,
+                        rerun: $latest?->status->isTerminal() ?? false,
+                    );
+                    Notification::make()
+                        ->success()
+                        ->title($latest === null ? __('Разбор документа запущен') : __('Новая версия разбора запущена'))
+                        ->body(__('Предыдущие версии останутся в истории текущего сеанса.'))
+                        ->send();
+                } catch (ValidationException $exception) {
+                    FormValidationFeedback::notifyValidation(
+                        FormValidationFeedback::forAction($exception, $action),
+                        __('Разбор документа не запущен.'),
+                    );
+                    $action->halt();
+                } catch (InvalidArgumentException $exception) {
+                    Notification::make()
+                        ->danger()
+                        ->title(__('Разбор документа недоступен'))
+                        ->body(ClinicalAiPresentation::failure(null, $exception))
+                        ->send();
+                    $action->halt();
+                } catch (Throwable $exception) {
+                    FormValidationFeedback::notifyValidation(FormValidationFeedback::unexpectedForAction($exception, $action));
+                    $action->halt();
+                }
+            });
+    }
+
+    private function openClinicalDocumentAiDraftAction(): Action
+    {
+        return Action::make('openClinicalDocumentAiDraft')
+            ->label(__('Проверить результат'))
+            ->icon('heroicon-o-pencil-square')
+            ->color('warning')
+            ->authorize(fn (): bool => MedicalSessionResource::canEdit($this->getRecord()) && $this->canReviewClinicalSessionAi())
+            ->visible(fn (): bool => MedicalSessionResource::canEdit($this->getRecord())
+                && $this->canReviewClinicalSessionAi()
+                && $this->reviewableClinicalDocumentAiRun() instanceof AiRun)
+            ->fillForm(function (): array {
+                $run = $this->reviewableClinicalDocumentAiRun();
+                abort_unless($run instanceof AiRun, 404);
+                $result = app(GetClinicalSessionDocumentAiResult::class)->handle(
+                    $this->actor(),
+                    $this->parentClient(),
+                    $this->session(),
+                    $run->getKey(),
+                );
+                $original = ClinicalAiPresentation::result(
+                    $run->capability,
+                    $result->outputPayload,
+                    $result->outputText,
+                    $run->workflow_key,
+                );
+
+                return [
+                    'run_id' => $run->getKey(),
+                    'ai_version' => ClinicalAiPresentation::aiVersion($run),
+                    'specialist_version' => ClinicalAiPresentation::specialistVersion($run),
+                    'original_output' => $original,
+                    'edited_output' => $result->humanEditedOutput ?? $original,
+                    'sources' => $this->clinicalDocumentAiSourcesForRun($run, $result->attachmentProvenance),
+                ];
+            })
+            ->schema([
+                Hidden::make('run_id')->dehydrated(),
+                TextInput::make('ai_version')
+                    ->label(__('Версия AI'))
+                    ->disabled()
+                    ->dehydrated(false),
+                TextInput::make('specialist_version')
+                    ->label(__('Версия специалиста'))
+                    ->disabled()
+                    ->dehydrated(false),
+                Textarea::make('original_output')
+                    ->label(__('Оригинальный результат AI'))
+                    ->rows(12)
+                    ->disabled()
+                    ->dehydrated(false),
+                Textarea::make('edited_output')
+                    ->label(__('Проверенная версия: исправьте только извлечённые сведения'))
+                    ->rows(12)
+                    ->required()
+                    ->maxLength(MedicalSessionFieldLimits::MaxTextLength),
+                Textarea::make('sources')
+                    ->label(__('Источник результата'))
+                    ->rows(4)
+                    ->disabled()
+                    ->dehydrated(false),
+            ])
+            ->modalHeading(__('Проверка разбора медицинского документа'))
+            ->modalDescription(__('Оригинальный результат сохраняется отдельно. Принятие не меняет диагноз, причины, тесты, протокол или рекомендации сеанса.'))
+            ->modalSubmitActionLabel(__('Принять результат'))
+            ->action(function (Action $action, array $data): void {
+                try {
+                    $run = $this->reviewableClinicalDocumentAiRun((int) ($data['run_id'] ?? 0));
+                    abort_unless($run instanceof AiRun, 404);
+                    $editedOutput = trim((string) ($data['edited_output'] ?? ''));
+                    if ($editedOutput === '') {
+                        throw ValidationException::withMessages(['edited_output' => __('Введите проверенную версию результата.')]);
+                    }
+
+                    $result = app(GetClinicalSessionDocumentAiResult::class)->handle(
+                        $this->actor(),
+                        $this->parentClient(),
+                        $this->session(),
+                        $run->getKey(),
+                    );
+                    $originalOutput = trim(ClinicalAiPresentation::result(
+                        $run->capability,
+                        $result->outputPayload,
+                        $result->outputText,
+                        $run->workflow_key,
+                    ));
+                    $edited = $editedOutput !== $originalOutput;
+                    app(ReviewClinicalSessionDocumentAiRun::class)->handle(
+                        actor: $this->actor(),
+                        client: $this->parentClient(),
+                        session: $this->session(),
+                        runId: (int) $run->getKey(),
+                        decision: $edited ? HumanReviewDecision::EditedAndAccepted : HumanReviewDecision::Accepted,
+                        safeReasonCode: ($edited ? HumanReviewReasonCode::SpecialistEdited : HumanReviewReasonCode::SpecialistConfirmed)->value,
+                        editedOutput: $edited ? $editedOutput : null,
+                    );
+                    $this->refreshAfterClinicalDocumentAiAction();
+                    Notification::make()->success()->title(__('Результат документа принят и сохранён в истории'))->send();
+                } catch (ValidationException $exception) {
+                    FormValidationFeedback::notifyValidation(
+                        FormValidationFeedback::forAction($exception, $action),
+                        __('Результат документа не принят.'),
+                    );
+                    $action->halt();
+                } catch (Throwable $exception) {
+                    FormValidationFeedback::notifyValidation(FormValidationFeedback::unexpectedForAction($exception, $action));
+                    $action->halt();
+                }
+            });
+    }
+
+    private function rejectClinicalDocumentAiDraftAction(): Action
+    {
+        return Action::make('rejectClinicalDocumentAiDraft')
+            ->label(__('Отклонить результат'))
+            ->icon('heroicon-o-x-circle')
+            ->color('danger')
+            ->authorize(fn (): bool => MedicalSessionResource::canEdit($this->getRecord()) && $this->canReviewClinicalSessionAi())
+            ->visible(fn (): bool => MedicalSessionResource::canEdit($this->getRecord())
+                && $this->canReviewClinicalSessionAi()
+                && $this->reviewableClinicalDocumentAiRun() instanceof AiRun)
+            ->schema([
+                Hidden::make('run_id')->dehydrated(),
+                Select::make('reason_code')
+                    ->label(__('Причина'))
+                    ->options(collect(HumanReviewReasonCode::cases())->mapWithKeys(
+                        static fn (HumanReviewReasonCode $code): array => [$code->value => CrmLabel::enum($code)],
+                    )->all())
+                    ->default(HumanReviewReasonCode::IncorrectContent->value)
+                    ->native(false)
+                    ->required(),
+                Textarea::make('notes')
+                    ->label(__('Заметка специалиста'))
+                    ->rows(4)
+                    ->maxLength(MedicalSessionFieldLimits::MaxTextLength),
+            ])
+            ->fillForm(fn (): array => [
+                'run_id' => $this->reviewableClinicalDocumentAiRun()?->getKey(),
+                'reason_code' => HumanReviewReasonCode::IncorrectContent->value,
+            ])
+            ->modalHeading(__('Отклонить разбор медицинского документа'))
+            ->modalDescription(__('Результат останется в истории текущего сеанса и не станет подтверждённым источником. Поля сеанса не изменятся.'))
+            ->modalSubmitActionLabel(__('Отклонить результат'))
+            ->action(function (Action $action, array $data): void {
+                try {
+                    $run = $this->reviewableClinicalDocumentAiRun((int) ($data['run_id'] ?? 0));
+                    abort_unless($run instanceof AiRun, 404);
+                    app(ReviewClinicalSessionDocumentAiRun::class)->handle(
+                        actor: $this->actor(),
+                        client: $this->parentClient(),
+                        session: $this->session(),
+                        runId: (int) $run->getKey(),
+                        decision: HumanReviewDecision::Rejected,
+                        safeReasonCode: (string) ($data['reason_code'] ?? HumanReviewReasonCode::IncorrectContent->value),
+                        notes: filled($data['notes'] ?? null) ? (string) $data['notes'] : null,
+                    );
+                    $this->refreshAfterClinicalDocumentAiAction();
+                    Notification::make()->danger()->title(__('Результат документа отклонён и сохранён в истории'))->send();
+                } catch (ValidationException $exception) {
+                    FormValidationFeedback::notifyValidation(
+                        FormValidationFeedback::forAction($exception, $action),
+                        __('Результат документа не отклонён.'),
                     );
                     $action->halt();
                 } catch (Throwable $exception) {
@@ -903,6 +1142,61 @@ class EditMedicalSession extends LocalizedEditRecord
     {
     }
 
+    /** @return array<string, mixed> */
+    public function clinicalDocumentAiPanelData(): array
+    {
+        if (! $this->canUseClinicalSessionAi()) {
+            return [
+                'status' => null,
+                'document' => null,
+                'sources' => null,
+                'result' => null,
+                'specialist_result' => null,
+                'review' => null,
+                'history' => [],
+                'ai_version' => null,
+                'specialist_version' => null,
+            ];
+        }
+
+        $runs = app(ListClinicalSessionDocumentAiRuns::class)
+            ->handle($this->actor(), $this->session(), $this->parentClient());
+        $run = $runs->first();
+        $result = null;
+        if ($run instanceof AiRun && $run->status === AiRunStatus::Succeeded) {
+            $result = app(GetClinicalSessionDocumentAiResult::class)->handle(
+                $this->actor(),
+                $this->parentClient(),
+                $this->session(),
+                $run->getKey(),
+            );
+        }
+
+        return [
+            'status' => $this->clinicalDocumentAiStatus($run),
+            'document' => $run instanceof AiRun ? $this->clinicalDocumentLabelForRun($run) : null,
+            'sources' => $run instanceof AiRun
+                ? $this->clinicalDocumentAiSourcesForRun($run, $result?->attachmentProvenance ?? [])
+                : null,
+            'result' => $result === null ? null : ClinicalAiPresentation::result(
+                $run->capability,
+                $result->outputPayload,
+                $result->outputText,
+                $run->workflow_key,
+            ),
+            'specialist_result' => $result?->humanEditedOutput,
+            'review' => $run?->status === AiRunStatus::Succeeded
+                ? ClinicalAiPresentation::review($run->human_review_status)
+                : null,
+            'history' => $runs
+                ->take(8)
+                ->map(fn (AiRun $candidate): array => $this->clinicalDocumentAiHistoryRow($candidate))
+                ->all(),
+            'ai_version' => $run instanceof AiRun ? ClinicalAiPresentation::aiVersion($run) : null,
+            'specialist_version' => $run instanceof AiRun ? ClinicalAiPresentation::specialistVersion($run) : null,
+        ];
+    }
+
     private function canUseClinicalSessionAi(): bool
     {
         $actor = auth()->user();
@@ -1087,6 +1381,279 @@ class EditMedicalSession extends LocalizedEditRecord
                 $review?->reviewed_at?->format('d.m.Y H:i'),
             ]));
         })->implode("\n");
+    }
+
+    /** @return array<int|string, string> */
+    private function clinicalDocumentOptions(): array
+    {
+        return app(ListClientAttachments::class)
+            ->query($this->actor(), $this->parentClient())
+            ->where('attachment_type', AttachmentType::MedicalReport)
+            ->whereNull('evaluation_fixture_key')
+            ->whereIn('mime_type', [
+                'application/pdf',
+                'text/plain',
+                ...SupportedImageTypes::acceptedMimeTypes(),
+            ])
+            ->limit(50)
+            ->get()
+            ->mapWithKeys(fn (MedicalAttachment $attachment): array => [
+                (int) $attachment->getKey() => $this->clinicalDocumentLabel($attachment),
+            ])
+            ->all();
+    }
+
+    private function clinicalDocumentSelection(): ?int
+    {
+        $run = $this->latestClinicalDocumentAiRun();
+        if ($run instanceof AiRun) {
+            $attachmentId = collect((array) $run->input_references)
+                ->first(fn (mixed $reference): bool => is_array($reference) && ($reference['type'] ?? null) === 'medical_attachment');
+            if (is_array($attachmentId) && (int) ($attachmentId['id'] ?? 0) > 0) {
+                return (int) $attachmentId['id'];
+            }
+        }
+
+        $first = array_key_first($this->clinicalDocumentOptions());
+
+        return $first === null ? null : (int) $first;
+    }
+
+    private function clinicalDocumentLabel(MedicalAttachment $attachment): string
+    {
+        $format = match (strtolower((string) $attachment->mime_type)) {
+            'application/pdf' => 'PDF',
+            'text/plain' => __('Текст'),
+            'image/jpeg', 'image/png', 'image/webp' => __('Изображение'),
+            default => __('Файл'),
+        };
+
+        return implode(' · ', array_filter([
+            $attachment->presentationName,
+            $format,
+            $attachment->created_at?->format('d.m.Y H:i'),
+        ]));
+    }
+
+    private function clinicalDocumentForAction(int $attachmentId): MedicalAttachment
+    {
+        $organization = app(OrganizationContext::class)->organization();
+        app(AttachmentAuthorization::class)->authorizeView($this->actor(), $this->parentClient());
+
+        $attachment = MedicalAttachment::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('client_id', $this->parentClient()->getKey())
+            ->whereKey($attachmentId)
+            ->where('attachment_type', AttachmentType::MedicalReport)
+            ->whereNull('evaluation_fixture_key')
+            ->first();
+
+        if (! $attachment instanceof MedicalAttachment) {
+            throw new InvalidArgumentException('Выбранный медицинский документ недоступен в текущем клиентском контексте.');
+        }
+
+        return $attachment;
+    }
+
+    private function latestClinicalDocumentAiRun(): ?AiRun
+    {
+        return app(ListClinicalSessionDocumentAiRuns::class)
+            ->handle($this->actor(), $this->session(), $this->parentClient())
+            ->first();
+    }
+
+    private function latestClinicalDocumentAiRunForAttachment(int $attachmentId): ?AiRun
+    {
+        return app(ListClinicalSessionDocumentAiRuns::class)
+            ->handle($this->actor(), $this->session(), $this->parentClient())
+            ->first(fn (AiRun $run): bool => collect((array) $run->input_references)->contains(
+                static fn (mixed $reference): bool => is_array($reference)
+                    && ($reference['type'] ?? null) === 'medical_attachment'
+                    && (int) ($reference['id'] ?? 0) === $attachmentId,
+            ));
+    }
+
+    private function reviewableClinicalDocumentAiRun(?int $runId = null): ?AiRun
+    {
+        $run = $this->latestClinicalDocumentAiRun();
+        if (! $run instanceof AiRun
+            || ($runId !== null && (int) $run->getKey() !== $runId)
+            || $run->status !== AiRunStatus::Succeeded
+            || $run->human_review_status !== HumanReviewStatus::PendingReview) {
+            return null;
+        }
+
+        return $run;
+    }
+
+    private function clinicalDocumentAiRunInProgress(): bool
+    {
+        if (! $this->canUseClinicalSessionAi()) {
+            return false;
+        }
+
+        return app(ListClinicalSessionDocumentAiRuns::class)
+            ->handle($this->actor(), $this->session(), $this->parentClient())
+            ->contains(static fn (AiRun $run): bool => ! $run->status->isTerminal());
+    }
+
+    private function clinicalDocumentAiActionDisabled(): bool
+    {
+        return $this->clinicalDocumentOptions() === [] || $this->clinicalDocumentAiRunInProgress();
+    }
+
+    private function clinicalDocumentAiActionLabel(): string
+    {
+        $run = $this->latestClinicalDocumentAiRun();
+        if ($run instanceof AiRun && ! $run->status->isTerminal()) {
+            return __('Разбор выполняется');
+        }
+        if ($run instanceof AiRun) {
+            return __('Повторить разбор с ИИ');
+        }
+
+        return __('Разобрать с ИИ');
+    }
+
+    private function clinicalDocumentAiStatus(?AiRun $run): string
+    {
+        if ($run === null) {
+            return $this->clinicalDocumentOptions() === []
+                ? __('У клиента нет доступных медицинских документов. Загрузите МРТ, УЗИ или выписку в карточке клиента.')
+                : __('Выберите медицинский документ и запустите разбор с ИИ.');
+        }
+        if (! $run->status->isTerminal()) {
+            return __('AI анализирует выбранный документ. Поля сеанса пока не изменяются.');
+        }
+        if ($run->status !== AiRunStatus::Succeeded) {
+            return __('Ошибка: :message. Можно повторить разбор.', [
+                'message' => ClinicalAiPresentation::failure($run->error_category),
+            ]);
+        }
+
+        return match ($run->human_review_status) {
+            HumanReviewStatus::PendingReview => __('Результат готов. Проверьте извлечённые сведения, исправьте при необходимости и явно примите или отклоните их.'),
+            HumanReviewStatus::Accepted, HumanReviewStatus::EditedAndAccepted => __('Результат принят специалистом и сохранён как проверенный источник.'),
+            HumanReviewStatus::Rejected => __('Результат отклонён специалистом и сохранён в истории. Можно подготовить новую версию.'),
+            default => __('Результат сохранён в истории.'),
+        };
+    }
+
+    private function clinicalDocumentLabelForRun(AiRun $run): string
+    {
+        $provenance = collect((array) ($run->context_provenance['attachments'] ?? []))
+            ->first(static fn (mixed $item): bool => is_array($item)
+                && ($item['reference_type'] ?? null) === 'medical_attachment'
+                && filled($item['original_filename'] ?? null));
+        if (is_array($provenance)) {
+            return implode(' · ', array_filter([
+                (string) $provenance['original_filename'],
+                $this->clinicalDocumentFormat($provenance['mime_type'] ?? null),
+            ]));
+        }
+
+        $attachmentId = collect((array) $run->input_references)
+            ->first(fn (mixed $reference): bool => is_array($reference) && ($reference['type'] ?? null) === 'medical_attachment');
+        if (! is_array($attachmentId) || (int) ($attachmentId['id'] ?? 0) < 1) {
+            return __('Медицинский документ из истории');
+        }
+
+        $attachment = app(ListClientAttachments::class)
+            ->query($this->actor(), $this->parentClient())
+            ->whereKey((int) $attachmentId['id'])
+            ->where('attachment_type', AttachmentType::MedicalReport)
+            ->whereNull('evaluation_fixture_key')
+            ->first();
+
+        return $attachment instanceof MedicalAttachment
+            ? $this->clinicalDocumentLabel($attachment)
+            : __('Медицинский документ из истории');
+    }
+
+    /** @param list<array<string, mixed>> $attachmentProvenance */
+    private function clinicalDocumentAiSourcesForRun(AiRun $run, array $attachmentProvenance = []): string
+    {
+        $provenanceLabels = collect($attachmentProvenance !== []
+            ? $attachmentProvenance
+            : (array) ($run->context_provenance['attachments'] ?? []))
+            ->filter(static fn (mixed $item): bool => is_array($item)
+                && ($item['reference_type'] ?? null) === 'medical_attachment')
+            ->map(function (array $item): ?string {
+                $filename = trim((string) ($item['original_filename'] ?? ''));
+                if ($filename === '') {
+                    return null;
+                }
+
+                return __('Документ: :name', ['name' => implode(' · ', array_filter([
+                    $filename,
+                    $this->clinicalDocumentFormat($item['mime_type'] ?? null),
+                ]))]);
+            })
+            ->filter()
+            ->values()
+            ->all();
+        if ($provenanceLabels !== []) {
+            return implode("\n", array_merge([
+                __('Сеанс: текущий медицинский сеанс.'),
+            ], $provenanceLabels));
+        }
+
+        $attachmentLabels = collect((array) $run->input_references)
+            ->filter(static fn (mixed $reference): bool => is_array($reference) && ($reference['type'] ?? null) === 'medical_attachment')
+            ->map(static fn (array $reference): int => (int) ($reference['id'] ?? 0))
+            ->filter()
+            ->unique()
+            ->map(function (int $attachmentId): ?string {
+                $attachment = app(ListClientAttachments::class)
+                    ->query($this->actor(), $this->parentClient())
+                    ->whereKey($attachmentId)
+                    ->where('attachment_type', AttachmentType::MedicalReport)
+                    ->whereNull('evaluation_fixture_key')
+                    ->first();
+
+                return $attachment instanceof MedicalAttachment
+                    ? __('Документ: :name', ['name' => $this->clinicalDocumentLabel($attachment)])
+                    : null;
+            })
+            ->filter()
+            ->values()
+            ->all();
+
+        return implode("\n", array_merge([
+            __('Сеанс: текущий медицинский сеанс.'),
+        ], $attachmentLabels === [] ? [__('Документ: источник недоступен.')] : $attachmentLabels));
+    }
+
+    private function clinicalDocumentFormat(?string $mimeType): ?string
+    {
+        return match (strtolower((string) $mimeType)) {
+            'application/pdf' => 'PDF',
+            'text/plain' => __('Текст'),
+            'image/jpeg', 'image/png', 'image/webp' => __('Изображение'),
+            default => null,
+        };
+    }
+
+    /** @return array<string, string|null> */
+    private function clinicalDocumentAiHistoryRow(AiRun $run): array
+    {
+        $review = $run->humanReviews->last();
+
+        return [
+            'date' => $run->created_at?->format('d.m.Y H:i'),
+            'document' => $this->clinicalDocumentLabelForRun($run),
+            'status' => ClinicalAiPresentation::status($run->status),
+            'review' => $run->status === AiRunStatus::Succeeded ? ClinicalAiPresentation::review($run->human_review_status) : null,
+            'author' => $review?->reviewer?->name,
+            'reviewed_at' => $review?->reviewed_at?->format('d.m.Y H:i'),
+            'ai_version' => ClinicalAiPresentation::aiVersion($run),
+            'specialist_version' => ClinicalAiPresentation::specialistVersion($run),
+        ];
+    }
+
+    private function refreshAfterClinicalDocumentAiAction(): void
+    {
+        $this->record = $this->session()->fresh();
     }
 
     private function refreshAfterClinicalSessionAiAction(): void
@@ -1336,6 +1903,32 @@ class EditMedicalSession extends LocalizedEditRecord
                             ->columnSpanFull(),
                     ])
                     ->extraAttributes(fn (): array => ($this->sessionAiRunInProgress() || $this->postureAiRunInProgress())
+                        ? ['wire:poll.5s' => 'refreshClinicalSessionAiPanel']
+                        : [])
+                    ->columnSpanFull(),
+                Section::make(__('ИИ-разбор медицинского документа'))
+                    ->description(__('Выберите уже загруженное МРТ, УЗИ, выписку или другой поддерживаемый медицинский файл. AI извлекает сведения с указанием источника; диагнозы и поля сеанса автоматически не меняются.'))
+                    ->visible(fn (): bool => $this->canUseClinicalSessionAi())
+                    ->schema([
+                        Placeholder::make('clinical_document_ai_status')
+                            ->label(__('Состояние'))
+                            ->content(fn (): string => $this->clinicalDocumentAiPanelData()['status'] ?? __('Разбор документа недоступен.'))
+                            ->columnSpanFull(),
+                        Placeholder::make('clinical_document_ai_document')
+                            ->label(__('Выбранный документ'))
+                            ->content(fn (): string => (string) ($this->clinicalDocumentAiPanelData()['document'] ?? __('Документ ещё не выбран.')))
+                            ->columnSpanFull(),
+                        Actions::make([
+                            $this->analyzeClinicalDocumentAction(),
+                            $this->openClinicalDocumentAiDraftAction(),
+                            $this->rejectClinicalDocumentAiDraftAction(),
+                        ])->columnSpanFull(),
+                        View::make('filament.resources.clients.session-document-ai-panel')
+                            ->columnSpanFull(),
+                    ])
+                    ->extraAttributes(fn (): array => ($this->sessionAiRunInProgress()
+                        || $this->clinicalDocumentAiRunInProgress()
+                        || $this->postureAiRunInProgress())
                         ? ['wire:poll.5s' => 'refreshClinicalSessionAiPanel']
                         : [])
                     ->columnSpanFull(),

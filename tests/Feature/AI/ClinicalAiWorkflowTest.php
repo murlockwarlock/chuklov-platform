@@ -4,12 +4,14 @@ namespace Tests\Feature\AI;
 
 use App\Models\User;
 use App\Modules\AI\Application\Actions\GetClinicalAiResult;
+use App\Modules\AI\Application\Actions\ReviewClinicalSessionDocumentAiRun;
 use App\Modules\AI\Application\Actions\StartClinicalCourseReport;
 use App\Modules\AI\Application\Actions\StartClinicalDocumentAnalysis;
 use App\Modules\AI\Application\Actions\StartClinicalSynthesis;
 use App\Modules\AI\Application\Actions\StartPostureAnalysis;
 use App\Modules\AI\Application\Evaluations\ControlledPostureFixtureRepository;
 use App\Modules\AI\Application\Services\ReadClinicalAiClientSummary;
+use App\Modules\AI\Application\Services\ListClinicalSessionDocumentAiRuns;
 use App\Modules\AI\Domain\Enums\AiCapability;
 use App\Modules\AI\Domain\Enums\AiExecutionMode;
 use App\Modules\AI\Domain\Enums\AiModelModality;
@@ -238,6 +240,54 @@ final class ClinicalAiWorkflowTest extends TestCase
         );
         self::assertStringContainsString('Old document fact', (string) $originalPrompt);
         self::assertStringNotContainsString('New document fact', (string) $originalPrompt);
+    }
+
+    public function test_session_linked_reviewed_document_is_used_by_the_existing_clinical_synthesizer(): void
+    {
+        Queue::fake();
+        $specialist = Specialist::factory()->forOrganization($this->organization)->create();
+        $session = MedicalSession::query()->findOrFail(app(CreateSession::class)->handle(
+            $this->staff,
+            $this->client,
+            new CreateSessionCommand(
+                specialistId: (int) $specialist->getKey(),
+                occurredAt: Carbon::parse('2026-11-18 10:00:00', 'UTC'),
+            ),
+        )->id);
+        $document = $this->attachment($this->client, AttachmentType::MedicalReport, 'reviewed-session-report.pdf', 'application/pdf');
+        $documentRun = $this->reviewedRun(
+            AiCapability::ClinicalDocumentExtraction,
+            [
+                new AiInputReference('client', $this->client->id),
+                new AiInputReference('medical_session', $session->id),
+                new AiInputReference('medical_attachment', $document->id),
+            ],
+            [
+                'exam_type' => 'МРТ',
+                'anatomical_region' => 'Область исследования',
+                'key_findings' => [],
+                'structural_deformations' => [],
+                'critical_flags' => [],
+                'plain_summary' => 'Подтверждённый источник из текущего сеанса.',
+            ],
+            HumanReviewStatus::EditedAndAccepted,
+            humanEditedOutput: 'Исправленная проверенная версия источника из текущего сеанса.',
+        );
+
+        $synthesisRun = app(StartClinicalSynthesis::class)->handleSession($this->staff, $this->client, $session);
+        $payload = AiRunPayload::query()->where('ai_run_id', $synthesisRun->getKey())->firstOrFail();
+        $prompt = app(MedicalEncryptorInterface::class)->decryptField(
+            $this->organization->id,
+            $payload->encrypted_user_prompt,
+            $payload->encryption_key_version,
+        );
+
+        self::assertStringContainsString('Исправленная проверенная версия источника из текущего сеанса.', (string) $prompt);
+        self::assertStringNotContainsString('Подтверждённый источник из текущего сеанса.', (string) $prompt);
+        self::assertContains(
+            ['type' => 'ai_run', 'id' => $documentRun->getKey()],
+            $synthesisRun->input_references,
+        );
     }
 
     public function test_synthesis_prompt_includes_the_complete_medical_profile_and_profile_changes_change_idempotency(): void
@@ -1093,6 +1143,130 @@ final class ClinicalAiWorkflowTest extends TestCase
         self::assertDatabaseCount('ai_runs', 0);
     }
 
+    public function test_session_document_launch_is_scoped_idempotent_and_keeps_document_provenance(): void
+    {
+        Queue::fake();
+        $specialist = Specialist::factory()->forOrganization($this->organization)->create();
+        $session = MedicalSession::query()->findOrFail(app(CreateSession::class)->handle(
+            $this->staff,
+            $this->client,
+            new CreateSessionCommand(
+                specialistId: (int) $specialist->getKey(),
+                occurredAt: Carbon::parse('2026-11-18 10:00:00', 'UTC'),
+            ),
+        )->id);
+        $document = $this->attachment($this->client, AttachmentType::MedicalReport, 'session-report.pdf', 'application/pdf');
+
+        $action = app(StartClinicalDocumentAnalysis::class);
+        $firstRun = $action->handleSession($this->staff, $this->client, $session, $document);
+        $sameRun = $action->handleSession($this->staff, $this->client, $session, $document);
+
+        self::assertSame($firstRun->getKey(), $sameRun->getKey());
+        self::assertLessThanOrEqual(120, strlen((string) $firstRun->idempotency_key));
+        self::assertSame('clinical_document_extraction', $firstRun->workflow_key);
+        self::assertContains(
+            ['type' => 'client', 'id' => $this->client->getKey()],
+            $firstRun->input_references,
+        );
+        self::assertContains(
+            ['type' => 'medical_session', 'id' => $session->getKey()],
+            $firstRun->input_references,
+        );
+        self::assertContains(
+            ['type' => 'medical_attachment', 'id' => $document->getKey()],
+            $firstRun->input_references,
+        );
+
+        $firstRun->update(['status' => AiRunStatus::Succeeded]);
+        $rerun = $action->handleSession($this->staff, $this->client, $session, $document, true);
+        $sameRerun = $action->handleSession($this->staff, $this->client, $session, $document, true);
+
+        self::assertNotSame($firstRun->getKey(), $rerun->getKey());
+        self::assertSame($rerun->getKey(), $sameRerun->getKey());
+
+        $clientOnlyRun = $action->handle($this->staff, $document);
+        $sessionRuns = app(ListClinicalSessionDocumentAiRuns::class)->handle($this->staff, $session, $this->client);
+
+        self::assertEqualsCanonicalizing(
+            [$firstRun->getKey(), $rerun->getKey()],
+            $sessionRuns->pluck('id')->all(),
+        );
+        self::assertNotContains($clientOnlyRun->getKey(), $sessionRuns->pluck('id')->all());
+        self::assertContains(
+            ['type' => 'medical_session', 'id' => $session->getKey()],
+            $rerun->input_references,
+        );
+    }
+
+    public function test_session_document_launch_rejects_a_session_from_another_client(): void
+    {
+        Queue::fake();
+        $specialist = Specialist::factory()->forOrganization($this->organization)->create();
+        $otherClient = $this->newClient('Other session document client');
+        $session = MedicalSession::query()->findOrFail(app(CreateSession::class)->handle(
+            $this->staff,
+            $otherClient,
+            new CreateSessionCommand(
+                specialistId: (int) $specialist->getKey(),
+                occurredAt: Carbon::parse('2026-11-18 10:00:00', 'UTC'),
+            ),
+        )->id);
+        $document = $this->attachment($this->client, AttachmentType::MedicalReport, 'wrong-session-report.pdf', 'application/pdf');
+
+        $this->expectException(AuthorizationException::class);
+        app(StartClinicalDocumentAnalysis::class)->handleSession($this->staff, $this->client, $session, $document);
+    }
+
+    public function test_session_document_review_cannot_cross_the_bound_session(): void
+    {
+        $specialist = Specialist::factory()->forOrganization($this->organization)->create();
+        $firstSession = MedicalSession::query()->findOrFail(app(CreateSession::class)->handle(
+            $this->staff,
+            $this->client,
+            new CreateSessionCommand(
+                specialistId: (int) $specialist->getKey(),
+                occurredAt: Carbon::parse('2026-11-18 10:00:00', 'UTC'),
+            ),
+        )->id);
+        $secondSession = MedicalSession::query()->findOrFail(app(CreateSession::class)->handle(
+            $this->staff,
+            $this->client,
+            new CreateSessionCommand(
+                specialistId: (int) $specialist->getKey(),
+                occurredAt: Carbon::parse('2026-11-18 11:00:00', 'UTC'),
+            ),
+        )->id);
+        $document = $this->attachment($this->client, AttachmentType::MedicalReport, 'bound-report.pdf', 'application/pdf');
+        $run = $this->reviewedRun(
+            AiCapability::ClinicalDocumentExtraction,
+            [
+                new AiInputReference('client', $this->client->id),
+                new AiInputReference('medical_session', $firstSession->id),
+                new AiInputReference('medical_attachment', $document->id),
+            ],
+            ['plain_summary' => 'Bound document result'],
+            HumanReviewStatus::PendingReview,
+        );
+
+        $this->expectException(AuthorizationException::class);
+        app(ReviewClinicalSessionDocumentAiRun::class)->handle(
+            actor: $this->staff,
+            client: $this->client,
+            session: $secondSession,
+            runId: $run->getKey(),
+            decision: HumanReviewDecision::Accepted,
+            safeReasonCode: 'specialist_confirmed',
+        );
+    }
+
+    public function test_document_extraction_capability_allows_a_medical_session_reference(): void
+    {
+        self::assertContains(
+            'medical_session',
+            AiCapabilityRegistry::get(AiCapability::ClinicalDocumentExtraction)->allowedInputReferenceTypes,
+        );
+    }
+
     public function test_session_posture_review_preserves_ai_payload_and_confirmed_session_fields(): void
     {
         $specialist = Specialist::factory()->forOrganization($this->organization)->create();
@@ -1336,6 +1510,7 @@ final class ClinicalAiWorkflowTest extends TestCase
         array $payload,
         HumanReviewStatus $reviewStatus = HumanReviewStatus::Accepted,
         string $workflowKey = 'clinical_synthesizer',
+        ?string $humanEditedOutput = null,
     ): AiRun {
         $run = AiRun::create([
             'organization_id' => $this->organization->id,
@@ -1357,6 +1532,9 @@ final class ClinicalAiWorkflowTest extends TestCase
             'encryption_key_version' => 1,
             'encrypted_output_payload' => $encryptor->encryptField($this->organization->id, json_encode($payload, JSON_THROW_ON_ERROR), 1),
             'encrypted_output_text' => $encryptor->encryptField($this->organization->id, json_encode($payload, JSON_THROW_ON_ERROR), 1),
+            'encrypted_human_edited_output' => $humanEditedOutput === null
+                ? null
+                : $encryptor->encryptField($this->organization->id, $humanEditedOutput, 1),
         ]);
 
         return $run;
