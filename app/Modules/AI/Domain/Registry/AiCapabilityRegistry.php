@@ -19,7 +19,7 @@ class AiCapabilityRegistry
                     capability: AiCapability::ClinicalDocumentExtraction,
                     displayName: 'Извлечение данных из медицинских документов',
                     description: 'Анализ выписок, заключений и лабораторных анализов с извлечением структурированных параметров.',
-                    allowedInputReferenceTypes: ['client', 'medical_attachment'],
+                    allowedInputReferenceTypes: ['client', 'medical_session', 'medical_attachment'],
                     supportsRag: false,
                     allowedTools: [],
                     defaultTimeoutSeconds: 45,

@@ -171,6 +171,7 @@ final class AiAttachmentResolver
         $provenance = [
             'attachment_id' => (int) $attachment->id,
             'attachment_uuid' => (string) $attachment->uuid,
+            'original_filename' => (string) $attachment->original_filename,
             'attachment_type' => $attachment->attachment_type->value,
             'sha256_checksum' => $checksum,
             'mime_type' => (string) $attachment->mime_type,

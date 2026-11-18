@@ -10,14 +10,21 @@ use App\Filament\Resources\Clients\Resources\Sessions\Pages\EditMedicalSession;
 use App\Filament\Resources\Clients\Resources\Sessions\Pages\ManageClientSessions;
 use App\Filament\Resources\Clients\Resources\Sessions\Pages\ViewMedicalSession;
 use App\Models\User;
+use App\Modules\AI\Application\Actions\DispatchAsyncAiRun;
+use App\Modules\AI\Application\Actions\GetClinicalAiResult;
+use App\Modules\AI\Application\Data\AiRunRequest;
 use App\Modules\AI\Domain\Enums\AiCapability;
 use App\Modules\AI\Domain\Enums\AiExecutionMode;
 use App\Modules\AI\Domain\Enums\AiRunOrigin;
 use App\Modules\AI\Domain\Enums\AiRunStatus;
 use App\Modules\AI\Domain\Enums\ClinicalSynthesizerWorkflow;
+use App\Modules\AI\Domain\Enums\HumanReviewReasonCode;
 use App\Modules\AI\Domain\Enums\HumanReviewStatus;
 use App\Modules\AI\Domain\Models\AiRun;
 use App\Modules\AI\Domain\Models\AiRunPayload;
+use App\Modules\AI\Domain\ValueObjects\AiInputReference;
+use App\Modules\Attachments\Domain\Enums\AttachmentType;
+use App\Modules\Attachments\Domain\Models\MedicalAttachment;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\MedicalProfiles\Application\DTOs\UpdateMedicalProfileCommand;
 use App\Modules\MedicalProfiles\Application\UpdateMedicalProfile;
@@ -53,6 +60,8 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use Livewire\Livewire;
 use Mockery;
 use Tests\TestCase;
@@ -64,6 +73,7 @@ final class SessionCockpitTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        Storage::fake('private');
         CarbonImmutable::setTestNow(CarbonImmutable::create(2026, 8, 16, 12, 0, 0, 'UTC'));
     }
 
@@ -1191,7 +1201,163 @@ final class SessionCockpitTest extends TestCase
         );
     }
 
-    public function test_filament_session_ai_draft_review_action_mounts_the_editable_result(): void
+    public function test_filament_session_document_ai_action_scopes_options_to_the_current_client(): void
+    {
+        [$organization, $admin, $client, $specialist] = $this->fixture();
+        $this->resolveFilamentContext($admin, $organization);
+        $session = $this->createSession($admin, $client, $specialist);
+        $owned = $this->medicalDocument($organization, $admin, $client, 'Томография клиента.pdf');
+        $otherClient = Client::factory()->forOrganization($organization)->create();
+        $foreign = $this->medicalDocument($organization, $admin, $otherClient, 'Чужой документ.pdf');
+        $run = AiRun::make();
+        $dispatcher = Mockery::mock(DispatchAsyncAiRun::class);
+        $dispatcher->shouldReceive('handle')
+            ->once()
+            ->withArgs(function (?User $actor, AiRunRequest $request) use ($admin, $client, $session, $owned): bool {
+                $references = array_map(
+                    static fn (AiInputReference $reference): array => $reference->toArray(),
+                    $request->inputReferences,
+                );
+
+                return $actor?->is($admin)
+                    && $request->clientId === (int) $client->getKey()
+                    && $request->workflowKey === 'clinical_document_extraction'
+                    && $request->idempotencyKey !== null
+                    && strlen($request->idempotencyKey) <= 120
+                    && $references === [
+                        ['type' => 'client', 'id' => $client->getKey()],
+                        ['type' => 'medical_session', 'id' => $session->getKey()],
+                        ['type' => 'medical_attachment', 'id' => $owned->getKey()],
+                    ];
+            })
+            ->andReturn($run);
+        $this->app->instance(DispatchAsyncAiRun::class, $dispatcher);
+
+        $component = Livewire::actingAs($admin)
+            ->test(EditMedicalSession::class, ['parentRecord' => $client, 'record' => $session->getKey()])
+            ->call('mountAction', 'analyzeClinicalDocument', [], ['schemaComponent' => 'form']);
+        $select = $component->instance()->getSchemaComponent('mountedActionSchema0.attachment_id');
+
+        self::assertInstanceOf(Select::class, $select);
+        self::assertArrayHasKey($owned->getKey(), $select->getOptions());
+        self::assertArrayNotHasKey($foreign->getKey(), $select->getOptions());
+        $component
+            ->setActionData(['attachment_id' => $owned->getKey()])
+            ->callMountedAction()
+            ->assertHasNoActionErrors()
+            ->assertNotified('Разбор документа запущен');
+    }
+
+    public function test_filament_session_document_ai_review_preserves_original_and_does_not_change_session_fields(): void
+    {
+        [$organization, $admin, $client, $specialist] = $this->fixture();
+        $this->resolveFilamentContext($admin, $organization);
+        $session = $this->createSession($admin, $client, $specialist, pain: 'Подтверждённая боль');
+        $document = $this->medicalDocument($organization, $admin, $client, 'Заключение МРТ.pdf');
+        $payload = [
+            'exam_type' => 'МРТ',
+            'anatomical_region' => 'Область исследования',
+            'key_findings' => [['location' => 'Зона исследования', 'pathology' => 'Наблюдение из документа', 'size_mm' => null, 'impact' => 'Не определено']],
+            'structural_deformations' => [],
+            'critical_flags' => [],
+            'plain_summary' => 'Оригинальное извлечение фактов.',
+        ];
+        $run = $this->clinicalDocumentRun(
+            $organization->getKey(),
+            $client->getKey(),
+            $session->getKey(),
+            $document->getKey(),
+            HumanReviewStatus::PendingReview,
+            $payload,
+        );
+        $originalCiphertext = AiRunPayload::query()->where('ai_run_id', $run->getKey())->value('encrypted_output_payload');
+
+        $component = Livewire::actingAs($admin)
+            ->test(EditMedicalSession::class, ['parentRecord' => $client, 'record' => $session->getKey()])
+            ->call('mountAction', 'openClinicalDocumentAiDraft', [], ['schemaComponent' => 'form']);
+
+        $component
+            ->assertActionDataSet(['run_id' => $run->getKey()])
+            ->assertFormFieldExists('original_output')
+            ->assertFormFieldExists('edited_output')
+            ->assertFormFieldExists('sources')
+            ->assertSee('Заключение МРТ.pdf');
+
+        $component
+            ->setActionData(['edited_output' => 'Проверенные сведения специалиста'])
+            ->callMountedAction()
+            ->assertHasNoActionErrors()
+            ->assertNotified('Результат документа принят и сохранён в истории');
+
+        self::assertSame(HumanReviewStatus::EditedAndAccepted, $run->fresh()->human_review_status);
+        self::assertSame($originalCiphertext, AiRunPayload::query()->where('ai_run_id', $run->getKey())->value('encrypted_output_payload'));
+        self::assertSame('Подтверждённая боль', app(GetSession::class)->handle($admin, $session->fresh(), $client)?->pain);
+        self::assertSame('Проверенные сведения специалиста', app(GetClinicalAiResult::class)->handle($admin, $run->getKey(), $client->getKey())->humanEditedOutput);
+    }
+
+    public function test_filament_session_document_ai_rejection_and_reload_show_durable_history(): void
+    {
+        [$organization, $admin, $client, $specialist] = $this->fixture();
+        $this->resolveFilamentContext($admin, $organization);
+        $session = $this->createSession($admin, $client, $specialist);
+        $document = $this->medicalDocument($organization, $admin, $client, 'Выписка клиента.pdf');
+        $run = $this->clinicalDocumentRun(
+            $organization->getKey(),
+            $client->getKey(),
+            $session->getKey(),
+            $document->getKey(),
+            HumanReviewStatus::PendingReview,
+            [
+                'exam_type' => 'Выписка',
+                'anatomical_region' => 'Не указано',
+                'key_findings' => [],
+                'structural_deformations' => [],
+                'critical_flags' => [],
+                'plain_summary' => 'Результат для отклонения.',
+            ],
+        );
+
+        Livewire::actingAs($admin)
+            ->test(EditMedicalSession::class, ['parentRecord' => $client, 'record' => $session->getKey()])
+            ->call('mountAction', 'rejectClinicalDocumentAiDraft', [], ['schemaComponent' => 'form'])
+            ->setActionData([
+                'reason_code' => HumanReviewReasonCode::IncorrectContent->value,
+                'notes' => 'Нужна дополнительная проверка источника.',
+            ])
+            ->callMountedAction()
+            ->assertHasNoActionErrors()
+            ->assertNotified('Результат документа отклонён и сохранён в истории');
+
+        self::assertSame(HumanReviewStatus::Rejected, $run->fresh()->human_review_status);
+        Livewire::actingAs($admin)
+            ->test(EditMedicalSession::class, ['parentRecord' => $client, 'record' => $session->getKey()])
+            ->assertSee('session-document-ai-panel', false)
+            ->assertSee('Выписка клиента.pdf')
+            ->assertSee('Отклонено');
+    }
+
+    public function test_filament_session_document_ai_panel_polls_while_generation_is_in_progress(): void
+    {
+        [$organization, $admin, $client, $specialist] = $this->fixture();
+        $this->resolveFilamentContext($admin, $organization);
+        $session = $this->createSession($admin, $client, $specialist);
+        $document = $this->medicalDocument($organization, $admin, $client, 'Ожидаемый документ.pdf');
+        $run = $this->clinicalDocumentRun(
+            $organization->getKey(),
+            $client->getKey(),
+            $session->getKey(),
+            $document->getKey(),
+            HumanReviewStatus::PendingReview,
+            [],
+            AiRunStatus::Running,
+        );
+
+        Livewire::actingAs($admin)
+            ->test(EditMedicalSession::class, ['parentRecord' => $client, 'record' => $session->getKey()])
+            ->assertSee('wire:poll.5s', false);
+    }
+
+    public function test_filament_session_document_ai_draft_review_action_mounts_the_editable_result(): void
     {
         [$organization, $admin, $client, $specialist] = $this->fixture();
         $this->resolveFilamentContext($admin, $organization);
@@ -1218,6 +1384,49 @@ final class SessionCockpitTest extends TestCase
             ->assertFormFieldExists('edited_output')
             ->assertFormFieldExists('target')
             ->assertFormFieldExists('sources');
+    }
+
+    public function test_filament_session_synthesis_draft_shows_the_exact_reviewed_document_run_source(): void
+    {
+        [$organization, $admin, $client, $specialist] = $this->fixture();
+        $this->resolveFilamentContext($admin, $organization);
+        $session = $this->createSession($admin, $client, $specialist);
+        $document = $this->medicalDocument($organization, $admin, $client, 'Выписка источника.pdf');
+        $documentRun = $this->clinicalDocumentRun(
+            $organization->getKey(),
+            $client->getKey(),
+            $session->getKey(),
+            $document->getKey(),
+            HumanReviewStatus::EditedAndAccepted,
+            [
+                'exam_type' => 'Выписка',
+                'anatomical_region' => 'Не указано',
+                'key_findings' => [],
+                'structural_deformations' => [],
+                'critical_flags' => [],
+                'plain_summary' => 'Проверенный факт источника.',
+            ],
+        );
+        $synthesisRun = $this->clinicalSynthesisRun(
+            $organization->getKey(),
+            $client->getKey(),
+            HumanReviewStatus::PendingReview,
+            ['client_summary' => 'Фактический черновик для проверки'],
+            ClinicalSynthesizerWorkflow::SessionDraft->value,
+        );
+        $synthesisRun->update([
+            'input_references' => [
+                ['type' => 'client', 'id' => $client->getKey()],
+                ['type' => 'medical_session', 'id' => $session->getKey()],
+                ['type' => 'ai_run', 'id' => $documentRun->getKey()],
+            ],
+        ]);
+
+        Livewire::actingAs($admin)
+            ->test(EditMedicalSession::class, ['parentRecord' => $client, 'record' => $session->getKey()])
+            ->call('mountAction', 'openClinicalSessionAiDraft', [], ['schemaComponent' => 'form'])
+            ->assertSee('Выписка источника.pdf')
+            ->assertSee('AiRun #'.$documentRun->getKey());
     }
 
     public function test_filament_session_ai_review_action_has_no_background_polling(): void
@@ -1547,6 +1756,74 @@ final class SessionCockpitTest extends TestCase
             'status' => AiRunStatus::Succeeded,
             'human_review_status' => $reviewStatus,
             'input_references' => [['type' => 'client', 'id' => $clientId]],
+            'context_provenance' => [],
+            'token_usage' => [],
+        ]);
+        $encodedPayload = json_encode($payload, JSON_THROW_ON_ERROR);
+        $encryptor = app(MedicalEncryptorInterface::class);
+        AiRunPayload::create([
+            'organization_id' => $organizationId,
+            'ai_run_id' => $run->getKey(),
+            'encryption_key_version' => 1,
+            'encrypted_output_payload' => $encryptor->encryptField($organizationId, $encodedPayload, 1),
+            'encrypted_output_text' => $encryptor->encryptField($organizationId, $encodedPayload, 1),
+        ]);
+
+        return $run;
+    }
+
+    private function medicalDocument(
+        Organization $organization,
+        User $uploader,
+        Client $client,
+        string $filename,
+    ): MedicalAttachment {
+        $storagePath = 'medical/attachments/'.$organization->getKey().'/'.Str::uuid().'.pdf';
+        $contents = 'Безопасный документ для проверки извлечения сведений.';
+        Storage::disk('private')->put($storagePath, $contents);
+
+        $attachment = new MedicalAttachment;
+        $attachment->forceFill([
+            'uuid' => (string) Str::uuid(),
+            'organization_id' => $organization->getKey(),
+            'client_id' => $client->getKey(),
+            'uploaded_by_user_id' => $uploader->getKey(),
+            'attachment_type' => AttachmentType::MedicalReport,
+            'disk' => 'private',
+            'storage_path' => $storagePath,
+            'original_filename' => $filename,
+            'mime_type' => 'application/pdf',
+            'size_bytes' => strlen($contents),
+            'sha256_checksum' => hash('sha256', $contents),
+        ]);
+        $attachment->save();
+
+        return $attachment;
+    }
+
+    private function clinicalDocumentRun(
+        int $organizationId,
+        int $clientId,
+        int $sessionId,
+        int $attachmentId,
+        HumanReviewStatus $reviewStatus,
+        array $payload,
+        AiRunStatus $status = AiRunStatus::Succeeded,
+    ): AiRun {
+        $run = AiRun::create([
+            'organization_id' => $organizationId,
+            'capability' => AiCapability::ClinicalDocumentExtraction,
+            'workflow_key' => 'clinical_document_extraction',
+            'origin' => AiRunOrigin::User,
+            'execution_mode' => AiExecutionMode::Async,
+            'client_id' => $clientId,
+            'status' => $status,
+            'human_review_status' => $reviewStatus,
+            'input_references' => [
+                ['type' => 'client', 'id' => $clientId],
+                ['type' => 'medical_session', 'id' => $sessionId],
+                ['type' => 'medical_attachment', 'id' => $attachmentId],
+            ],
             'context_provenance' => [],
             'token_usage' => [],
         ]);
