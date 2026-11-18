@@ -1386,6 +1386,49 @@ final class SessionCockpitTest extends TestCase
             ->assertFormFieldExists('sources');
     }
 
+    public function test_filament_session_synthesis_draft_shows_the_exact_reviewed_document_run_source(): void
+    {
+        [$organization, $admin, $client, $specialist] = $this->fixture();
+        $this->resolveFilamentContext($admin, $organization);
+        $session = $this->createSession($admin, $client, $specialist);
+        $document = $this->medicalDocument($organization, $admin, $client, 'Выписка источника.pdf');
+        $documentRun = $this->clinicalDocumentRun(
+            $organization->getKey(),
+            $client->getKey(),
+            $session->getKey(),
+            $document->getKey(),
+            HumanReviewStatus::EditedAndAccepted,
+            [
+                'exam_type' => 'Выписка',
+                'anatomical_region' => 'Не указано',
+                'key_findings' => [],
+                'structural_deformations' => [],
+                'critical_flags' => [],
+                'plain_summary' => 'Проверенный факт источника.',
+            ],
+        );
+        $synthesisRun = $this->clinicalSynthesisRun(
+            $organization->getKey(),
+            $client->getKey(),
+            HumanReviewStatus::PendingReview,
+            ['client_summary' => 'Фактический черновик для проверки'],
+            ClinicalSynthesizerWorkflow::SessionDraft->value,
+        );
+        $synthesisRun->update([
+            'input_references' => [
+                ['type' => 'client', 'id' => $client->getKey()],
+                ['type' => 'medical_session', 'id' => $session->getKey()],
+                ['type' => 'ai_run', 'id' => $documentRun->getKey()],
+            ],
+        ]);
+
+        Livewire::actingAs($admin)
+            ->test(EditMedicalSession::class, ['parentRecord' => $client, 'record' => $session->getKey()])
+            ->call('mountAction', 'openClinicalSessionAiDraft', [], ['schemaComponent' => 'form'])
+            ->assertSee('Выписка источника.pdf')
+            ->assertSee('AiRun #'.$documentRun->getKey());
+    }
+
     public function test_filament_session_ai_review_action_has_no_background_polling(): void
     {
         [$organization, $admin, $client, $specialist] = $this->fixture();

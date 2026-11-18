@@ -25,8 +25,9 @@ use App\Modules\AI\Application\Services\ListClinicalSessionAiRuns;
 use App\Modules\AI\Application\Services\ListClinicalSessionDocumentAiRuns;
 use App\Modules\AI\Application\Services\ListSessionPostureAiRuns;
 use App\Modules\AI\Application\Services\PostureAnalysisAvailability;
-use App\Modules\AI\Domain\Enums\HumanReviewDecision;
+use App\Modules\AI\Domain\Enums\AiCapability;
 use App\Modules\AI\Domain\Enums\AiRunStatus;
+use App\Modules\AI\Domain\Enums\HumanReviewDecision;
 use App\Modules\AI\Domain\Enums\HumanReviewReasonCode;
 use App\Modules\AI\Domain\Enums\HumanReviewStatus;
 use App\Modules\AI\Domain\Models\AiRun;
@@ -1329,12 +1330,54 @@ class EditMedicalSession extends LocalizedEditRecord
                 : __('сеанс · :date', ['date' => $session->occurred_at?->format('d.m.Y H:i') ?? '—']))
             ->all();
         $surveyCount = $references->filter(static fn (mixed $reference): bool => is_array($reference) && ($reference['type'] ?? null) === 'survey_attempt')->count();
-        $upstreamCount = $references->filter(static fn (mixed $reference): bool => is_array($reference) && ($reference['type'] ?? null) === 'ai_run')->count();
+        $upstreamRunIds = $references
+            ->filter(static fn (mixed $reference): bool => is_array($reference) && ($reference['type'] ?? null) === 'ai_run')
+            ->map(static fn (array $reference): int => (int) ($reference['id'] ?? 0))
+            ->filter()
+            ->unique()
+            ->values();
+        $upstreamRuns = AiRun::query()
+            ->where('organization_id', $this->session()->organization_id)
+            ->where('client_id', $this->parentClient()->getKey())
+            ->whereIn('id', $upstreamRunIds->all())
+            ->whereIn('capability', [
+                AiCapability::ClinicalDocumentExtraction,
+                AiCapability::PostureAnalysis,
+            ])
+            ->with(['promptVersion', 'modelRelease'])
+            ->get()
+            ->keyBy(fn (AiRun $candidate): int => (int) $candidate->getKey());
+        $sourceLines = $upstreamRunIds
+            ->map(function (int $sourceRunId) use ($upstreamRuns): ?string {
+                $sourceRun = $upstreamRuns->get($sourceRunId);
+                if (! $sourceRun instanceof AiRun) {
+                    return null;
+                }
+
+                if ($sourceRun->capability === AiCapability::ClinicalDocumentExtraction) {
+                    return __('Документ: :document · AiRun #:run · :version', [
+                        'document' => $this->clinicalDocumentLabelForRun($sourceRun),
+                        'run' => $sourceRun->getKey(),
+                        'version' => ClinicalAiPresentation::aiVersion($sourceRun),
+                    ]);
+                }
+
+                return __('Проверенный AI-источник: :source · AiRun #:run · :version', [
+                    'source' => ClinicalAiPresentation::capability($sourceRun->capability, $sourceRun->workflow_key),
+                    'run' => $sourceRun->getKey(),
+                    'version' => ClinicalAiPresentation::aiVersion($sourceRun),
+                ]);
+            })
+            ->filter()
+            ->values()
+            ->all();
+        $upstreamCount = $upstreamRunIds->count();
 
         return implode("\n", [
             __('Текущий сеанс: жалобы, результаты тестов и сохранённые записи включены.'),
             __('Использованные сеансы: :sessions.', ['sessions' => $sessionDates === [] ? __('не доступны') : implode(', ', $sessionDates)]),
             __('Медицинский профиль: :state.', ['state' => ($run->context_provenance['medical_summary_included'] ?? false) ? __('доступен') : __('не включён')]),
+            ...($sourceLines === [] ? [__('Фактические версии источников недоступны.')] : [__('Фактические проверенные источники:'), ...$sourceLines]),
             __('Проверенные AI-источники: :count.', ['count' => $upstreamCount]),
             __('Завершённые опросы: :count.', ['count' => $surveyCount]),
         ]);
