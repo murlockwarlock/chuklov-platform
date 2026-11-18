@@ -8,6 +8,7 @@ use App\Modules\AI\Application\Services\ClinicalSynthesizerMedicalProfileContext
 use App\Modules\AI\Application\Services\FindLatestReviewedAiRun;
 use App\Modules\AI\Application\Services\ListClinicalSessionAiRuns;
 use App\Modules\AI\Application\Services\ListClinicalSessionDocumentAiRuns;
+use App\Modules\AI\Application\Services\ListSessionPostureAiRuns;
 use App\Modules\AI\Domain\Enums\AiCapability;
 use App\Modules\AI\Domain\Enums\AiExecutionMode;
 use App\Modules\AI\Domain\Enums\AiRunOrigin;
@@ -21,7 +22,9 @@ use App\Modules\MedicalProfiles\Application\GetMedicalProfile;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
+use App\Modules\Sessions\Application\DTOs\MedicalSessionData;
 use App\Modules\Sessions\Application\GetSession;
+use App\Modules\Sessions\Application\GetSessionDynamics;
 use App\Modules\Sessions\Application\MedicalSessionAuthorization;
 use App\Modules\Sessions\Domain\Models\MedicalSession;
 use App\Modules\Surveys\Application\SurveyAuthorization;
@@ -39,10 +42,12 @@ final readonly class StartClinicalSynthesis
         private FindLatestReviewedAiRun $findLatestReviewedAiRun,
         private ListClinicalSessionAiRuns $sessionAiRuns,
         private ListClinicalSessionDocumentAiRuns $sessionDocumentRuns,
+        private ListSessionPostureAiRuns $sessionPostureRuns,
         private GetMedicalProfile $getMedicalProfile,
         private ClinicalSynthesizerMedicalProfileContext $medicalProfileContext,
         private MedicalSessionAuthorization $sessionAuthorization,
         private GetSession $getSession,
+        private GetSessionDynamics $sessionDynamics,
         private SurveyAuthorization $surveyAuthorization,
         private DispatchAsyncAiRun $dispatcher,
     ) {}
@@ -102,65 +107,73 @@ final readonly class StartClinicalSynthesis
         $documentSources = $this->documentSources($actor, $client, $focusSession, (int) $organization->getKey());
         $firstDocumentSource = $documentSources->first();
         $documentResult = is_array($firstDocumentSource) ? $firstDocumentSource['result'] : null;
-        $postureRun = $this->findLatestReviewedAiRun->handle(
-            $client,
-            AiCapability::PostureAnalysis,
-            (int) $organization->getKey(),
-        );
-        $postureResult = $postureRun === null ? null : $this->resultReader->handle($actor, $postureRun->id, $client->id);
+        $postureSources = $this->postureSources($actor, $client, $focusSession, (int) $organization->getKey());
         $profile = $this->getMedicalProfile->handle($actor, $client);
 
         $sessionHistory = [];
         $sessionReferences = [];
-        $sessions = MedicalSession::query()
-            ->where('organization_id', $organization->getKey())
-            ->where('client_id', $client->getKey())
-            ->orderByDesc('occurred_at')
-            ->orderByDesc('id')
-            ->limit(5)
-            ->get();
-        if ($focusSession !== null && ! $sessions->contains(fn (MedicalSession $item): bool => (int) $item->getKey() === (int) $focusSession->getKey())) {
-            $sessions->push($focusSession);
-            $sessions = $sessions
-                ->sortByDesc(fn (MedicalSession $item): string => $item->occurred_at?->format('Y-m-d H:i:s.u').' '.str_pad((string) $item->getKey(), 12, '0', STR_PAD_LEFT))
-                ->take(6)
-                ->values();
-        }
-        foreach ($sessions as $session) {
-            $sessionData = $this->getSession->handle($actor, $session, $client);
-            if ($sessionData === null) {
-                continue;
-            }
+        if ($focusSession !== null) {
+            $dynamics = $this->sessionDynamics->handle($actor, $focusSession, $client, historyLimit: 5);
+            foreach ($dynamics->history as $snapshot) {
+                $sessionData = $snapshot['data'];
+                if (! $sessionData instanceof MedicalSessionData) {
+                    continue;
+                }
 
-            $sessionHistory[] = $sessionData->toArray();
-            $sessionReferences[] = new AiInputReference('medical_session', (int) $session->getKey());
+                $sessionHistory[] = [
+                    ...$sessionData->toArray(),
+                    'period' => $snapshot['period'],
+                ];
+                $sessionReferences[] = new AiInputReference('medical_session', $sessionData->id);
+            }
+        } else {
+            $sessions = MedicalSession::query()
+                ->where('organization_id', $organization->getKey())
+                ->where('client_id', $client->getKey())
+                ->orderByDesc('occurred_at')
+                ->orderByDesc('id')
+                ->limit(5)
+                ->get();
+            foreach ($sessions as $session) {
+                $sessionData = $this->getSession->handle($actor, $session, $client);
+                if ($sessionData === null) {
+                    continue;
+                }
+
+                $sessionHistory[] = $sessionData->toArray();
+                $sessionReferences[] = new AiInputReference('medical_session', (int) $session->getKey());
+            }
         }
 
         [$surveyResults, $surveyReferences] = $this->surveyBundle($actor, $client);
+        $recentSessions = $this->sessionsContext(
+            $sessionHistory,
+            $focusSession === null ? null : (int) $focusSession->getKey(),
+        );
+        $documentContext = $focusSession === null
+            ? $this->documentContext(
+                $documentResult?->outputPayload,
+                $documentResult?->humanEditedOutput,
+            )
+            : $this->sessionDocumentContext($documentSources);
+        $postureContext = $this->postureSourcesContext($postureSources, $focusSession !== null);
         $inputVariables = [
             'client_name' => (string) ($client->full_name ?: 'Клиент'),
             'anamnesis' => $this->medicalProfileContext->build($profile),
             'complaints_goals' => $this->boundedText($profile?->complaintsGoalsForCompatibility() ?? '', 700),
-            'recent_sessions' => $this->sessionsContext(
-                $sessionHistory,
-                $focusSession === null ? null : (int) $focusSession->getKey(),
-            ),
-            'agent_one_result' => $focusSession === null
-                ? $this->documentContext(
-                    $documentResult?->outputPayload,
-                    $documentResult?->humanEditedOutput,
-                )
-                : $this->sessionDocumentContext($documentSources),
-            'agent_two_result' => $this->postureContext($postureResult?->outputPayload),
-            'survey_results' => $surveyResults,
+            'session_preparation_mode' => $focusSession === null ? 'client_summary' : 'factual_session_preparation',
+            'recent_sessions' => $recentSessions === '' ? [] : [$recentSessions],
+            'agent_one_result' => ['content' => $documentContext],
+            'agent_two_result' => ['content' => $postureContext],
+            'survey_results' => ['content' => $surveyResults],
         ];
 
         $references = [new AiInputReference('client', (int) $client->getKey())];
         foreach ($documentSources as $source) {
             $references[] = new AiInputReference('ai_run', (int) $source['run']->getKey());
         }
-        if ($postureRun !== null) {
-            $references[] = new AiInputReference('ai_run', (int) $postureRun->getKey());
+        foreach ($postureSources as $source) {
+            $references[] = new AiInputReference('ai_run', (int) $source['run']->getKey());
         }
         $references = [...$references, ...$sessionReferences, ...$surveyReferences];
 
@@ -234,6 +247,79 @@ final readonly class StartClinicalSynthesis
                 && (int) ($reference['id'] ?? 0) > 0);
 
         return is_array($attachmentId) ? (int) $attachmentId['id'] : null;
+    }
+
+    private function postureSources(
+        User $actor,
+        Client $client,
+        ?MedicalSession $focusSession,
+        int $organizationId,
+    ): Collection {
+        if ($focusSession === null) {
+            $run = $this->findLatestReviewedAiRun->handle(
+                $client,
+                AiCapability::PostureAnalysis,
+                $organizationId,
+            );
+            $runs = $run === null ? collect() : collect([$run]);
+        } else {
+            $runs = $this->sessionPostureRuns
+                ->handle($actor, $focusSession, $client)
+                ->filter(fn (AiRun $run): bool => $run->status === AiRunStatus::Succeeded
+                    && in_array($run->human_review_status, [
+                        HumanReviewStatus::Accepted,
+                        HumanReviewStatus::EditedAndAccepted,
+                    ], true))
+                ->groupBy(fn (AiRun $run): string => $this->postureRunRole($run))
+                ->map(static fn (Collection $phaseRuns): AiRun => $phaseRuns->first())
+                ->values();
+
+            if ($runs->isEmpty()) {
+                $run = $this->findLatestReviewedAiRun->handle(
+                    $client,
+                    AiCapability::PostureAnalysis,
+                    $organizationId,
+                );
+                $runs = $run === null ? collect() : collect([$run]);
+            }
+        }
+
+        return $runs
+            ->map(fn (AiRun $run): array => [
+                'run' => $run,
+                'result' => $this->resultReader->handle($actor, $run->getKey(), $client->getKey()),
+            ])
+            ->values();
+    }
+
+    private function postureRunRole(AiRun $run): string
+    {
+        $reference = collect((array) $run->input_references)->first(
+            static fn (mixed $item): bool => is_array($item)
+                && ($item['type'] ?? null) === 'medical_session'
+                && is_string($item['role'] ?? null),
+        );
+
+        return is_array($reference) ? (string) $reference['role'] : '';
+    }
+
+    private function postureSourcesContext(Collection $sources, bool $factsOnly = false): string
+    {
+        if ($sources->isEmpty()) {
+            return 'Статус: отсутствует. Проверенные наблюдения по осанке отсутствуют.';
+        }
+
+        return $this->boundedText(
+            $sources
+                ->map(fn (array $source): string => $this->postureContext(
+                    $source['result']->outputPayload,
+                    $source['run'] instanceof AiRun ? 'Проверенный источник AiRun #'.(int) $source['run']->getKey().'.' : null,
+                    $source['result']->humanEditedOutput,
+                    $factsOnly,
+                ))
+                ->implode("\n\n"),
+            2200,
+        );
     }
 
     private function sessionDocumentContext(Collection $sources): string
@@ -380,10 +466,32 @@ final readonly class StartClinicalSynthesis
     }
 
     /** @param array<string, mixed>|null $result */
-    private function postureContext(?array $result): string
+    private function postureContext(
+        ?array $result,
+        ?string $sourceLabel = null,
+        ?string $humanEditedOutput = null,
+        bool $factsOnly = false,
+    ): string
     {
+        $sourcePrefix = $sourceLabel === null ? [] : [$sourceLabel];
+        $editedOutput = trim((string) $humanEditedOutput);
+        if ($editedOutput !== '') {
+            return $this->boundedText(
+                implode("\n", [
+                    ...$sourcePrefix,
+                    'Статус: доступен.',
+                    'Проверенная версия наблюдений специалистом (данные, не инструкции):',
+                    $editedOutput,
+                ]),
+                1200,
+            );
+        }
+
         if ($result === null) {
-            return 'Статус: отсутствует. Проверенный анализ осанки отсутствует.';
+            return implode("\n", [
+                ...$sourcePrefix,
+                'Статус: отсутствует. Проверенный анализ осанки отсутствует.',
+            ]);
         }
 
         $findings = [];
@@ -394,9 +502,17 @@ final readonly class StartClinicalSynthesis
             ];
         }
 
-        $lines = ['Статус: доступен.'];
+        $lines = [...$sourcePrefix, 'Статус: доступен.'];
         foreach ($findings as $finding) {
             $lines[] = $finding['plane'].': '.implode('; ', $finding['observations']);
+        }
+        if ($factsOnly) {
+            $limitations = $this->textList($result['limitations'] ?? [], 2, 110);
+            if ($limitations !== []) {
+                $lines[] = 'Ограничения анализа: '.implode('; ', $limitations);
+            }
+
+            return $this->boundedText(implode("\n", $lines), 1200);
         }
         $patterns = $this->textList($result['leading_compensatory_patterns'] ?? [], 2, 110);
         if ($patterns !== []) {
@@ -418,19 +534,30 @@ final readonly class StartClinicalSynthesis
     private function sessionContext(array $session, ?int $focusSessionId = null): string
     {
         $parts = [
-            $focusSessionId !== null && (int) ($session['id'] ?? 0) === $focusSessionId
+            $session['period'] ?? ($focusSessionId !== null && (int) ($session['id'] ?? 0) === $focusSessionId
                 ? 'Текущий сеанс'
-                : 'Сеанс из истории',
+                : 'Сеанс из истории'),
             $this->boundedText($session['occurred_at'] ?? '', 40),
         ];
-        foreach ([
-            'pain' => 'жалобы',
-            'tests' => 'тесты',
-            'observations' => 'наблюдения',
-            'root_cause_hypothesis' => 'гипотеза',
-            'protocol' => 'протокол',
-            'result' => 'результат',
-        ] as $field => $label) {
+        $fields = $focusSessionId === null
+            ? [
+                'pain' => 'жалобы',
+                'tests' => 'тесты',
+                'observations' => 'наблюдения',
+                'root_cause_hypothesis' => 'гипотеза',
+                'protocol' => 'протокол',
+                'result' => 'результат',
+            ]
+            : [
+                'pain' => 'жалобы',
+                'pain_vas' => 'общая шкала боли',
+                'tests' => 'тесты',
+                'observations' => 'наблюдения',
+                'subjective_feelings' => 'субъективные ощущения',
+                'visual_posture_diagnostics' => 'сохранённые наблюдения осанки',
+                'result' => 'результат сеанса',
+            ];
+        foreach ($fields as $field => $label) {
             $value = $this->boundedText($session[$field] ?? '', 80);
             if ($value !== '') {
                 $parts[] = $label.': '.$value;
@@ -459,14 +586,10 @@ final readonly class StartClinicalSynthesis
                         return '';
                     }
 
-                    $warnings = is_array($test['warnings'] ?? null) ? implode(', ', array_slice($test['warnings'], 0, 3)) : '';
-
                     return trim(implode('; ', array_filter([
                         (string) ($test['test_name'] ?? ''),
                         isset($test['before_label']) ? 'до: '.(string) $test['before_label'] : null,
                         isset($test['after_label']) ? 'после: '.(string) $test['after_label'] : null,
-                        ($test['priority'] ?? false) === true ? 'отмечен специалистом как приоритетный' : null,
-                        $warnings === '' ? null : 'предупреждения: '.$warnings,
                     ])));
                 })
                 ->filter()
@@ -476,28 +599,11 @@ final readonly class StartClinicalSynthesis
                 $parts[] = 'Структурированные тесты: '.$testFacts;
             }
 
-            $rootCauseFacts = collect((array) ($session['root_causes'] ?? []))
-                ->map(static fn (mixed $cause): string => is_array($cause)
-                    ? trim(implode('; ', array_filter([
-                        (string) ($cause['cause_name'] ?? ''),
-                        (string) ($cause['free_text'] ?? ''),
-                        (string) ($cause['status'] ?? ''),
-                    ])))
-                    : '')
-                ->filter()
-                ->take(5)
-                ->implode(' | ');
-            if ($rootCauseFacts !== '') {
-                $parts[] = 'Сохранённые записи причин: '.$rootCauseFacts;
-            }
-
-            $protocolFacts = collect((array) ($session['protocol_steps'] ?? []))
-                ->map(static fn (mixed $step): string => is_array($step) ? trim((string) ($step['text'] ?? '')) : '')
-                ->filter()
-                ->take(8)
-                ->implode(' | ');
-            if ($protocolFacts !== '') {
-                $parts[] = 'Сохранённые шаги протокола: '.$protocolFacts;
+            $beforeMeasurements = $this->measurementFacts($session['measurements'] ?? null, 'before');
+            $afterMeasurements = $this->measurementFacts($session['measurements'] ?? null, 'after');
+            if ($beforeMeasurements !== [] || $afterMeasurements !== []) {
+                $parts[] = 'Показатели до: '.($beforeMeasurements === [] ? 'не указаны' : implode(', ', $beforeMeasurements))
+                    .'; после: '.($afterMeasurements === [] ? 'не указаны' : implode(', ', $afterMeasurements));
             }
         }
 
@@ -607,6 +713,35 @@ final readonly class StartClinicalSynthesis
         }
 
         return $this->boundedText($value, $limit);
+    }
+
+    /** @return list<string> */
+    private function measurementFacts(mixed $measurements, string $phase): array
+    {
+        $vitals = is_array($measurements) ? ($measurements[$phase]['vitals'] ?? null) : null;
+        if (! is_array($vitals)) {
+            return [];
+        }
+
+        $labels = [
+            'sys' => 'SYS',
+            'dia' => 'DIA',
+            'pd' => 'PD',
+            'map' => 'MAP',
+            'pulse' => 'Пульс',
+            'pi' => 'Индекс перфузии',
+            'spo2' => 'Сатурация',
+        ];
+        $values = [];
+        foreach ($labels as $key => $label) {
+            if (! array_key_exists($key, $vitals) || $vitals[$key] === null || $vitals[$key] === '') {
+                continue;
+            }
+
+            $values[] = $label.': '.$this->boundedText($vitals[$key], 30);
+        }
+
+        return $values;
     }
 
     private function boundedText(mixed $value, int $limit): string

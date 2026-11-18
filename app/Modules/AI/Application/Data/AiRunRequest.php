@@ -7,6 +7,7 @@ use App\Modules\AI\Domain\Enums\AiCapability;
 use App\Modules\AI\Domain\Enums\AiExecutionMode;
 use App\Modules\AI\Domain\Enums\AiModelModality;
 use App\Modules\AI\Domain\Enums\AiRunOrigin;
+use App\Modules\AI\Domain\Enums\ClinicalSynthesizerWorkflow;
 use App\Modules\AI\Domain\ValueObjects\AiInputReference;
 use Carbon\CarbonInterface;
 
@@ -54,5 +55,16 @@ final readonly class AiRunRequest
             executionDeadlineAt: $this->executionDeadlineAt,
             actor: $actor,
         );
+    }
+
+    public function preferredPromptKey(): ?string
+    {
+        return $this->capability === AiCapability::ClinicalSynthesizer
+            && in_array($this->workflowKey, [
+                ClinicalSynthesizerWorkflow::Summary->value,
+                ClinicalSynthesizerWorkflow::SessionDraft->value,
+            ], true)
+            ? 'clinical_synthesizer_source_draft'
+            : null;
     }
 }

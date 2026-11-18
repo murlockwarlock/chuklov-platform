@@ -71,9 +71,16 @@ class DispatchAsyncAiRun
         } else {
             $prompt = AiPrompt::query()
                 ->where('organization_id', $organization->getKey())
-                ->where('capability', $request->capability)
+                ->where('capability', $request->capability);
+
+            if ($request->preferredPromptKey() !== null) {
+                $prompt->where('key', $request->preferredPromptKey());
+            } else {
+                $prompt->latest('id');
+            }
+
+            $prompt = $prompt
                 ->whereNotNull('active_version_id')
-                ->latest('id')
                 ->first();
 
             if ($prompt !== null && $prompt->active_version_id !== null) {

@@ -292,7 +292,9 @@ final class ClinicalAiPresentation
             AiCapability::PostureAnalysis => self::postureResult($payload),
             AiCapability::ClinicalSynthesizer => $workflowKey === ClinicalSynthesizerWorkflow::CourseReport->value
                 ? self::courseReportResult($payload)
-                : self::synthesizerResult($payload),
+                : ($workflowKey === ClinicalSynthesizerWorkflow::SessionDraft->value
+                    ? self::sessionPreparationResult($payload)
+                    : self::synthesizerResult($payload)),
             default => null,
         } ?? __('Результат получен, но не может быть отображён в текущем формате.');
     }
@@ -438,6 +440,17 @@ final class ClinicalAiPresentation
             self::listSection('Ограничения и риски', $payload['critical_limitations_risks'] ?? null),
             self::listSection('Что уточнить', $payload['blind_spots_questions'] ?? null),
             self::listSection('Фокус первой сессии', $payload['recommended_first_session_focus'] ?? null),
+            self::listSection('Недостающая информация', $payload['missing_information'] ?? null),
+        ]);
+    }
+
+    private static function sessionPreparationResult(array $payload): ?string
+    {
+        return self::joinSections([
+            self::section('Сводка по клиенту', $payload['client_summary'] ?? null),
+            self::section('Основной запрос', $payload['main_request'] ?? null),
+            self::listSection('Факты из проверенных источников', $payload['source_facts'] ?? null),
+            self::listSection('Что уточнить у клиента', $payload['blind_spots_questions'] ?? null),
             self::listSection('Недостающая информация', $payload['missing_information'] ?? null),
         ]);
     }

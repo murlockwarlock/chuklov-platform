@@ -46,6 +46,7 @@ use App\Modules\Sessions\Application\GetSession;
 use App\Modules\Sessions\Application\ListClientSessions;
 use App\Modules\Sessions\Application\MedicalSessionPainInitializer;
 use App\Modules\Sessions\Application\UpdateSession;
+use App\Modules\Sessions\Domain\Enums\ClinicalSessionAiDraftTarget;
 use App\Modules\Sessions\Domain\Models\MedicalSession;
 use App\Modules\Sessions\Domain\Models\MedicalTestDefinition;
 use App\Modules\Sessions\Domain\Models\MedicalTestValue;
@@ -382,13 +383,20 @@ final class SessionCockpitTest extends TestCase
         $original = app(MedicalEncryptorInterface::class);
         $mock = Mockery::mock(MedicalEncryptorInterface::class);
         $mock->shouldReceive('decryptField')
-            ->times(7)
+            ->times(9)
             ->andReturnUsing(static fn (int $organizationId, ?string $ciphertext): ?string => $ciphertext === null ? null : 'Расшифрованное поле');
+        app()->forgetScopedInstances();
+        app(OrganizationContext::class)->set($organization);
         app()->instance(MedicalEncryptorInterface::class, $mock);
 
         try {
-            Livewire::actingAs($admin)
-                ->test(ViewMedicalSession::class, ['parentRecord' => $client, 'record' => $session->getKey()])
+            $this
+                ->actingAs($admin)
+                ->get($this->relativeUrl(ViewMedicalSession::getUrl([
+                    'client' => $client,
+                    'record' => $session,
+                ], shouldGuessMissingParameters: true)))
+                ->assertSuccessful()
                 ->assertSee('Расшифрованное поле');
         } finally {
             app()->forgetScopedInstances();
@@ -795,6 +803,7 @@ final class SessionCockpitTest extends TestCase
             ->call('create')
             ->assertHasNoErrors();
 
+        $session = MedicalSession::query()->where('client_id', $client->getKey())->latest('id')->firstOrFail();
         $pain = $session->pains()->sole();
         self::assertSame(0, $pain->before_score);
         self::assertNull($pain->after_score);
@@ -1160,7 +1169,7 @@ final class SessionCockpitTest extends TestCase
         self::assertSame('Черновик протокола', app(GetSession::class)->handle($admin, $session->fresh(), $client)?->protocol);
     }
 
-    public function test_filament_session_ai_actions_are_reserved_and_disabled_without_mutation(): void
+    public function test_filament_session_ai_actions_are_reserved_without_mutation(): void
     {
         [$organization, $admin, $client, $specialist] = $this->fixture();
         $this->resolveFilamentContext($admin, $organization);
@@ -1174,9 +1183,15 @@ final class SessionCockpitTest extends TestCase
         $session = MedicalSession::query()->whereKey($created->id)->firstOrFail();
 
         $component = Livewire::actingAs($admin)
-            ->test(EditMedicalSession::class, ['parentRecord' => $client, 'record' => $session->getKey()])
-            ->assertActionExists('fillResult')
-            ->assertActionDisabled('fillResult')
+            ->test(EditMedicalSession::class, ['parentRecord' => $client, 'record' => $session->getKey()]);
+        $prepareAction = $component->instance()->getSchema('form')?->getAction('prepareClinicalSessionAi');
+        self::assertInstanceOf(Action::class, $prepareAction);
+        self::assertTrue($prepareAction->isVisible());
+        self::assertFalse($prepareAction->isDisabled());
+
+        $component
+            ->assertSee('ИИ-помощник сеанса')
+            ->assertSee('Подготовить с ИИ')
             ->assertActionVisible('suggestSessionPainTags')
             ->assertActionExists('acceptSessionPainTags')
             ->mountAction('suggestSessionPainTags')
@@ -1198,6 +1213,17 @@ final class SessionCockpitTest extends TestCase
         self::assertSame(
             'Ручной пошаговый протокол пока не заполнен',
             app(GetSession::class)->handle($admin, $session->fresh(), $client)?->protocol,
+        );
+    }
+
+    public function test_session_preparation_has_no_deferred_clinical_acceptance_targets(): void
+    {
+        self::assertSame(
+            [ClinicalSessionAiDraftTarget::Result],
+            array_values(array_filter(
+                ClinicalSessionAiDraftTarget::cases(),
+                static fn (ClinicalSessionAiDraftTarget $target): bool => $target->isAvailable(),
+            )),
         );
     }
 
@@ -1485,10 +1511,9 @@ final class SessionCockpitTest extends TestCase
 
         $component = Livewire::actingAs($admin)
             ->test(CreateMedicalSession::class, ['parentRecord' => $client])
-            ->assertFormComponentActionExists('result', 'fillResult')
-            ->assertFormComponentActionDisabled('result', 'fillResult')
             ->fillForm(['result' => 'Ручной результат без ИИ']);
 
+        self::assertNotNull($component->instance()->getSchemaComponent('form.result'));
         $component->assertSet('data.result', 'Ручной результат без ИИ');
         self::assertSame(0, MedicalSession::query()->where('client_id', $client->getKey())->count());
 

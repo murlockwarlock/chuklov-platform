@@ -113,6 +113,39 @@ final class SourceBackedAgentContractTest extends TestCase
         ], $synthesizerSchema));
     }
 
+    public function test_factual_session_preparation_rejects_clinical_sections_server_side(): void
+    {
+        $schema = AiCapabilityRegistry::get(AiCapability::ClinicalSynthesizer)->defaultOutputSchema;
+        $context = ['session_preparation_mode' => 'factual_session_preparation'];
+        $payload = [
+            'client_summary' => 'Explicitly recorded request',
+            'main_request' => 'Explicitly recorded goal',
+            'source_facts' => ['Explicitly recorded fact'],
+            'hypotheses' => [],
+            'critical_limitations_risks' => [],
+            'blind_spots_questions' => ['Question for the specialist'],
+            'recommended_first_session_focus' => [],
+            'missing_information' => ['Not recorded'],
+        ];
+
+        self::assertTrue($this->schemaValidator->validate($payload, $schema, $context));
+        self::assertFalse($this->schemaValidator->validate([
+            ...$payload,
+            'hypotheses' => [[
+                'statement' => 'Clinical hypothesis',
+                'supporting_facts' => ['Explicitly recorded fact'],
+                'uncertainty' => 'Requires review',
+            ]],
+        ], $schema, $context));
+        self::assertStringContainsString('hypotheses', (string) $this->schemaValidator->getValidationError());
+        self::assertFalse($this->schemaValidator->validate([
+            ...$payload,
+            'diagnosis' => 'Prohibited field',
+        ], $schema, $context));
+        self::assertStringContainsString('unsupported field', (string) $this->schemaValidator->getValidationError());
+        self::assertFalse($this->schemaValidator->validate('not-json', null, $context));
+    }
+
     public function test_prompt_drafts_match_registered_contracts_and_have_no_model_authority(): void
     {
         $files = glob(base_path('docs/product/source-pack/ai-prompt-bundles/*.json'));

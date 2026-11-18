@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\AI;
 
+use App\Filament\Support\ClinicalAiPresentation;
 use App\Models\User;
 use App\Modules\AI\Application\Actions\GetClinicalAiResult;
 use App\Modules\AI\Application\Actions\ReviewClinicalSessionDocumentAiRun;
@@ -96,7 +97,7 @@ final class ClinicalAiWorkflowTest extends TestCase
         $this->configurePrompt(AiCapability::PostureAnalysis, 'posture', 'Три изображения осанки.');
         $this->configurePrompt(
             AiCapability::ClinicalSynthesizer,
-            'synthesizer',
+            'clinical_synthesizer_source_draft',
             '{{client_name}} {{anamnesis}} {{complaints_goals}} {{recent_sessions}} {{agent_one_result}} {{agent_two_result}} {{survey_results}}',
         );
     }
@@ -417,6 +418,102 @@ final class ClinicalAiWorkflowTest extends TestCase
         self::assertSame($rerun->getKey(), $sameRerun->getKey());
     }
 
+    public function test_session_preparation_uses_dynamics_and_confirmed_session_posture_without_deferred_clinical_content(): void
+    {
+        Queue::fake();
+        $specialist = Specialist::factory()->forOrganization($this->organization)->create();
+        app(CreateSession::class)->handle($this->staff, $this->client, new CreateSessionCommand(
+            specialistId: (int) $specialist->getKey(),
+            occurredAt: Carbon::parse('2026-11-17 10:00:00', 'UTC'),
+            pain: 'Предыдущая боль',
+            tests: 'Предыдущие тесты',
+            observations: 'Предыдущее наблюдение',
+            result: 'Предыдущий результат',
+            rootCauseHypothesis: 'Не передавать гипотезу',
+            protocol: 'Не передавать протокол',
+        ));
+        $current = MedicalSession::query()->findOrFail(app(CreateSession::class)->handle(
+            $this->staff,
+            $this->client,
+            new CreateSessionCommand(
+                specialistId: (int) $specialist->getKey(),
+                occurredAt: Carbon::parse('2026-11-18 10:00:00', 'UTC'),
+                pain: 'Текущая боль',
+                tests: 'Текущие тесты',
+                observations: 'Текущее наблюдение',
+                result: 'Текущий результат',
+                rootCauseHypothesis: 'Текущая гипотеза не передаётся',
+                protocol: 'Текущий протокол не передаётся',
+            ),
+        )->id);
+        $postureRun = $this->reviewedRun(
+            AiCapability::PostureAnalysis,
+            [
+                new AiInputReference('client', $this->client->id),
+                new AiInputReference('medical_session', $current->id, 'before'),
+            ],
+            [
+                'visual_findings' => [['plane' => 'front', 'observations' => ['Подтверждённое наблюдение осанки.']]],
+                'leading_compensatory_patterns' => [],
+                'practitioner_focus' => [],
+                'limitations' => [],
+            ],
+            HumanReviewStatus::EditedAndAccepted,
+            'posture_analysis_session',
+        );
+
+        $run = app(StartClinicalSynthesis::class)->handleSession($this->staff, $this->client, $current);
+        $payload = AiRunPayload::query()->where('ai_run_id', $run->getKey())->firstOrFail();
+        $prompt = app(MedicalEncryptorInterface::class)->decryptField(
+            $this->organization->id,
+            $payload->encrypted_user_prompt,
+            $payload->encryption_key_version,
+        );
+
+        self::assertStringContainsString('Предыдущая боль', (string) $prompt);
+        self::assertStringContainsString('Предыдущий результат', (string) $prompt);
+        self::assertStringContainsString('Текущая боль', (string) $prompt);
+        self::assertStringContainsString('Текущий результат', (string) $prompt);
+        self::assertStringContainsString('Подтверждённое наблюдение осанки.', (string) $prompt);
+        self::assertStringNotContainsString('Не передавать гипотезу', (string) $prompt);
+        self::assertStringNotContainsString('Не передавать протокол', (string) $prompt);
+        self::assertStringNotContainsString('Текущая гипотеза не передаётся', (string) $prompt);
+        self::assertStringNotContainsString('Текущий протокол не передаётся', (string) $prompt);
+        self::assertContains(['type' => 'ai_run', 'id' => $postureRun->getKey()], $run->input_references);
+        self::assertEqualsCanonicalizing(
+            MedicalSession::query()->where('client_id', $this->client->getKey())->pluck('id')->all(),
+            collect($run->input_references)
+                ->filter(static fn (array $reference): bool => ($reference['type'] ?? null) === 'medical_session')
+                ->pluck('id')
+                ->all(),
+        );
+    }
+
+    public function test_session_preparation_presentation_hides_deferred_clinical_sections(): void
+    {
+        $result = ClinicalAiPresentation::result(
+            AiCapability::ClinicalSynthesizer,
+            [
+                'client_summary' => 'Фактическая сводка.',
+                'main_request' => 'Запрос клиента.',
+                'source_facts' => ['Факт из источника.'],
+                'hypotheses' => [['statement' => 'Гипотеза не показывается.']],
+                'critical_limitations_risks' => ['Клинический риск не показывается.'],
+                'blind_spots_questions' => ['Уточнить дату записи.'],
+                'recommended_first_session_focus' => ['Рекомендация не показывается.'],
+                'missing_information' => ['Не хватает результата теста.'],
+            ],
+            null,
+            ClinicalSynthesizerWorkflow::SessionDraft->value,
+        );
+
+        self::assertStringContainsString('Факт из источника.', (string) $result);
+        self::assertStringContainsString('Не хватает результата теста.', (string) $result);
+        self::assertStringNotContainsString('Гипотеза не показывается.', (string) $result);
+        self::assertStringNotContainsString('Клинический риск не показывается.', (string) $result);
+        self::assertStringNotContainsString('Рекомендация не показывается.', (string) $result);
+    }
+
     public function test_synthesis_prompt_includes_the_complete_medical_profile_and_profile_changes_change_idempotency(): void
     {
         Queue::fake();
@@ -505,6 +602,7 @@ final class ClinicalAiWorkflowTest extends TestCase
         );
 
         self::assertSame(ClinicalSynthesizerWorkflow::SessionDraft->value, $run->workflow_key);
+        self::assertSame('clinical_synthesizer_source_draft', $run->promptVersion?->prompt?->key);
         self::assertContains(
             ['type' => 'medical_session', 'id' => $session->id],
             $run->input_references,
@@ -517,7 +615,7 @@ final class ClinicalAiWorkflowTest extends TestCase
             $payload->encryption_key_version,
         );
         self::assertStringContainsString('Текущая жалоба сеанса', (string) $prompt);
-        self::assertStringContainsString('Сохранённый факт протокола', (string) $prompt);
+        self::assertStringNotContainsString('Сохранённый факт протокола', (string) $prompt);
 
         $sameRun = app(StartClinicalSynthesis::class)->handleSession(
             actor: $this->staff,
@@ -547,6 +645,93 @@ final class ClinicalAiWorkflowTest extends TestCase
             ->where('workflow_key', ClinicalSynthesizerWorkflow::SessionDraft->value)
             ->count());
         self::assertNotNull(AiRunPayload::query()->where('ai_run_id', $run->id)->first());
+    }
+
+    public function test_session_synthesis_matches_the_source_backed_variable_schema(): void
+    {
+        Queue::fake();
+        $specialist = Specialist::factory()->forOrganization($this->organization)->create();
+        $session = MedicalSession::query()->findOrFail(app(CreateSession::class)->handle(
+            $this->staff,
+            $this->client,
+            new CreateSessionCommand(
+                specialistId: (int) $specialist->getKey(),
+                occurredAt: Carbon::parse('2026-11-18 10:00:00', 'UTC'),
+            ),
+        )->id);
+        $prompt = AiPrompt::query()
+            ->where('organization_id', $this->organization->id)
+            ->where('key', 'clinical_synthesizer_source_draft')
+            ->firstOrFail();
+        $version = AiPromptVersion::query()->whereKey($prompt->active_version_id)->firstOrFail();
+        $version->update([
+            'variables_schema' => [
+                'type' => 'object',
+                'properties' => [
+                    'client_name' => ['type' => 'string'],
+                    'anamnesis' => ['type' => 'string'],
+                    'complaints_goals' => ['type' => 'string'],
+                    'session_preparation_mode' => [
+                        'type' => 'string',
+                        'enum' => ['client_summary', 'factual_session_preparation'],
+                    ],
+                    'recent_sessions' => ['type' => 'array'],
+                    'agent_one_result' => ['type' => 'object'],
+                    'agent_two_result' => ['type' => 'object'],
+                    'survey_results' => ['type' => 'object'],
+                ],
+                'required' => [
+                    'client_name',
+                    'anamnesis',
+                    'complaints_goals',
+                    'session_preparation_mode',
+                    'recent_sessions',
+                    'agent_one_result',
+                    'agent_two_result',
+                    'survey_results',
+                ],
+            ],
+        ]);
+
+        $run = app(StartClinicalSynthesis::class)->handleSession($this->staff, $this->client, $session);
+
+        self::assertSame(ClinicalSynthesizerWorkflow::SessionDraft->value, $run->workflow_key);
+        self::assertSame(AiRunStatus::Queued, $run->status);
+        self::assertNotNull(AiRunPayload::query()->where('ai_run_id', $run->getKey())->first());
+    }
+
+    public function test_session_synthesis_fails_closed_when_the_active_prompt_lacks_the_factual_contract(): void
+    {
+        Queue::fake();
+        $specialist = Specialist::factory()->forOrganization($this->organization)->create();
+        $session = MedicalSession::query()->findOrFail(app(CreateSession::class)->handle(
+            $this->staff,
+            $this->client,
+            new CreateSessionCommand(
+                specialistId: (int) $specialist->getKey(),
+                occurredAt: Carbon::parse('2026-11-18 10:00:00', 'UTC'),
+            ),
+        )->id);
+        $prompt = AiPrompt::query()
+            ->where('organization_id', $this->organization->id)
+            ->where('key', 'clinical_synthesizer_source_draft')
+            ->firstOrFail();
+        $version = AiPromptVersion::query()->whereKey($prompt->active_version_id)->firstOrFail();
+        $version->update([
+            'variables_schema' => [],
+            'system_prompt' => 'Use only source facts.',
+            'user_prompt_template' => '{{client_name}}',
+        ]);
+
+        try {
+            app(StartClinicalSynthesis::class)->handleSession($this->staff, $this->client, $session);
+            self::fail('A factual session preparation run must fail closed without its prompt contract.');
+        } catch (InvalidArgumentException $exception) {
+            self::assertStringContainsString('factual session preparation contract', $exception->getMessage());
+        }
+
+        Queue::assertNothingPushed();
+        self::assertDatabaseCount('ai_runs', 0);
     }
 
     public function test_course_report_uses_full_profile_and_dedicated_prompt_with_server_period(): void
@@ -1567,8 +1752,24 @@ final class ClinicalAiWorkflowTest extends TestCase
             'prompt_id' => $prompt->id,
             'version' => 1,
             'status' => 'active',
-            'system_prompt' => 'Use only source facts. Return structured output.',
-            'user_prompt_template' => $template,
+            'system_prompt' => $capability === AiCapability::ClinicalSynthesizer
+                ? 'Use only source facts. If session_preparation_mode is factual_session_preparation, prepare factual facts only. Не создавай диагнозы и не интерпретируй факты. Return structured output with hypotheses, critical_limitations_risks, and recommended_first_session_focus fields.'
+                : 'Use only source facts. Return structured output.',
+            'user_prompt_template' => $capability === AiCapability::ClinicalSynthesizer
+                ? $template." {{session_preparation_mode}}"
+                : $template,
+            'variables_schema' => $capability === AiCapability::ClinicalSynthesizer
+                ? [
+                    'type' => 'object',
+                    'properties' => [
+                        'session_preparation_mode' => [
+                            'type' => 'string',
+                            'enum' => ['client_summary', 'factual_session_preparation'],
+                        ],
+                    ],
+                    'required' => ['session_preparation_mode'],
+                ]
+                : [],
             'output_schema' => AiCapabilityRegistry::get($capability)->defaultOutputSchema,
             'context_policy' => $capability === AiCapability::ClinicalSynthesizer
                 ? ['include_client_profile' => true, 'include_medical_summary' => true, 'include_recent_sessions_count' => 5]

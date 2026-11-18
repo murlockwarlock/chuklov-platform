@@ -23,6 +23,7 @@ use App\Modules\AI\Domain\Enums\AiModelModality;
 use App\Modules\AI\Domain\Enums\AiRunOrigin;
 use App\Modules\AI\Domain\Enums\AiRunStatus;
 use App\Modules\AI\Domain\Enums\BudgetReservationStatus;
+use App\Modules\AI\Domain\Enums\ClinicalSynthesizerWorkflow;
 use App\Modules\AI\Domain\Enums\HumanReviewStatus;
 use App\Modules\AI\Domain\Enums\ProviderHealthStatus;
 use App\Modules\AI\Domain\Exceptions\AiBudgetExceededException;
@@ -192,9 +193,16 @@ class LaravelAiWorkflowEngine implements AiWorkflowEngine
         } else {
             $prompt = AiPrompt::query()
                 ->where('organization_id', $organizationId)
-                ->where('capability', $request->capability)
+                ->where('capability', $request->capability);
+
+            if ($request->preferredPromptKey() !== null) {
+                $prompt->where('key', $request->preferredPromptKey());
+            } else {
+                $prompt->latest('id');
+            }
+
+            $prompt = $prompt
                 ->whereNotNull('active_version_id')
-                ->latest('id')
                 ->first();
 
             if ($prompt !== null && $prompt->active_version_id !== null) {
@@ -1069,7 +1077,20 @@ class LaravelAiWorkflowEngine implements AiWorkflowEngine
                 $isValid = true;
 
                 if ($outputSchema !== null) {
-                    $isValid = $this->outputValidator->validate($outputText, $outputSchema);
+                    $isValid = $this->outputValidator->validate(
+                        $outputText,
+                        $outputSchema,
+                        $this->outputValidationContext($run),
+                    );
+                    if ($isValid) {
+                        $outputPayload = json_decode($outputText, true);
+                    }
+                } elseif (($this->outputValidationContext($run)['session_preparation_mode'] ?? null) === 'factual_session_preparation') {
+                    $isValid = $this->outputValidator->validate(
+                        $outputText,
+                        null,
+                        $this->outputValidationContext($run),
+                    );
                     if ($isValid) {
                         $outputPayload = json_decode($outputText, true);
                     }
@@ -1521,6 +1542,22 @@ class LaravelAiWorkflowEngine implements AiWorkflowEngine
         }
 
         return max(0, (int) ($retrievalEmbedding['estimated_cost_minor_units'] ?? 0));
+    }
+
+    /** @return array<string, mixed> */
+    private function outputValidationContext(AiRun $run): array
+    {
+        if ($run->capability !== AiCapability::ClinicalSynthesizer
+            || $run->workflow_key !== ClinicalSynthesizerWorkflow::SessionDraft->value) {
+            return [];
+        }
+
+        $provenance = is_array($run->context_provenance ?? null)
+            ? $run->context_provenance
+            : [];
+        $mode = $provenance['session_preparation_mode'] ?? null;
+
+        return is_string($mode) ? ['session_preparation_mode' => $mode] : [];
     }
 
     private function fencedTerminalRunTransition(
