@@ -3,6 +3,7 @@
 namespace Tests\Feature\AI;
 
 use App\Models\User;
+use App\Modules\AI\Application\Actions\GetClinicalAiResult;
 use App\Modules\AI\Application\Actions\StartClinicalCourseReport;
 use App\Modules\AI\Application\Actions\StartClinicalDocumentAnalysis;
 use App\Modules\AI\Application\Actions\StartClinicalSynthesis;
