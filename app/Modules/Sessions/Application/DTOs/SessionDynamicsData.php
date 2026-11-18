@@ -68,22 +68,7 @@ final readonly class SessionDynamicsData
     /** @return array{scope:string,interpretation_allowed:false,sessions:list<array<string,mixed>>} */
     public function analysisPayload(): array
     {
-        $history = $this->history !== []
-            ? $this->history
-            : array_values(array_filter([
-                [
-                    'period' => 'Текущий сеанс',
-                    'data' => $this->current,
-                    'specialist' => $this->currentSpecialist,
-                    'booking' => $this->currentBooking,
-                ],
-                $this->previous === null ? null : [
-                    'period' => 'Предыдущий сеанс',
-                    'data' => $this->previous,
-                    'specialist' => $this->previousSpecialist ?? '—',
-                    'booking' => $this->previousBooking ?? 'Без записи на приём',
-                ],
-            ]));
+        $history = $this->historySnapshots();
 
         return [
             'scope' => 'confirmed_session_facts',
@@ -147,22 +132,7 @@ final readonly class SessionDynamicsData
      */
     private function chartSnapshots(): array
     {
-        $history = $this->history !== []
-            ? $this->history
-            : array_values(array_filter([
-                [
-                    'period' => 'Текущий сеанс',
-                    'data' => $this->current,
-                    'specialist' => $this->currentSpecialist,
-                    'booking' => $this->currentBooking,
-                ],
-                $this->previous === null ? null : [
-                    'period' => 'Предыдущий сеанс',
-                    'data' => $this->previous,
-                    'specialist' => $this->previousSpecialist ?? '—',
-                    'booking' => $this->previousBooking ?? 'Без записи на приём',
-                ],
-            ]));
+        $history = $this->historySnapshots();
         $chronological = array_slice(array_reverse($history), -GetSessionDynamics::MAX_HISTORY);
 
         return array_map(function (array $snapshot): array {
@@ -178,6 +148,32 @@ final readonly class SessionDynamicsData
                 'is_current' => $snapshot['data']->id === $this->current->id,
             ];
         }, $chronological);
+    }
+
+    /** @return list<array{period:string,data:MedicalSessionData,specialist:string,booking:string}> */
+    private function historySnapshots(): array
+    {
+        if ($this->history !== []) {
+            return $this->history;
+        }
+
+        $history = [[
+            'period' => 'Текущий сеанс',
+            'data' => $this->current,
+            'specialist' => $this->currentSpecialist,
+            'booking' => $this->currentBooking,
+        ]];
+
+        if ($this->previous !== null) {
+            $history[] = [
+                'period' => 'Предыдущий сеанс',
+                'data' => $this->previous,
+                'specialist' => $this->previousSpecialist ?? '—',
+                'booking' => $this->previousBooking ?? 'Без записи на приём',
+            ];
+        }
+
+        return $history;
     }
 
     /** @param array<string, mixed>|null $measurements */
@@ -510,27 +506,27 @@ final readonly class SessionDynamicsData
     /** @return list<string> */
     private static function painScores(MedicalSessionData $session): array
     {
-        return array_values(array_map(
+        return array_map(
             static fn (MedicalPainData $pain): string => implode('; ', [
                 $pain->name,
                 'до: '.self::displayValue($pain->beforeScore),
                 'после: '.self::displayValue($pain->afterScore),
             ]),
             $session->pains,
-        ));
+        );
     }
 
     /** @return list<string> */
     private static function testResults(MedicalSessionData $session): array
     {
-        return array_values(array_map(
+        return array_map(
             static fn (MedicalSessionTestData $test): string => implode('; ', [
                 $test->testName,
                 'до: '.self::displayValue($test->beforeLabel),
                 'после: '.self::displayValue($test->afterLabel),
             ]),
             $session->testResults,
-        ));
+        );
     }
 
     /**
