@@ -258,7 +258,9 @@ final class MedicalSessionTest extends TestCase
 
     public function test_session_dynamics_chart_data_is_chronological_bounded_and_preserves_gaps_and_zero(): void
     {
-        [, $admin, $client, $specialist] = $this->setupOrganizationWithClientAndSpecialist();
+        [$organization, $admin, $client, $specialist] = $this->setupOrganizationWithClientAndSpecialist();
+        $organization->update(['timezone' => 'UTC']);
+        app(OrganizationContext::class)->set($organization->fresh());
         $sessions = [];
 
         foreach (range(1, 10) as $day) {

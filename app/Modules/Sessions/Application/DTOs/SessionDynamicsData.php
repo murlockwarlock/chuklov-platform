@@ -180,6 +180,7 @@ final readonly class SessionDynamicsData
         }, $chronological);
     }
 
+    /** @param array<string, mixed>|null $measurements */
     private static function measurementValue(?array $measurements, string $phase, string $key): int|float|null
     {
         if (! is_array($measurements) || ($phase === 'after' && ! ($measurements['after_enabled'] ?? false))) {
@@ -356,7 +357,7 @@ final readonly class SessionDynamicsData
     private static function testSignature(MedicalSessionTestData $test): ?string
     {
         if ($test->structuredPayload === null) {
-            return 'catalog';
+            return null;
         }
 
         $type = $test->structuredPayload['type'] ?? null;
@@ -532,7 +533,10 @@ final readonly class SessionDynamicsData
         ));
     }
 
-    /** @return list<string> */
+    /**
+     * @param array<string, mixed>|null $measurements
+     * @return list<string>
+     */
     private static function measurementValues(?array $measurements, string $phase): array
     {
         $vitals = $measurements[$phase]['vitals'] ?? null;
