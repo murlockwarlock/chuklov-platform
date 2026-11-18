@@ -1509,9 +1509,15 @@ final class ClinicalAiWorkflowTest extends TestCase
         array $references,
         array $payload,
         HumanReviewStatus $reviewStatus = HumanReviewStatus::Accepted,
-        string $workflowKey = 'clinical_synthesizer',
+        ?string $workflowKey = null,
         ?string $humanEditedOutput = null,
     ): AiRun {
+        $workflowKey ??= match ($capability) {
+            AiCapability::ClinicalDocumentExtraction => 'clinical_document_extraction',
+            AiCapability::PostureAnalysis => 'posture_analysis',
+            default => 'clinical_synthesizer',
+        };
+
         $run = AiRun::create([
             'organization_id' => $this->organization->id,
             'capability' => $capability,
