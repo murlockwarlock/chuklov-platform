@@ -10,8 +10,9 @@ use App\Filament\Resources\Clients\Resources\Sessions\Pages\EditMedicalSession;
 use App\Filament\Resources\Clients\Resources\Sessions\Pages\ManageClientSessions;
 use App\Filament\Resources\Clients\Resources\Sessions\Pages\ViewMedicalSession;
 use App\Models\User;
+use App\Modules\AI\Application\Actions\DispatchAsyncAiRun;
 use App\Modules\AI\Application\Actions\GetClinicalAiResult;
-use App\Modules\AI\Application\Actions\StartClinicalDocumentAnalysis;
+use App\Modules\AI\Application\Data\AiRunRequest;
 use App\Modules\AI\Domain\Enums\AiCapability;
 use App\Modules\AI\Domain\Enums\AiExecutionMode;
 use App\Modules\AI\Domain\Enums\AiRunOrigin;
@@ -21,6 +22,7 @@ use App\Modules\AI\Domain\Enums\HumanReviewReasonCode;
 use App\Modules\AI\Domain\Enums\HumanReviewStatus;
 use App\Modules\AI\Domain\Models\AiRun;
 use App\Modules\AI\Domain\Models\AiRunPayload;
+use App\Modules\AI\Domain\ValueObjects\AiInputReference;
 use App\Modules\Attachments\Domain\Enums\AttachmentType;
 use App\Modules\Attachments\Domain\Models\MedicalAttachment;
 use App\Modules\Identity\Domain\Models\Client;
@@ -1206,22 +1208,32 @@ final class SessionCockpitTest extends TestCase
         $otherClient = Client::factory()->forOrganization($organization)->create();
         $foreign = $this->medicalDocument($organization, $admin, $otherClient, 'Чужой документ.pdf');
         $run = AiRun::make();
-        $starter = Mockery::mock(StartClinicalDocumentAnalysis::class);
-        $starter->shouldReceive('handleSession')
+        $dispatcher = Mockery::mock(DispatchAsyncAiRun::class);
+        $dispatcher->shouldReceive('handle')
             ->once()
-            ->withArgs(function (User $actor, Client $selectedClient, MedicalSession $selectedSession, MedicalAttachment $attachment, bool $rerun) use ($admin, $client, $session, $owned): bool {
-                return $actor->is($admin)
-                    && $selectedClient->is($client)
-                    && $selectedSession->is($session)
-                    && $attachment->is($owned)
-                    && $rerun === false;
+            ->withArgs(function (?User $actor, AiRunRequest $request) use ($admin, $client, $session, $owned): bool {
+                $references = array_map(
+                    static fn (AiInputReference $reference): array => $reference->toArray(),
+                    $request->inputReferences,
+                );
+
+                return $actor?->is($admin)
+                    && $request->clientId === (int) $client->getKey()
+                    && $request->workflowKey === 'clinical_document_extraction'
+                    && $request->idempotencyKey !== null
+                    && strlen($request->idempotencyKey) <= 120
+                    && $references === [
+                        ['type' => 'client', 'id' => $client->getKey()],
+                        ['type' => 'medical_session', 'id' => $session->getKey()],
+                        ['type' => 'medical_attachment', 'id' => $owned->getKey()],
+                    ];
             })
             ->andReturn($run);
-        $this->app->instance(StartClinicalDocumentAnalysis::class, $starter);
+        $this->app->instance(DispatchAsyncAiRun::class, $dispatcher);
 
         $component = Livewire::actingAs($admin)
             ->test(EditMedicalSession::class, ['parentRecord' => $client, 'record' => $session->getKey()])
-            ->mountAction('analyzeClinicalDocument');
+            ->call('mountAction', 'analyzeClinicalDocument', [], ['schemaComponent' => 'form']);
         $select = $component->instance()->getSchemaComponent('mountedActionSchema0.attachment_id');
 
         self::assertInstanceOf(Select::class, $select);
@@ -1260,7 +1272,7 @@ final class SessionCockpitTest extends TestCase
 
         $component = Livewire::actingAs($admin)
             ->test(EditMedicalSession::class, ['parentRecord' => $client, 'record' => $session->getKey()])
-            ->mountAction('openClinicalDocumentAiDraft');
+            ->call('mountAction', 'openClinicalDocumentAiDraft', [], ['schemaComponent' => 'form']);
 
         $component
             ->assertActionDataSet(['run_id' => $run->getKey()])
@@ -1305,7 +1317,7 @@ final class SessionCockpitTest extends TestCase
 
         Livewire::actingAs($admin)
             ->test(EditMedicalSession::class, ['parentRecord' => $client, 'record' => $session->getKey()])
-            ->mountAction('rejectClinicalDocumentAiDraft')
+            ->call('mountAction', 'rejectClinicalDocumentAiDraft', [], ['schemaComponent' => 'form'])
             ->setActionData([
                 'reason_code' => HumanReviewReasonCode::IncorrectContent->value,
                 'notes' => 'Нужна дополнительная проверка источника.',
