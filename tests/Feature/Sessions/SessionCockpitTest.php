@@ -385,6 +385,8 @@ final class SessionCockpitTest extends TestCase
         $mock->shouldReceive('decryptField')
             ->times(7)
             ->andReturnUsing(static fn (int $organizationId, ?string $ciphertext): ?string => $ciphertext === null ? null : 'Расшифрованное поле');
+        app()->forgetScopedInstances();
+        app(OrganizationContext::class)->set($organization);
         app()->instance(MedicalEncryptorInterface::class, $mock);
 
         try {
@@ -1167,7 +1169,7 @@ final class SessionCockpitTest extends TestCase
         self::assertSame('Черновик протокола', app(GetSession::class)->handle($admin, $session->fresh(), $client)?->protocol);
     }
 
-    public function test_filament_session_ai_actions_are_reserved_and_disabled_without_mutation(): void
+    public function test_filament_session_ai_actions_are_reserved_without_mutation(): void
     {
         [$organization, $admin, $client, $specialist] = $this->fixture();
         $this->resolveFilamentContext($admin, $organization);
@@ -1181,15 +1183,15 @@ final class SessionCockpitTest extends TestCase
         $session = MedicalSession::query()->whereKey($created->id)->firstOrFail();
 
         $component = Livewire::actingAs($admin)
-            ->test(EditMedicalSession::class, ['parentRecord' => $client, 'record' => $session->getKey()])
+            ->test(EditMedicalSession::class, ['parentRecord' => $client, 'record' => $session->getKey()]);
+        $prepareAction = $component->instance()->getSchema('form')?->getAction('prepareClinicalSessionAi');
+        self::assertInstanceOf(Action::class, $prepareAction);
+        self::assertTrue($prepareAction->isVisible());
+        self::assertFalse($prepareAction->isDisabled());
+
+        $component
             ->assertSee('ИИ-помощник сеанса')
             ->assertSee('Подготовить с ИИ')
-            ->call('mountAction', 'prepareClinicalSessionAi', [], ['schemaComponent' => 'form'])
-            ->assertActionMounted([
-                'name' => 'prepareClinicalSessionAi',
-                'context' => ['schemaComponent' => 'form'],
-            ])
-            ->unmountAction()
             ->assertActionVisible('suggestSessionPainTags')
             ->assertActionExists('acceptSessionPainTags')
             ->mountAction('suggestSessionPainTags')
